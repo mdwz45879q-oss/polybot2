@@ -313,7 +313,7 @@ impl NativeMlbEngine {
 
         let mut process_msg = |msg: &Bound<'_, PyDict>| {
             let mtype = get_str(msg, "type").to_lowercase();
-            if mtype == "ping" || mtype != "next" {
+            if mtype != "next" {
                 return;
             }
             let payload = get_dict(msg, "payload");
@@ -457,6 +457,41 @@ impl NativeMlbEngine {
         out
     }
 
+    fn strategy_keys_for_game(&self, game_id: &str) -> Vec<String> {
+        let mut keys = Vec::new();
+        if let Some(targets) = self.over_targets_by_game.get(game_id) {
+            for t in targets { keys.push(t.strategy_key.clone()); }
+        }
+        if let Some(targets) = self.under_targets_by_game.get(game_id) {
+            for t in targets { keys.push(t.strategy_key.clone()); }
+        }
+        if let Some(targets) = self.nrfi_targets_by_game.get(game_id) {
+            for (_, t) in targets { keys.push(t.strategy_key.clone()); }
+        }
+        if let Some(targets) = self.moneyline_by_game.get(game_id) {
+            for (_, t) in targets { keys.push(t.strategy_key.clone()); }
+        }
+        if let Some(targets) = self.spreads_by_game.get(game_id) {
+            for (_, spreads) in targets {
+                for t in spreads { keys.push(t.strategy_key.clone()); }
+            }
+        }
+        keys
+    }
+
+    pub(crate) fn cleanup_completed_game(&mut self, game_id: &str) {
+        let strategy_keys = self.strategy_keys_for_game(game_id);
+        self.rows.remove(game_id);
+        self.game_states.remove(game_id);
+        self.totals_final_under_emitted.remove(game_id);
+        self.nrfi_resolved_games.remove(game_id);
+        self.nrfi_first_inning_observed.remove(game_id);
+        for key in &strategy_keys {
+            self.last_emit_ns.remove(key);
+            self.last_signature.remove(key);
+        }
+    }
+
     pub(crate) fn is_game_completed(&self, game_id: &str) -> bool {
         if self.final_resolved_games.contains(game_id) {
             return true;
@@ -505,10 +540,7 @@ impl NativeMlbEngine {
             if let Some(reason) = self.evaluate_nrfi(&delta, &state, &mut intents) {
                 reasons.push(reason);
             }
-            {
-                let (reason, _) = self.evaluate_final(&delta, &state, &mut intents);
-                reasons.push(reason);
-            }
+            reasons.push(self.evaluate_final(&delta, &state, &mut intents));
             out.reason = reasons.join("+");
         }
 
@@ -784,7 +816,7 @@ pub(crate) fn process_score_frame_value(
     let mut events_in = 0i64;
     for msg in iter_payload_items_value(frame).iter() {
         let mtype = get_value_str(msg, "type").to_lowercase();
-        if mtype == "ping" || mtype != "next" {
+        if mtype != "next" {
             continue;
         }
         let row = msg
@@ -1219,7 +1251,10 @@ mod tests {
             !has_nrfi,
             "completed game on first observation should not produce NRFI"
         );
-        assert!(engine.nrfi_resolved_games.contains(&game_id));
+        assert!(
+            engine.final_resolved_games.contains(&game_id),
+            "completed game should be in final_resolved_games"
+        );
     }
 
     #[test]

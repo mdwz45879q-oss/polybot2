@@ -102,10 +102,12 @@ impl NativeHotPathRuntime {
             dispatch_runtime
                 .activate_presign_templates_for_tokens(initial_active_tokens.as_slice());
             if dispatch_cfg.presign_enabled && !initial_active_subscriptions.is_empty() {
-                let warm_result = match TokioBuilder::new_current_thread().enable_all().build() {
-                    Ok(rt) => rt.block_on(dispatch_runtime.warm_presign_startup_async()),
-                    Err(e) => Err(format!("tokio_runtime_create_failed:{}", e)),
-                };
+                let warm_result = py.allow_threads(|| {
+                    match TokioBuilder::new_current_thread().enable_all().build() {
+                        Ok(rt) => rt.block_on(dispatch_runtime.warm_presign_startup_async()),
+                        Err(e) => Err(format!("tokio_runtime_create_failed:{}", e)),
+                    }
+                });
                 if let Err(err) = warm_result {
                     return Err(PyValueError::new_err(format!(
                         "presign_startup_warm_failed:{}",

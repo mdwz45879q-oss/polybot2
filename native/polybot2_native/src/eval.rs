@@ -42,11 +42,9 @@ impl NativeMlbEngine {
         }
         let total_now = state.total;
         let prev_total = state.prev_total;
-        if total_now.is_none() || prev_total.is_none() {
+        let (Some(total_now_int), Some(prev_total_int)) = (total_now, prev_total) else {
             return Some("mlb_totals_missing_state".to_string());
-        }
-        let total_now_int = total_now.unwrap_or(0);
-        let prev_total_int = prev_total.unwrap_or(0);
+        };
 
         let mut over_crossed = 0i64;
         let mut under_final = 0i64;
@@ -180,33 +178,21 @@ impl NativeMlbEngine {
         delta: &DeltaEvent,
         state: &GameState,
         intents: &mut Vec<Intent>,
-    ) -> (String, String) {
+    ) -> String {
         let uid = delta.universal_id.clone();
         if self.final_resolved_games.contains(&uid) {
-            return (
-                "mlb_final_already_resolved".to_string(),
-                "no_action".to_string(),
-            );
+            return "mlb_final_already_resolved".to_string();
         }
         if !state.match_completed.unwrap_or(false) {
             if !self.moneyline_by_game.contains_key(&uid)
                 && !self.spreads_by_game.contains_key(&uid)
             {
-                return (
-                    "mlb_final_no_targets".to_string(),
-                    "no_action".to_string(),
-                );
+                return "mlb_final_no_targets".to_string();
             }
-            return (
-                "mlb_final_not_completed".to_string(),
-                "no_action".to_string(),
-            );
+            return "mlb_final_not_completed".to_string();
         }
         if state.home.is_none() || state.away.is_none() {
-            return (
-                "mlb_final_invalid_score_state".to_string(),
-                "no_action".to_string(),
-            );
+            return "mlb_final_invalid_score_state".to_string();
         }
 
         let home = state.home.unwrap_or(0);
@@ -275,20 +261,15 @@ impl NativeMlbEngine {
             }
         }
 
-        self.final_resolved_games.insert(uid);
+        self.final_resolved_games.insert(uid.clone());
+        self.cleanup_completed_game(&uid);
         if intents.is_empty() {
-            (
-                format!("mlb_final_no_signal:unresolved={}", unresolved),
-                "no_action".to_string(),
-            )
+            format!("mlb_final_no_signal:unresolved={}", unresolved)
         } else {
-            (
-                format!(
-                    "mlb_final_emit:intents={}:unresolved={}",
-                    intents.len(),
-                    unresolved
-                ),
-                "action".to_string(),
+            format!(
+                "mlb_final_emit:intents={}:unresolved={}",
+                intents.len(),
+                unresolved
             )
         }
     }
@@ -299,11 +280,9 @@ pub(crate) fn is_first_inning(state: &GameState, include_end: bool) -> bool {
         return false;
     }
     let half = crate::engine::norm(&state.inning_half);
-    let mut allowed: HashSet<&str> = HashSet::from(["top", "bottom", ""]);
-    if include_end {
-        allowed.insert("end");
-    }
-    if !allowed.contains(half.as_str()) {
+    let allowed = matches!(half.as_str(), "top" | "bottom" | "")
+        || (include_end && half == "end");
+    if !allowed {
         return false;
     }
     !state.match_completed.unwrap_or(false)

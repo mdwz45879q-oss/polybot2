@@ -13,6 +13,7 @@ impl DispatchRuntime {
             presign_pool: HashMap::new(),
             last_refill_ns_by_key: HashMap::new(),
             pending_refill_by_key: HashMap::new(),
+            broker_failure_count: HashMap::new(),
             telemetry,
         }
     }
@@ -180,7 +181,7 @@ impl DispatchRuntime {
             status: normalize_status(format!("{}", resp.status).as_str()),
             reason: resp.error_msg.unwrap_or_default(),
             error_code: String::new(),
-            parent_client_order_id: String::new(),
+
         })
     }
 
@@ -190,33 +191,6 @@ impl DispatchRuntime {
     ) -> Result<OrderStateData, String> {
         let signed = self.build_signed_order_async(request).await?;
         self.post_signed_order_async(signed, request).await
-    }
-
-    pub(super) async fn cancel_order_async(
-        &mut self,
-        exchange_order_id: &str,
-    ) -> Result<bool, String> {
-        self.ensure_sdk_runtime().await?;
-        let sdk = self
-            .sdk_runtime
-            .as_ref()
-            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
-        let response = sdk
-            .client
-            .cancel_order(exchange_order_id.trim())
-            .await
-            .map_err(|e| format!("cancel_failed:{}", e))?;
-        if response
-            .canceled
-            .iter()
-            .any(|id| id.trim() == exchange_order_id.trim())
-        {
-            return Ok(true);
-        }
-        if response.not_canceled.contains_key(exchange_order_id.trim()) {
-            return Ok(false);
-        }
-        Ok(!response.canceled.is_empty())
     }
 
     pub(super) fn sdk_client_ref(
@@ -260,7 +234,7 @@ impl DispatchRuntime {
             status: normalize_status(format!("{}", order.status).as_str()),
             reason: String::new(),
             error_code: String::new(),
-            parent_client_order_id: String::new(),
+
         })
     }
 }

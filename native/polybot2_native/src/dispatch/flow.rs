@@ -82,59 +82,6 @@ impl DispatchRuntime {
         }
         let request = self.build_request_from_intent(intent);
         self.enforce_time_in_force_policy(&request)?;
-        if self.active_orders_by_strategy.contains_key(strategy_key) {
-            let state = OrderStateData {
-                client_order_id: request.client_order_id.clone(),
-                exchange_order_id: format!("noop_{}", next_suffix()),
-                side: request.side.clone(),
-                requested_amount_usdc: request.amount_usdc,
-                filled_amount_usdc: 0.0,
-                limit_price: request.limit_price,
-                time_in_force: request.time_in_force.clone(),
-                status: "submitted".to_string(),
-                reason: "ok".to_string(),
-                error_code: String::new(),
-                parent_client_order_id: String::new(),
-            };
-            let prev = self
-                .active_orders_by_strategy
-                .get(strategy_key)
-                .map(|x| x.status.clone())
-                .unwrap_or_default();
-            self.emit_event_lazy(
-                "order_replace_called",
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-                strategy_key,
-                request.client_order_id.as_str(),
-                "",
-                intent.reason.as_str(),
-                || {
-                    json!({
-                        "dispatch_mode": "noop",
-                        "token_id": request.token_id,
-                        "side": request.side,
-                        "time_in_force": request.time_in_force,
-                        "limit_price": request.limit_price,
-                        "amount_usdc": request.amount_usdc,
-                    })
-                },
-            );
-            self.emit_lifecycle_transition(
-                strategy_key,
-                prev.as_str(),
-                &state,
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-            );
-            self.mark_active_state(
-                strategy_key,
-                &state,
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-            );
-            return Ok(());
-        }
         let state = OrderStateData {
             client_order_id: request.client_order_id.clone(),
             exchange_order_id: format!("noop_{}", next_suffix()),
@@ -146,7 +93,7 @@ impl DispatchRuntime {
             status: "submitted".to_string(),
             reason: "ok".to_string(),
             error_code: String::new(),
-            parent_client_order_id: String::new(),
+
         };
         self.emit_event_lazy(
             "order_submit_called",
@@ -213,163 +160,6 @@ impl DispatchRuntime {
         let strategy_key = intent.strategy_key.trim().to_string();
         let request = self.build_request_from_intent(intent);
         self.enforce_time_in_force_policy(&request)?;
-
-        let active = if strategy_key.is_empty() {
-            None
-        } else {
-            self.active_orders_by_strategy
-                .get(strategy_key.as_str())
-                .cloned()
-        };
-
-        if let Some(active_order) = active {
-            let target_exchange = active_order.exchange_order_id.trim().to_string();
-            if target_exchange.is_empty() {
-                return Err("replace_missing_exchange_order_id".to_string());
-            }
-            match self.cancel_order_async(target_exchange.as_str()).await {
-                Ok(true) => {}
-                Ok(false) => {
-                    return Err("replace_cancel_false".to_string());
-                }
-                Err(err) => {
-                    return Err(format!("replace_cancel_error:{}", err));
-                }
-            }
-            self.emit_event_lazy(
-                "order_cancel_called",
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-                strategy_key.as_str(),
-                active_order.client_order_id.as_str(),
-                target_exchange.as_str(),
-                "replace_cancel_then_submit",
-                || {
-                    json!({
-                        "dispatch_mode": "http",
-                        "exchange_order_id": target_exchange,
-                        "phase": "replace_cancel",
-                    })
-                },
-            );
-            self.mark_active_state(
-                strategy_key.as_str(),
-                &OrderStateData {
-                    status: "canceled".to_string(),
-                    client_order_id: active_order.client_order_id.clone(),
-                    exchange_order_id: target_exchange.clone(),
-                    ..OrderStateData::default()
-                },
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-            );
-
-            let mut state = match self.submit_with_policy_async(&request).await {
-                Ok(s) => s,
-                Err(err) => {
-                    self.emit_event_lazy(
-                        "order_submit_called",
-                        intent.source_universal_id.as_str(),
-                        intent.chain_id.as_str(),
-                        strategy_key.as_str(),
-                        request.client_order_id.as_str(),
-                        "",
-                        intent.reason.as_str(),
-                        || {
-                            json!({
-                                "token_id": request.token_id,
-                                "side": request.side,
-                                "time_in_force": request.time_in_force,
-                                "limit_price": request.limit_price,
-                                "amount_usdc": request.amount_usdc,
-                                "market_type": intent.market_type,
-                                "outcome_semantic": intent.outcome_semantic,
-                                "dispatch_mode": "http",
-                                "phase": "replace_submit",
-                            })
-                        },
-                    );
-                    self.emit_event_lazy(
-                        "order_submit_failed",
-                        intent.source_universal_id.as_str(),
-                        intent.chain_id.as_str(),
-                        strategy_key.as_str(),
-                        request.client_order_id.as_str(),
-                        "",
-                        err.as_str(),
-                        || {
-                            json!({
-                                "dispatch_mode": "http",
-                                "token_id": request.token_id,
-                                "side": request.side,
-                                "time_in_force": request.time_in_force,
-                                "limit_price": request.limit_price,
-                                "amount_usdc": request.amount_usdc,
-                                "market_type": intent.market_type,
-                                "outcome_semantic": intent.outcome_semantic,
-                                "phase": "replace_submit",
-                            })
-                        },
-                    );
-                    return Err(err);
-                }
-            };
-            if !active_order.client_order_id.trim().is_empty() {
-                state.parent_client_order_id = active_order.client_order_id;
-            }
-            self.emit_event_lazy(
-                "order_submit_called",
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-                strategy_key.as_str(),
-                request.client_order_id.as_str(),
-                "",
-                intent.reason.as_str(),
-                || {
-                    json!({
-                        "token_id": request.token_id,
-                        "side": request.side,
-                        "time_in_force": request.time_in_force,
-                        "limit_price": request.limit_price,
-                        "amount_usdc": request.amount_usdc,
-                        "market_type": intent.market_type,
-                        "outcome_semantic": intent.outcome_semantic,
-                        "phase": "replace_submit",
-                    })
-                },
-            );
-            self.emit_event_lazy(
-                "order_submit_ok",
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-                strategy_key.as_str(),
-                state.client_order_id.as_str(),
-                state.exchange_order_id.as_str(),
-                state.reason.as_str(),
-                || {
-                    json!({
-                        "status": state.status,
-                        "requested_amount_usdc": state.requested_amount_usdc,
-                        "filled_amount_usdc": state.filled_amount_usdc,
-                        "phase": "replace_submit",
-                    })
-                },
-            );
-            self.emit_lifecycle_transition(
-                strategy_key.as_str(),
-                active_order.status.as_str(),
-                &state,
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-            );
-            self.mark_active_state(
-                strategy_key.as_str(),
-                &state,
-                intent.source_universal_id.as_str(),
-                intent.chain_id.as_str(),
-            );
-            return Ok(());
-        }
 
         let state = match self.submit_with_policy_async(&request).await {
             Ok(s) => s,
@@ -503,6 +293,7 @@ impl DispatchRuntime {
             }
             match self.get_order_async(exchange_id.as_str()).await {
                 Ok(state) => {
+                    self.broker_failure_count.remove(&strategy_key);
                     self.emit_lifecycle_transition(
                         strategy_key.as_str(),
                         active_ref.status.as_str(),
@@ -517,7 +308,24 @@ impl DispatchRuntime {
                         active_ref.chain_id.as_str(),
                     );
                 }
-                Err(_) => {}
+                Err(err) => {
+                    let count = self.broker_failure_count.entry(strategy_key.clone()).or_insert(0);
+                    *count += 1;
+                    let failures = *count;
+                    self.emit_event(
+                        "exec_error",
+                        active_ref.source_universal_id.as_str(),
+                        active_ref.chain_id.as_str(),
+                        strategy_key.as_str(),
+                        active_ref.client_order_id.as_str(),
+                        exchange_id.as_str(),
+                        "broker_query_failed",
+                        json!({
+                            "error": err,
+                            "consecutive_failures": failures,
+                        }),
+                    );
+                }
             }
         }
     }

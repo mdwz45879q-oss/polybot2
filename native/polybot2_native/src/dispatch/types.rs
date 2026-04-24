@@ -35,7 +35,7 @@ pub(crate) struct OrderStateData {
     pub(super) status: String,
     pub(super) reason: String,
     pub(super) error_code: String,
-    pub(super) parent_client_order_id: String,
+
 }
 
 impl OrderStateData {
@@ -79,6 +79,7 @@ pub(crate) struct DispatchRuntime {
     pub(super) presign_pool: HashMap<PreSignKey, VecDeque<PreSignedOrderData>>,
     pub(super) last_refill_ns_by_key: HashMap<PreSignKey, i64>,
     pub(super) pending_refill_by_key: HashMap<PreSignKey, ()>,
+    pub(super) broker_failure_count: HashMap<String, u64>,
     pub(super) telemetry: Option<TelemetryEmitter>,
 }
 

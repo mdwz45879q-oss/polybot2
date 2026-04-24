@@ -263,7 +263,22 @@ impl DispatchRuntime {
         }
         let keys = self.pending_refill_by_key.keys().cloned().collect::<Vec<_>>();
         for key in keys {
-            let _ = self.refill_presign_key_async(&key, false).await;
+            if let Err(err) = self.refill_presign_key_async(&key, false).await {
+                self.emit_event(
+                    "exec_error",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "presign_refill_failed",
+                    json!({
+                        "token_id": redact_token_id(key.token_id.as_str()),
+                        "error": err,
+                        "pool_depth": self.presign_depth(&key),
+                    }),
+                );
+            }
         }
     }
 
