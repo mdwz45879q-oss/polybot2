@@ -210,13 +210,7 @@ class NativeHotPathService:
                 getattr(exec_cfg, "presign_private_key", "") or ""
             ),
             "presign_pool_target_per_key": int(
-                getattr(exec_cfg, "presign_pool_target_per_key", 8) or 8
-            ),
-            "presign_refill_batch_size": int(
-                getattr(exec_cfg, "presign_refill_batch_size", 4) or 4
-            ),
-            "presign_refill_interval_seconds": float(
-                getattr(exec_cfg, "presign_refill_interval_seconds", 0.02) or 0.02
+                getattr(exec_cfg, "presign_pool_target_per_key", 1) or 1
             ),
             "presign_startup_warm_timeout_seconds": float(
                 getattr(exec_cfg, "presign_startup_warm_timeout_seconds", 5.0) or 5.0

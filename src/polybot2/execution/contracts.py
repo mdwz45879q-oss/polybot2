@@ -80,9 +80,7 @@ class FastExecutionConfig:
     presign_private_key: str = ""
     presign_ttl_seconds: float = 20.0
     presign_safety_margin_seconds: float = 1.0
-    presign_pool_target_per_key: int = 8
-    presign_refill_batch_size: int = 4
-    presign_refill_interval_seconds: float = 0.02
+    presign_pool_target_per_key: int = 1
     presign_startup_warm_timeout_seconds: float = 5.0
     presign_price_bps_bucket: float = 25.0
     presign_size_bucket_scheme: tuple[float, ...] = (5.0, 10.0, 20.0, 50.0, 100.0)
@@ -126,10 +124,6 @@ class FastExecutionConfig:
             raise ValueError("presign_safety_margin_seconds must be < presign_ttl_seconds")
         if int(self.presign_pool_target_per_key) < 0:
             raise ValueError("presign_pool_target_per_key must be >= 0")
-        if int(self.presign_refill_batch_size) <= 0:
-            raise ValueError("presign_refill_batch_size must be > 0")
-        if float(self.presign_refill_interval_seconds) <= 0.0:
-            raise ValueError("presign_refill_interval_seconds must be > 0")
         if float(self.presign_startup_warm_timeout_seconds) <= 0.0:
             raise ValueError("presign_startup_warm_timeout_seconds must be > 0")
         if float(self.presign_price_bps_bucket) <= 0.0:
@@ -197,10 +191,6 @@ class FastExecutionConfig:
             vals["presign_safety_margin_seconds"] = float(v)
         if (v := _get("PRESIGN_POOL_TARGET_PER_KEY")) is not None:
             vals["presign_pool_target_per_key"] = int(v)
-        if (v := _get("PRESIGN_REFILL_BATCH_SIZE")) is not None:
-            vals["presign_refill_batch_size"] = int(v)
-        if (v := _get("PRESIGN_REFILL_INTERVAL_SECONDS")) is not None:
-            vals["presign_refill_interval_seconds"] = float(v)
         if (v := _get("PRESIGN_STARTUP_WARM_TIMEOUT_SECONDS")) is not None:
             vals["presign_startup_warm_timeout_seconds"] = float(v)
         if (v := _get("PRESIGN_PRICE_BPS_BUCKET")) is not None:
