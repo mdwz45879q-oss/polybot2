@@ -66,6 +66,7 @@ pub(crate) struct PresignTemplateData {
     pub(super) token_id: String,
     pub(super) side: Option<String>,
     pub(super) amount_usdc: Option<f64>,
+    pub(super) size_shares: Option<f64>,
     pub(super) limit_price: Option<f64>,
     pub(super) time_in_force: Option<String>,
 }

@@ -144,6 +144,7 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: MlbOrder
                         time_in_force=str(order_policy.time_in_force),
                         client_order_id=f"hp_template_{len(out) + 1}",
                         condition_id=str(target.condition_id or ""),
+                        size_shares=float(order_policy.size_shares),
                     )
                 )
     return out

@@ -143,13 +143,16 @@ class NativeHotPathService:
 
     @staticmethod
     def _serialize_template_order(order: OrderRequest) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "token_id": str(order.token_id or ""),
             "side": str(order.side or ""),
             "amount_usdc": float(order.amount_usdc),
             "limit_price": float(order.limit_price),
             "time_in_force": str(order.time_in_force or ""),
         }
+        if hasattr(order, "size_shares") and order.size_shares is not None:
+            out["size_shares"] = float(order.size_shares)
+        return out
 
     def prewarm_presign(self, template_orders: list[OrderRequest]) -> int:
         templates: list[dict[str, Any]] = []
