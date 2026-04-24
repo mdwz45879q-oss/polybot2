@@ -75,6 +75,10 @@ else
   echo ">>> Miniconda already installed at $CONDA_DIR"
 fi
 
+# Accept conda terms of service (required by newer conda versions)
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true"
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true"
+
 # ───────────────────────────────────────────────────────────────────────────
 # 3. Conda environment with Python 3.11
 # ───────────────────────────────────────────────────────────────────────────
@@ -209,8 +213,16 @@ echo "=== Bootstrap complete ==="
 echo
 echo "Conda env:   conda activate $CONDA_ENV"
 echo "Env file:    /etc/polybot2/polybot2.env"
-echo "Service:     sudo systemctl enable --now polybot2-hotpath"
-echo "Logs:        tail -f /var/log/polybot2/hotpath.log"
+echo
+echo "Before running the hotpath, complete the prerequisite pipeline:"
+echo "  conda activate $CONDA_ENV && cd $APP_DIR"
+echo "  polybot2 data sync --db runtime/polybot2.sqlite"
+echo "  polybot2 provider sync --provider kalstrop --league mlb --db runtime/polybot2.sqlite"
+echo "  polybot2 link build --provider kalstrop --league mlb --db runtime/polybot2.sqlite"
+echo "  polybot2 link review session --provider kalstrop --league mlb --link-run-id <N> --db runtime/polybot2.sqlite"
+echo
+echo "Then run the hotpath interactively:"
+echo "  polybot2 hotpath run --provider kalstrop --league mlb --link-run-id <N> --db runtime/polybot2.sqlite --execution-mode paper --with-observe"
 echo
 echo "To install additional packages:"
 echo "  conda activate $CONDA_ENV && conda install <package>"
@@ -220,4 +232,3 @@ echo "To rebuild after pulling new code:"
 echo "  conda activate $CONDA_ENV && cd $APP_DIR"
 echo "  pip install -e '.[dev]'"
 echo "  maturin develop --release --manifest-path native/polybot2_native/Cargo.toml"
-echo "  sudo systemctl restart polybot2-hotpath"
