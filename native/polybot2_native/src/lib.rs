@@ -293,7 +293,6 @@ struct NativeMlbEngine {
     limit_price: f64,
     time_in_force: String,
     over_targets_by_game: HashMap<String, Vec<TotalsTarget>>,
-    over_lines_by_game: HashMap<String, Vec<f64>>,
     under_targets_by_game: HashMap<String, Vec<TotalsTarget>>,
     nrfi_targets_by_game: HashMap<String, HashMap<String, NrfiTarget>>,
     moneyline_by_game: HashMap<String, HashMap<String, FinalTarget>>,

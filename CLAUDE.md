@@ -25,12 +25,12 @@ pip install -e ".[dev]"
 
 **Tests:**
 ```bash
-cargo test --manifest-path native/polybot2_native/Cargo.toml   # 15 Rust tests
-pytest tests/ --ignore=tests/live -q                            # 146 Python tests
+cargo test --manifest-path native/polybot2_native/Cargo.toml   # 31 Rust tests
+pytest tests/ --ignore=tests/live -q                            # Python tests
 pytest tests/test_polybot2_hotpath_observe.py -k "heartbeat"    # single test
 ```
 
-Tests in `tests/live/` require real API credentials and `POLYBOT2_ENABLE_LIVE_*` env vars.
+Tests in `tests/live/` require real API credentials and `POLYBOT2_ENABLE_LIVE_*` env vars. The 4 live Rust execution tests (`live_rust_submit_*`) are gated behind `POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1` and validate SDK order construction for FAK, FOK, GTC, and GTD against the real Polymarket CLOB using sub-minimum orders that get rejected without risking money.
 
 ## Architecture
 
@@ -53,9 +53,9 @@ polybot2 hotpath observe    → scoreboard + execution log
 | `engine.rs` | Core: PyO3 interface, `process_tick` orchestration, game state management, plan loading |
 | `eval.rs` | MLB evaluation strategies: totals (over/under), NRFI, moneyline, spread |
 | `parse.rs` | Tick parsing from Kalstrop WS frames (PyO3 + serde_json variants), extraction helpers |
-| `dispatch/flow.rs` | Intent → order lifecycle: noop (paper) and http (live) paths, cancel-replace |
+| `dispatch/flow.rs` | Intent → order lifecycle: noop (paper) and http (live) paths, cancel-replace, stale order eviction |
 | `dispatch/presign_pool.rs` | Presign order pool: parallel warmup at startup, incremental refill during runtime |
-| `dispatch/sdk_exec.rs` | Polymarket SDK integration: sign, submit, cancel, get orders |
+| `dispatch/sdk_exec.rs` | Polymarket SDK integration: sign, submit, cancel, get orders. Branches by order type: FAK/FOK use `market_order()`, GTC/GTD use `limit_order()` |
 | `dispatch/events.rs` | Telemetry event emission helpers, lifecycle status mapping |
 | `ws.rs` | Live worker: Kalstrop WS connection, subscription management, heartbeat emission |
 | `telemetry.rs` | Non-blocking Unix DGRAM telemetry: bounded channel → worker thread → socket |
@@ -85,36 +85,35 @@ Python `NativeHotPathService` calls Rust `NativeHotPathRuntime` via PyO3:
 
 Rust emits events via `TelemetryEmitter.emit()` → bounded `sync_channel(4096)` → worker thread → `UnixDatagram::send_to("/tmp/polybot2_hotpath_telemetry.sock")`. Python observe monitor binds a DGRAM socket at the same path. **The monitor must bind BEFORE the Rust worker starts** (socket race condition — monitor.start() before hotpath.start()).
 
+Telemetry is fully off the hot path (message received → order submitted). All emit calls happen after the network operation returns. The `try_send` on the bounded channel is non-blocking — if the channel is full, events are dropped and counted.
+
 macOS Unix DGRAM limit is 2048 bytes. Heartbeat payloads use compact field names (`h`, `a`, `s`, `inn`, `half`) to stay under this limit.
+
+### Order Types
+
+The dispatch layer supports four order types, configured via `time_in_force` in `HOTPATH_EXECUTION_POLICY`:
+- **FAK/FOK** (market orders) → `client.market_order().amount(SdkAmount::usdc(...))` — uses `amount_usdc` from config
+- **GTC/GTD** (limit orders) → `client.limit_order().size(...).price(...)` — uses `size_shares` from config. GTD also computes `expiration_ts = now + gtd_expiration_seconds` at submission time.
+
+Price decimals for limit orders must be normalized (`.normalize()`) to strip trailing zeros, or the SDK rejects them for exceeding the token's tick-size precision.
 
 ## Critical Invariants
 
 1. **Hotpath ordering:** Match update → decision work → order submission → telemetry. Telemetry must never block or delay the decision/submit path.
 
-2. **Fail-closed:** Presign pool miss → error (no fallback to unsigned submit). TIF must be FAK. Startup warmup failure → process won't trade.
+2. **Fail-closed:** Presign pool miss → error (no fallback to unsigned submit). Startup warmup failure → process won't trade.
 
 3. **Spread evaluation formula:** `margin + line > 0` where the compiler negates the line for the complement ("No" label) side of spread markets.
 
 4. **Totals over crossing:** `bisect_right` returns the insertion point — check `hi_raw > 0` before using `hi_raw - 1` as the target index. If 0, no line was crossed.
 
-5. **One-shot intents:** Each strategy key can emit at most one intent per session (tracked via `attempted_strategy_keys` HashSet).
+5. **One-shot intents:** Each strategy key can emit at most one intent per session (tracked via `attempted_strategy_keys` HashSet). This means the cancel-replace flow in `dispatch/flow.rs` is currently unreachable — it exists for future use when order management is needed.
 
-## First Steps for a New Session
+6. **Independent evaluation:** `evaluate_totals`, `evaluate_nrfi`, and `evaluate_final` all run independently on every tick (not an if/else chain). A game with both totals and NRFI targets will evaluate both.
 
-Begin with a comprehensive audit of the Rust hot path, with special attention to:
+7. **NRFI first-inning gate:** `nrfi_first_inning_observed` HashSet tracks whether the engine was observing during the first inning. Late subscriptions (inning > 1) are permanently skipped. Ticks without inning data defer evaluation.
 
-1. **Telemetry pipeline** — verify events flow end-to-end from Rust emission through the Unix DGRAM socket to the Python observe store. Check `health_snapshot()` for `telemetry_emitted` vs `telemetry_dropped` counts.
-2. **MLB engine and triggering logic** (`eval.rs`, `engine.rs`) — trace `process_tick` → `evaluate_totals` / `evaluate_nrfi` / `evaluate_final` paths. Verify cooldown/debounce/one-shot filtering behaves correctly.
-3. **Subscription lifecycle** — `ws.rs` manages active subscriptions via `refresh_active_subscriptions`. Games enter/leave the active set based on `subscribe_lead_minutes` and kickoff time.
-
-### Known Gaps Requiring Attention
-
-- **Subscription events not granular enough.** The `subscriptions_changed` event emits the total active count but does NOT emit per-game subscribe/unsubscribe events (e.g., "game X subscribed", "game Y unsubscribed"). This makes it impossible for operators to see exactly which games the hotpath is tracking at any moment.
-
-- **Missing unit tests for triggering edge cases.** The evaluation logic in `eval.rs` has no unit tests for:
-  - **Mid-game subscription:** subscribing to a game already in progress (e.g., score is 3-2 in the 5th inning). The engine must correctly handle the initial state without falsely triggering on the first tick (e.g., the totals `bisect_right` logic must not treat the first observed total as a "crossing" from 0).
-  - **Post-game subscription:** subscribing to a game that has already finished. The engine must not place any bets — `is_game_completed` should gate all evaluations, and `match_completed` must be correctly parsed from the initial tick.
-  - **NRFI after first inning:** subscribing after the first inning is complete — the engine must not emit NRFI signals for innings that have already passed.
+8. **Stale order eviction:** `evict_stale_active_orders()` removes entries from `active_orders_by_strategy` older than 60 seconds, preventing unbounded HTTP polling on persistent API failures.
 
 ## CLI Commands
 
@@ -128,6 +127,8 @@ polybot2 hotpath replay --provider kalstrop --league mlb --link-run-id N --captu
 polybot2 hotpath observe
 polybot2 mapping validate
 ```
+
+The prerequisite pipeline must run in order before the hotpath: data sync → provider sync → link build → link review.
 
 ## Environment Variables
 
@@ -143,3 +144,4 @@ Database: `POLYBOT2_DB_PATH` (default: `../../data/prediction_markets.db` relati
 - Python ≥ 3.11, Rust edition 2021, PyO3 0.22 with ABI3.
 - `polymarket-client-sdk` 0.4.4 pins `alloy` at 1.6.3 — do not add a different alloy version or traits will mismatch.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
+- The field name is `amount_usdc` everywhere (not `notional_usdc` — that was the legacy name, fully removed).

@@ -52,28 +52,21 @@ impl NativeMlbEngine {
         let mut under_final = 0i64;
 
         if total_now_int > prev_total_int {
-            if let (Some(targets), Some(lines)) = (
-                self.over_targets_by_game.get(&uid),
-                self.over_lines_by_game.get(&uid),
-            ) {
-                if !targets.is_empty() && !lines.is_empty() {
-                    let hi_raw = bisect_right(lines, total_now_int as f64);
-                    let lo_idx = bisect_right(lines, prev_total_int as f64);
-                    if hi_raw > 0 {
-                        let hi_idx = hi_raw - 1;
-                        if hi_idx >= lo_idx && hi_idx < targets.len() {
-                            let chosen = &targets[hi_idx];
-                            intents.push(self.mk_intent(
-                                &chosen.token_id,
-                                &chosen.condition_id,
-                                &chosen.strategy_key,
-                                &uid,
-                                &format!("mlb_totals_over_cross:{}", chosen.line),
-                                "totals",
-                                "over",
-                            ));
-                            over_crossed = 1;
-                        }
+            if let Some(targets) = self.over_targets_by_game.get(&uid) {
+                let prev = prev_total_int as f64;
+                let now = total_now_int as f64;
+                for target in targets.iter() {
+                    if target.line > prev && target.line <= now {
+                        intents.push(self.mk_intent(
+                            &target.token_id,
+                            &target.condition_id,
+                            &target.strategy_key,
+                            &uid,
+                            &format!("mlb_totals_over_cross:{}", target.line),
+                            "totals",
+                            "over",
+                        ));
+                        over_crossed += 1;
                     }
                 }
             }
@@ -299,20 +292,6 @@ impl NativeMlbEngine {
             )
         }
     }
-}
-
-pub(crate) fn bisect_right(vals: &[f64], x: f64) -> usize {
-    let mut lo = 0usize;
-    let mut hi = vals.len();
-    while lo < hi {
-        let mid = lo + (hi - lo) / 2;
-        if x < vals[mid] {
-            hi = mid;
-        } else {
-            lo = mid + 1;
-        }
-    }
-    lo
 }
 
 pub(crate) fn is_first_inning(state: &GameState, include_end: bool) -> bool {

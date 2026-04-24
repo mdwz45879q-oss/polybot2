@@ -7,7 +7,7 @@ __pycache__/
 .DS_Store
 native/polybot2_native/target/
 artifacts/
-data/
+/data/
 *.sqlite
 *.db
 .env
