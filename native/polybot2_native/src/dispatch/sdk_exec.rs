@@ -119,7 +119,7 @@ impl DispatchRuntime {
         } else {
             let size = parse_decimal_from_f64(request.size_shares, 2, "size_shares")?;
             let limit_price =
-                parse_decimal_from_f64(request.limit_price, 6, "limit_price")?;
+                parse_decimal_from_f64(request.limit_price, 6, "limit_price")?.normalize();
             let mut builder = sdk
                 .client
                 .limit_order()
@@ -300,7 +300,7 @@ pub(super) async fn sign_order_batch(
             let size =
                 parse_decimal_from_f64(template.size_shares, 2, "size_shares")?;
             let limit_price =
-                parse_decimal_from_f64(template.limit_price, 6, "limit_price")?;
+                parse_decimal_from_f64(template.limit_price, 6, "limit_price")?.normalize();
             let mut builder = client
                 .limit_order()
                 .token_id(token_id)

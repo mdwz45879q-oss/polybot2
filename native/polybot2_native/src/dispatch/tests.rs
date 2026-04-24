@@ -351,9 +351,10 @@ fn build_live_dispatch_config() -> Option<DispatchConfig> {
 
 fn contains_min_size_rejection(err: &str) -> bool {
     let lowered = err.to_ascii_lowercase();
-    lowered.contains("minimum") && lowered.contains("shares")
+    (lowered.contains("minimum") && lowered.contains("shares"))
         || lowered.contains("min size")
         || lowered.contains("minimum order size")
+        || (lowered.contains("lower than the minimum") && lowered.contains("size"))
 }
 
 #[test]
