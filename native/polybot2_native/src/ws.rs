@@ -405,7 +405,7 @@ pub(crate) async fn run_live_worker_async(
             );
         }
 
-        loop {
+        'event_loop: loop {
             let mut candidate_changed_inner = false;
             loop {
                 match command_rx.try_recv() {
@@ -501,6 +501,110 @@ pub(crate) async fn run_live_worker_async(
                     break;
                 }
             }
+
+            // Drain all pending WS frames before housekeeping.
+            // First read blocks up to 100ms; subsequent reads are non-blocking
+            // to drain any frames buffered while housekeeping ran.
+            let mut first_read = true;
+            loop {
+                let wait = if first_read {
+                    Duration::from_millis(100)
+                } else {
+                    Duration::ZERO
+                };
+                let next = tokio::time::timeout(wait, ws.next()).await;
+                let msg = match next {
+                    Err(_) => break,
+                    Ok(None) => {
+                        with_health(&health, |h| {
+                            h.reconnects += 1;
+                            h.last_error = "ws_stream_closed".to_string();
+                        });
+                        break 'event_loop;
+                    }
+                    Ok(Some(Err(e))) => {
+                        with_health(&health, |h| {
+                            h.reconnects += 1;
+                            h.last_error = format!("ws_read: {}", e);
+                        });
+                        break 'event_loop;
+                    }
+                    Ok(Some(Ok(v))) => v,
+                };
+                first_read = false;
+
+                let source_recv_ns = crate::dispatch::now_unix_ns();
+                let frame: Value = match msg {
+                    Message::Text(text) => match parse_json_text(text.as_ref()) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            if let Some(emitter) = telemetry.as_ref() {
+                                emitter.emit_empty(
+                                    "provider_decode_error",
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    "json_text_decode_error",
+                                );
+                            }
+                            continue;
+                        }
+                    },
+                    Message::Binary(bytes) => match parse_json_bytes(bytes.as_ref()) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            if let Some(emitter) = telemetry.as_ref() {
+                                emitter.emit_empty(
+                                    "provider_decode_error",
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    "",
+                                    "json_binary_decode_error",
+                                );
+                            }
+                            continue;
+                        }
+                    },
+                    Message::Ping(p) => {
+                        let _ = ws.send(Message::Pong(p)).await;
+                        continue;
+                    }
+                    Message::Close(_) => break 'event_loop,
+                    _ => continue,
+                };
+
+                let mut dispatch_error: Option<String> = None;
+                crate::replay::process_decoded_frame_async(
+                    engine,
+                    &frame,
+                    source_recv_ns,
+                    source_recv_ns,
+                    &mut dispatch_runtime,
+                    telemetry.as_ref(),
+                    &mut telemetry_state,
+                    |err| {
+                        if dispatch_error.is_none() {
+                            dispatch_error = Some(err);
+                        }
+                    },
+                )
+                .await;
+                if let Some(err) = dispatch_error {
+                    if let Some(emitter) = telemetry.as_ref() {
+                        emitter.emit_empty("exec_error", "", "", "", "", "", err.as_str());
+                    }
+                    with_health(&health, |h| h.last_error = format!("dispatch: {}", err));
+                }
+            }
+
+            // Housekeeping: runs only when no WS frames are pending
+            if active_subs.is_empty() {
+                break;
+            }
             let now = Instant::now();
             if let Some(interval) = refresh_interval {
                 if now.duration_since(last_active_refresh) >= interval {
@@ -530,96 +634,6 @@ pub(crate) async fn run_live_worker_async(
                 last_heartbeat = now;
             }
             dispatch_runtime.refill_presign_tick_async().await;
-            if active_subs.is_empty() {
-                break;
-            }
-
-            let next = tokio::time::timeout(Duration::from_millis(100), ws.next()).await;
-            let msg = match next {
-                Err(_) => continue,
-                Ok(None) => {
-                    with_health(&health, |h| {
-                        h.reconnects += 1;
-                        h.last_error = "ws_stream_closed".to_string();
-                    });
-                    break;
-                }
-                Ok(Some(Err(e))) => {
-                    with_health(&health, |h| {
-                        h.reconnects += 1;
-                        h.last_error = format!("ws_read: {}", e);
-                    });
-                    break;
-                }
-                Ok(Some(Ok(v))) => v,
-            };
-
-            let source_recv_ns = crate::dispatch::now_unix_ns();
-            let frame: Value = match msg {
-                Message::Text(text) => match parse_json_text(text.as_ref()) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        if let Some(emitter) = telemetry.as_ref() {
-                            emitter.emit_empty(
-                                "provider_decode_error",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "json_text_decode_error",
-                            );
-                        }
-                        continue;
-                    }
-                },
-                Message::Binary(bytes) => match parse_json_bytes(bytes.as_ref()) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        if let Some(emitter) = telemetry.as_ref() {
-                            emitter.emit_empty(
-                                "provider_decode_error",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "json_binary_decode_error",
-                            );
-                        }
-                        continue;
-                    }
-                },
-                Message::Ping(p) => {
-                    let _ = ws.send(Message::Pong(p)).await;
-                    continue;
-                }
-                Message::Close(_) => break,
-                _ => continue,
-            };
-
-            let mut dispatch_error: Option<String> = None;
-            crate::replay::process_decoded_frame_async(
-                engine,
-                &frame,
-                source_recv_ns,
-                source_recv_ns,
-                &mut dispatch_runtime,
-                telemetry.as_ref(),
-                &mut telemetry_state,
-                |err| {
-                    if dispatch_error.is_none() {
-                        dispatch_error = Some(err);
-                    }
-                },
-            )
-            .await;
-            if let Some(err) = dispatch_error {
-                if let Some(emitter) = telemetry.as_ref() {
-                    emitter.emit_empty("exec_error", "", "", "", "", "", err.as_str());
-                }
-                with_health(&health, |h| h.last_error = format!("dispatch: {}", err));
-            }
         }
     }
 }
