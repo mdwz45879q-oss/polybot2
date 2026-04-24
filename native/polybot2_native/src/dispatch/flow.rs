@@ -89,10 +89,9 @@ impl DispatchRuntime {
             filled_amount_usdc: 0.0,
             limit_price: request.limit_price,
             time_in_force: request.time_in_force.clone(),
-            status: "submitted".to_string(),
+            status: "filled".to_string(),
             reason: "ok".to_string(),
             error_code: String::new(),
-
         };
         self.emit_event_lazy(
             "order_submit_called",
@@ -311,19 +310,21 @@ impl DispatchRuntime {
                     let count = self.broker_failure_count.entry(strategy_key.clone()).or_insert(0);
                     *count += 1;
                     let failures = *count;
-                    self.emit_event(
-                        "exec_error",
-                        active_ref.source_universal_id.as_str(),
-                        active_ref.chain_id.as_str(),
-                        strategy_key.as_str(),
-                        active_ref.client_order_id.as_str(),
-                        exchange_id.as_str(),
-                        "broker_query_failed",
-                        json!({
-                            "error": err,
-                            "consecutive_failures": failures,
-                        }),
-                    );
+                    if failures == 1 {
+                        self.emit_event(
+                            "exec_error",
+                            active_ref.source_universal_id.as_str(),
+                            active_ref.chain_id.as_str(),
+                            strategy_key.as_str(),
+                            active_ref.client_order_id.as_str(),
+                            exchange_id.as_str(),
+                            "broker_query_failed",
+                            json!({
+                                "error": err,
+                                "consecutive_failures": failures,
+                            }),
+                        );
+                    }
                 }
             }
         }

@@ -19,7 +19,7 @@ HOTPATH_EXECUTION_POLICY = {
     "mlb": {
         "amount_usdc": 1.01,
         "size_shares": 5.0,
-        "time_in_force": "FAK",
+        "time_in_force": "GTC",
         "gtd_expiration_seconds": 300,
         "require_presign": True,
         "limit_price": 0.99,

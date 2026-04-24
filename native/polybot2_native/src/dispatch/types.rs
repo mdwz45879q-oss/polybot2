@@ -2,8 +2,9 @@ use super::*;
 use crate::telemetry::TelemetryEmitter;
 use std::collections::{HashMap, VecDeque};
 
-const TERMINAL_STATUSES: [&str; 6] = [
+const TERMINAL_STATUSES: [&str; 8] = [
     "filled", "canceled", "expired", "rejected", "failed", "replaced",
+    "matched", "delayed",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

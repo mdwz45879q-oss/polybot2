@@ -365,48 +365,45 @@ impl NativeMlbEngine {
 
 impl NativeMlbEngine {
     pub(crate) fn dump_game_states_for_heartbeat(&self, candidate_subs: &[String]) -> Value {
-        let resolved: HashSet<&str> = candidate_subs.iter().map(|s| s.as_str()).collect();
         let mut games = serde_json::Map::new();
-        for (game_id, state) in &self.game_states {
-            games.insert(
-                game_id.clone(),
-                json!({
-                    "h": state.home,
-                    "a": state.away,
-                    "s": state.game_state,
-                    "inn": state.inning_number,
-                    "half": state.inning_half,
-                    "mc": state.match_completed,
-                }),
-            );
-        }
         let now_s = crate::dispatch::now_unix_s();
-        for (game_id, kickoff_ts) in &self.kickoff_ts_by_game {
-            if games.contains_key(game_id.as_str()) {
-                continue;
-            }
-            if self.is_game_completed(game_id.as_str()) {
+        for game_id in candidate_subs {
+            if let Some(state) = self.game_states.get(game_id.as_str()) {
+                games.insert(
+                    game_id.clone(),
+                    json!({
+                        "h": state.home,
+                        "a": state.away,
+                        "s": state.game_state,
+                        "inn": state.inning_number,
+                        "half": state.inning_half,
+                        "mc": state.match_completed,
+                    }),
+                );
+            } else if self.is_game_completed(game_id.as_str()) {
                 games.insert(game_id.clone(), json!({"s": "FINAL"}));
-            } else if !resolved.contains(game_id.as_str()) && now_s >= *kickoff_ts {
-                games.insert(game_id.clone(), json!({"s": "FINAL"}));
-            } else if now_s < *kickoff_ts {
-                games.insert(game_id.clone(), json!({"s": "NOT STARTED"}));
-            } else {
-                games.insert(game_id.clone(), json!({"s": "LIVE"}));
+            } else if let Some(kickoff_ts) = self.kickoff_ts_by_game.get(game_id.as_str()) {
+                if now_s < *kickoff_ts {
+                    games.insert(game_id.clone(), json!({"s": "NOT STARTED"}));
+                } else {
+                    games.insert(game_id.clone(), json!({"s": "LIVE"}));
+                }
             }
         }
         Value::Object(games)
     }
 
-    pub(crate) fn dump_team_names(&self) -> Value {
+    pub(crate) fn dump_team_names(&self, candidate_subs: &[String]) -> Value {
         let mut teams = serde_json::Map::new();
-        for (game_id, home) in &self.home_team_by_game {
-            let away = self
-                .away_team_by_game
-                .get(game_id)
-                .cloned()
-                .unwrap_or_default();
-            teams.insert(game_id.clone(), json!([home, away]));
+        for game_id in candidate_subs {
+            if let Some(home) = self.home_team_by_game.get(game_id.as_str()) {
+                let away = self
+                    .away_team_by_game
+                    .get(game_id.as_str())
+                    .cloned()
+                    .unwrap_or_default();
+                teams.insert(game_id.clone(), json!([home, away]));
+            }
         }
         Value::Object(teams)
     }

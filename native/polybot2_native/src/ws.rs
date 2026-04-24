@@ -621,7 +621,7 @@ pub(crate) async fn run_live_worker_async(
                         "",
                         json!({
                             "games": engine.dump_game_states_for_heartbeat(active_subs.as_slice()),
-                            "teams": engine.dump_team_names(),
+                            "teams": engine.dump_team_names(active_subs.as_slice()),
                             "dm": dispatch_runtime.dispatch_mode_label(),
                         }),
                     );
