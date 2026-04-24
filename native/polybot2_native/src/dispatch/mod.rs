@@ -28,7 +28,10 @@ pub(super) use types::{
 
 static NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-pub(crate) fn build_dispatch_config(exec_cfg: ExecStartConfig) -> Result<DispatchConfig, String> {
+pub(crate) fn build_dispatch_config_with_gtd(
+    exec_cfg: ExecStartConfig,
+    gtd_expiration_seconds: i64,
+) -> Result<DispatchConfig, String> {
     let mode_text = exec_cfg
         .dispatch_mode
         .unwrap_or_else(|| "noop".to_string())
@@ -87,6 +90,7 @@ pub(crate) fn build_dispatch_config(exec_cfg: ExecStartConfig) -> Result<Dispatc
             .active_order_refresh_interval_seconds
             .unwrap_or(0.25)
             .max(0.0),
+        gtd_expiration_seconds: gtd_expiration_seconds.max(0),
     })
 }
 

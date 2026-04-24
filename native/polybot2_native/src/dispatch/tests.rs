@@ -422,3 +422,37 @@ fn live_rust_submit_gtc_min_size_rejection() {
         err
     );
 }
+
+#[test]
+fn live_rust_submit_gtd_min_size_rejection() {
+    let Some(cfg) = build_live_dispatch_config() else {
+        eprintln!("skipping live GTD test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+        return;
+    };
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    let mut rt = DispatchRuntime::new(cfg, None);
+    let exp_ts = now_unix_s() + 300;
+    let request = OrderRequestData {
+        token_id,
+        side: "buy_yes".to_string(),
+        amount_usdc: 1.0,
+        limit_price: 0.5,
+        time_in_force: "GTD".to_string(),
+        client_order_id: format!("rust_live_gtd_{}", now_unix_s()),
+        size_shares: 2.0,
+        expiration_ts: Some(exp_ts),
+    };
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let err = tokio_rt
+        .block_on(rt.submit_with_policy_async(&request))
+        .expect_err("GTD with size < 5 shares should be rejected by exchange");
+    assert!(
+        contains_min_size_rejection(err.as_str()),
+        "unexpected GTD live rejection: {}",
+        err
+    );
+}

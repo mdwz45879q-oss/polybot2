@@ -37,8 +37,10 @@ impl NativeHotPathRuntime {
             .map_err(|e| PyValueError::new_err(format!("invalid_exec_config_json:{}", e)))?;
         let worker_cfg = cfg.clone();
         self.runtime_cfg = cfg.clone();
+        let gtd_exp_s = cfg.gtd_expiration_seconds.unwrap_or(300).max(0);
         let dispatch_cfg =
-            crate::dispatch::build_dispatch_config(exec_cfg).map_err(PyValueError::new_err)?;
+            crate::dispatch::build_dispatch_config_with_gtd(exec_cfg, gtd_exp_s)
+                .map_err(PyValueError::new_err)?;
         self.dispatch_cfg = dispatch_cfg.clone();
         let runtime_tif = cfg
             .time_in_force

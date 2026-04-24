@@ -10,15 +10,21 @@ impl DispatchRuntime {
     }
 
     fn build_request_from_intent(&self, intent: &Intent) -> OrderRequestData {
+        let tif = normalize_tif(intent.time_in_force.as_str());
+        let expiration_ts = if tif == "GTD" && self.cfg.gtd_expiration_seconds > 0 {
+            Some(now_unix_s() + self.cfg.gtd_expiration_seconds)
+        } else {
+            None
+        };
         OrderRequestData {
             token_id: intent.token_id.clone(),
             side: normalize_side(intent.side.as_str()),
             amount_usdc: intent.amount_usdc.max(0.0),
             limit_price: intent.limit_price.max(0.0),
-            time_in_force: normalize_tif(intent.time_in_force.as_str()),
+            time_in_force: tif,
             client_order_id: new_client_order_id(),
             size_shares: intent.size_shares.max(0.0),
-            expiration_ts: None,
+            expiration_ts,
         }
     }
 
