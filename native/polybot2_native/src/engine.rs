@@ -54,6 +54,7 @@ impl NativeMlbEngine {
             token_ids_by_game: HashMap::new(),
             totals_final_under_emitted: HashSet::new(),
             nrfi_resolved_games: HashSet::new(),
+            nrfi_first_inning_observed: HashSet::new(),
             final_resolved_games: HashSet::new(),
             rows: HashMap::new(),
             game_states: HashMap::new(),
@@ -66,6 +67,7 @@ impl NativeMlbEngine {
     pub fn reset_runtime_state(&mut self) {
         self.totals_final_under_emitted.clear();
         self.nrfi_resolved_games.clear();
+        self.nrfi_first_inning_observed.clear();
         self.final_resolved_games.clear();
         self.rows.clear();
         self.game_states.clear();
@@ -333,6 +335,7 @@ impl NativeMlbEngine {
                 out.drops_one_shot += one.drops_one_shot;
                 out.decision_non_material += one.decision_non_material;
                 out.decision_no_action += one.decision_no_action;
+                out.observe_signals.extend(one.observe_signals);
                 if !one.intents.is_empty() {
                     out.intents.extend(one.intents);
                     out.reason = one.reason;
@@ -495,24 +498,19 @@ impl NativeMlbEngine {
         );
         let mut intents: Vec<Intent> = Vec::new();
 
-        if let Some(reason) = self.evaluate_totals(&delta, &state, &mut intents) {
-            out.decision = if intents.is_empty() {
-                "no_action".to_string()
-            } else {
-                "action".to_string()
-            };
-            out.reason = reason;
-        } else if let Some(reason) = self.evaluate_nrfi(&delta, &state, &mut intents) {
-            out.decision = if intents.is_empty() {
-                "no_action".to_string()
-            } else {
-                "action".to_string()
-            };
-            out.reason = reason;
-        } else {
-            let (reason, decision) = self.evaluate_final(&delta, &state, &mut intents);
-            out.reason = reason;
-            out.decision = decision;
+        {
+            let mut reasons: Vec<String> = Vec::new();
+            if let Some(reason) = self.evaluate_totals(&delta, &state, &mut intents) {
+                reasons.push(reason);
+            }
+            if let Some(reason) = self.evaluate_nrfi(&delta, &state, &mut intents) {
+                reasons.push(reason);
+            }
+            {
+                let (reason, _) = self.evaluate_final(&delta, &state, &mut intents);
+                reasons.push(reason);
+            }
+            out.reason = reasons.join("+");
         }
 
         if intents.is_empty() {
@@ -807,6 +805,7 @@ pub(crate) fn process_score_frame_value(
             out.drops_one_shot += one.drops_one_shot;
             out.decision_non_material += one.decision_non_material;
             out.decision_no_action += one.decision_no_action;
+            out.observe_signals.extend(one.observe_signals);
             if !one.intents.is_empty() {
                 out.intents.extend(one.intents);
                 out.reason = one.reason;
@@ -881,5 +880,384 @@ fn result_to_py(py: Python<'_>, res: ProcessResult) -> PyResult<PyObject> {
     }
     out.set_item("intents", intents)?;
     Ok(out.into_py(py))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::process_score_frame_value;
+    use std::collections::HashMap;
+
+    #[test]
+    fn observe_signals_propagated_in_batch() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+
+        let frame1 = json!({
+            "type": "next",
+            "payload": {
+                "data": {
+                    "sportsMatchStateUpdatedV2": {
+                        "fixtureId": "g1",
+                        "matchSummary": {"eventState": "live", "homeScore": 0, "awayScore": 0},
+                        "_hotpath_baseball": {"inning_number": 1, "inning_half": "top"}
+                    }
+                }
+            }
+        });
+        let (out1, _) = process_score_frame_value(&mut engine, &frame1, 1000, 1000);
+        assert!(
+            !out1.observe_signals.is_empty(),
+            "first tick should produce observe_signals for initial state"
+        );
+
+        let frame2 = json!({
+            "type": "next",
+            "payload": {
+                "data": {
+                    "sportsMatchStateUpdatedV2": {
+                        "fixtureId": "g1",
+                        "matchSummary": {"eventState": "live", "homeScore": 1, "awayScore": 0},
+                        "_hotpath_baseball": {"inning_number": 1, "inning_half": "top"}
+                    }
+                }
+            }
+        });
+        let (out2, events_in) = process_score_frame_value(&mut engine, &frame2, 2000, 2000);
+        assert_eq!(events_in, 1);
+        assert!(
+            out2.observe_signals
+                .iter()
+                .any(|s| s.event_type == "score_changed"),
+            "score change should produce score_changed observe_signal"
+        );
+    }
+
+    #[test]
+    fn observe_signals_accumulate_across_batch_items() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+
+        let setup1 = json!({"type": "next", "payload": {"data": {"sportsMatchStateUpdatedV2": {
+            "fixtureId": "g1", "matchSummary": {"eventState": "live", "homeScore": 0, "awayScore": 0}
+        }}}});
+        let setup2 = json!({"type": "next", "payload": {"data": {"sportsMatchStateUpdatedV2": {
+            "fixtureId": "g2", "matchSummary": {"eventState": "live", "homeScore": 0, "awayScore": 0}
+        }}}});
+        process_score_frame_value(&mut engine, &setup1, 1000, 1000);
+        process_score_frame_value(&mut engine, &setup2, 1000, 1000);
+
+        let batch_frame = json!([
+            {"type": "next", "payload": {"data": {"sportsMatchStateUpdatedV2": {
+                "fixtureId": "g1", "matchSummary": {"eventState": "live", "homeScore": 1, "awayScore": 0}
+            }}}},
+            {"type": "next", "payload": {"data": {"sportsMatchStateUpdatedV2": {
+                "fixtureId": "g2", "matchSummary": {"eventState": "live", "homeScore": 0, "awayScore": 2}
+            }}}}
+        ]);
+        let (out, events_in) = process_score_frame_value(&mut engine, &batch_frame, 3000, 3000);
+        assert_eq!(events_in, 2);
+        let score_changed_count = out
+            .observe_signals
+            .iter()
+            .filter(|s| s.event_type == "score_changed")
+            .count();
+        assert_eq!(
+            score_changed_count, 2,
+            "both game score changes should produce observe_signals"
+        );
+    }
+
+    #[test]
+    fn multi_market_totals_and_nrfi_both_evaluated() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let game_id = "g1".to_string();
+
+        engine.over_targets_by_game.insert(
+            game_id.clone(),
+            vec![TotalsTarget {
+                line: 0.5,
+                token_id: "tok_over".to_string(),
+                condition_id: "cond_over".to_string(),
+                strategy_key: "sk_over".to_string(),
+            }],
+        );
+        engine
+            .over_lines_by_game
+            .insert(game_id.clone(), vec![0.5]);
+
+        let mut nrfi_map = HashMap::new();
+        nrfi_map.insert(
+            "yes".to_string(),
+            NrfiTarget {
+                token_id: "tok_nrfi_yes".to_string(),
+                condition_id: "cond_nrfi".to_string(),
+                strategy_key: "sk_nrfi_yes".to_string(),
+            },
+        );
+        engine
+            .nrfi_targets_by_game
+            .insert(game_id.clone(), nrfi_map);
+
+        let tick1 = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 1000,
+            goals_home: Some(0),
+            goals_away: Some(0),
+            inning_number: Some(1),
+            inning_half: "top".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let _ = engine.process_tick(tick1);
+
+        let tick2 = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 2000,
+            goals_home: Some(1),
+            goals_away: Some(0),
+            inning_number: Some(1),
+            inning_half: "top".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let out = engine.process_tick(tick2);
+
+        assert_eq!(out.decision, "action");
+        let has_totals = out.intents.iter().any(|i| i.market_type == "totals");
+        let has_nrfi = out.intents.iter().any(|i| i.market_type == "nrfi");
+        assert!(has_totals, "totals over intent should be present");
+        assert!(has_nrfi, "nrfi yes intent should be present");
+        assert!(
+            out.reason.contains('+'),
+            "reason should join multiple evaluator reasons"
+        );
+    }
+
+    #[test]
+    fn evaluate_final_fires_alongside_totals_at_completion() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let game_id = "g1".to_string();
+
+        engine.under_targets_by_game.insert(
+            game_id.clone(),
+            vec![TotalsTarget {
+                line: 8.5,
+                token_id: "tok_under".to_string(),
+                condition_id: "cond_under".to_string(),
+                strategy_key: "sk_under".to_string(),
+            }],
+        );
+
+        let mut ml_map = HashMap::new();
+        ml_map.insert(
+            "home".to_string(),
+            FinalTarget {
+                token_id: "tok_ml_home".to_string(),
+                condition_id: "cond_ml".to_string(),
+                strategy_key: "sk_ml_home".to_string(),
+            },
+        );
+        engine.moneyline_by_game.insert(game_id.clone(), ml_map);
+
+        let tick1 = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 1000,
+            goals_home: Some(3),
+            goals_away: Some(1),
+            inning_number: Some(9),
+            inning_half: "bottom".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let _ = engine.process_tick(tick1);
+
+        let tick2 = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 2000,
+            goals_home: Some(3),
+            goals_away: Some(1),
+            inning_number: Some(9),
+            inning_half: "bottom".to_string(),
+            match_completed: Some(true),
+            game_state: "FINAL".to_string(),
+            ..Default::default()
+        };
+        let out = engine.process_tick(tick2);
+
+        assert_eq!(out.decision, "action");
+        let has_under = out
+            .intents
+            .iter()
+            .any(|i| i.market_type == "totals" && i.outcome_semantic == "under");
+        let has_ml = out.intents.iter().any(|i| i.market_type == "moneyline");
+        assert!(has_under, "under final intent should be present");
+        assert!(has_ml, "moneyline final intent should be present");
+    }
+
+    #[test]
+    fn nrfi_late_subscription_past_first_inning_blocked() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let game_id = "g1".to_string();
+
+        let mut nrfi_map = HashMap::new();
+        nrfi_map.insert(
+            "no".to_string(),
+            NrfiTarget {
+                token_id: "tok_nrfi_no".to_string(),
+                condition_id: "cond_nrfi".to_string(),
+                strategy_key: "sk_nrfi_no".to_string(),
+            },
+        );
+        engine
+            .nrfi_targets_by_game
+            .insert(game_id.clone(), nrfi_map);
+
+        let tick = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 1000,
+            goals_home: Some(0),
+            goals_away: Some(0),
+            inning_number: Some(2),
+            inning_half: "top".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let out = engine.process_tick(tick);
+
+        let has_nrfi = out.intents.iter().any(|i| i.market_type == "nrfi");
+        assert!(!has_nrfi, "late subscription should not produce NRFI intent");
+        assert!(engine.nrfi_resolved_games.contains(&game_id));
+    }
+
+    #[test]
+    fn nrfi_first_inning_subscription_allows_evaluation() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let game_id = "g1".to_string();
+
+        let mut nrfi_map = HashMap::new();
+        nrfi_map.insert(
+            "yes".to_string(),
+            NrfiTarget {
+                token_id: "tok_nrfi_yes".to_string(),
+                condition_id: "cond_nrfi".to_string(),
+                strategy_key: "sk_nrfi_yes".to_string(),
+            },
+        );
+        engine
+            .nrfi_targets_by_game
+            .insert(game_id.clone(), nrfi_map);
+
+        let tick1 = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 1000,
+            goals_home: Some(0),
+            goals_away: Some(0),
+            inning_number: Some(1),
+            inning_half: "top".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let _ = engine.process_tick(tick1);
+        assert!(engine.nrfi_first_inning_observed.contains(&game_id));
+
+        let tick2 = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 2000,
+            goals_home: Some(1),
+            goals_away: Some(0),
+            inning_number: Some(1),
+            inning_half: "top".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let out = engine.process_tick(tick2);
+
+        let has_nrfi = out.intents.iter().any(|i| i.market_type == "nrfi");
+        assert!(
+            has_nrfi,
+            "NRFI yes intent should fire for observed first inning run"
+        );
+    }
+
+    #[test]
+    fn nrfi_completed_game_first_tick_blocked() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let game_id = "g1".to_string();
+
+        let mut nrfi_map = HashMap::new();
+        nrfi_map.insert(
+            "no".to_string(),
+            NrfiTarget {
+                token_id: "tok_nrfi_no".to_string(),
+                condition_id: "cond_nrfi".to_string(),
+                strategy_key: "sk_nrfi_no".to_string(),
+            },
+        );
+        engine
+            .nrfi_targets_by_game
+            .insert(game_id.clone(), nrfi_map);
+
+        let tick = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 1000,
+            goals_home: Some(0),
+            goals_away: Some(0),
+            inning_number: Some(9),
+            inning_half: "bottom".to_string(),
+            match_completed: Some(true),
+            game_state: "FINAL".to_string(),
+            ..Default::default()
+        };
+        let out = engine.process_tick(tick);
+
+        let has_nrfi = out.intents.iter().any(|i| i.market_type == "nrfi");
+        assert!(
+            !has_nrfi,
+            "completed game on first observation should not produce NRFI"
+        );
+        assert!(engine.nrfi_resolved_games.contains(&game_id));
+    }
+
+    #[test]
+    fn nrfi_no_inning_data_defers_evaluation() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let game_id = "g1".to_string();
+
+        let mut nrfi_map = HashMap::new();
+        nrfi_map.insert(
+            "no".to_string(),
+            NrfiTarget {
+                token_id: "tok_nrfi_no".to_string(),
+                condition_id: "cond_nrfi".to_string(),
+                strategy_key: "sk_nrfi_no".to_string(),
+            },
+        );
+        engine
+            .nrfi_targets_by_game
+            .insert(game_id.clone(), nrfi_map);
+
+        let tick = Tick {
+            universal_id: game_id.clone(),
+            action: "update".to_string(),
+            recv_monotonic_ns: 1000,
+            goals_home: Some(0),
+            goals_away: Some(0),
+            game_state: "live".to_string(),
+            ..Default::default()
+        };
+        let out = engine.process_tick(tick);
+
+        let has_nrfi = out.intents.iter().any(|i| i.market_type == "nrfi");
+        assert!(!has_nrfi, "no inning data should defer NRFI evaluation");
+        assert!(!engine.nrfi_first_inning_observed.contains(&game_id));
+        assert!(!engine.nrfi_resolved_games.contains(&game_id));
+    }
 }
 

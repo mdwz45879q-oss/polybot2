@@ -299,6 +299,7 @@ struct NativeMlbEngine {
     token_ids_by_game: HashMap<String, Vec<String>>,
     totals_final_under_emitted: HashSet<String>,
     nrfi_resolved_games: HashSet<String>,
+    nrfi_first_inning_observed: HashSet<String>,
     final_resolved_games: HashSet<String>,
     rows: HashMap<String, StateRow>,
     game_states: HashMap<String, GameState>,

@@ -121,6 +121,20 @@ impl NativeMlbEngine {
         if self.nrfi_resolved_games.contains(&uid) {
             return Some("mlb_nrfi_already_resolved".to_string());
         }
+        if !self.nrfi_first_inning_observed.contains(&uid) {
+            match state.inning_number {
+                Some(1) => {
+                    self.nrfi_first_inning_observed.insert(uid.clone());
+                }
+                Some(_) => {
+                    self.nrfi_resolved_games.insert(uid.clone());
+                    return Some("mlb_nrfi_skip_late_subscription".to_string());
+                }
+                None => {
+                    return Some("mlb_nrfi_awaiting_inning_data".to_string());
+                }
+            }
+        }
         let targets = if let Some(targets) = self.nrfi_targets_by_game.get(&uid) {
             targets
         } else {
