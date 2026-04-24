@@ -44,18 +44,15 @@ impl NativeHotPathRuntime {
             .time_in_force
             .clone()
             .unwrap_or_else(|| "FAK".to_string());
-        if runtime_tif.trim().to_uppercase() != "FAK" {
-            return Err(PyValueError::new_err(format!(
-                "runtime_time_in_force_not_fak:{}",
-                runtime_tif
-            )));
-        }
+        crate::dispatch::map_sdk_order_type(runtime_tif.trim())
+            .map_err(|e| PyValueError::new_err(format!("runtime_time_in_force_invalid:{}", e)))?;
 
         let mut engine = NativeMlbEngine::new(
             cfg.dedup_ttl_seconds.unwrap_or(2.0),
             cfg.decision_cooldown_seconds.unwrap_or(0.5),
             cfg.decision_debounce_seconds.unwrap_or(0.1),
             cfg.amount_usdc.unwrap_or(5.0),
+            cfg.size_shares.unwrap_or(5.0),
             cfg.limit_price.unwrap_or(0.52),
             runtime_tif,
         );

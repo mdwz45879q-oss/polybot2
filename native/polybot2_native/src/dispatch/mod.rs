@@ -148,6 +148,20 @@ pub(super) fn map_sdk_signature_type(signature_type: i64) -> Result<SdkSignature
     }
 }
 
+pub(crate) fn map_sdk_order_type(tif: &str) -> Result<SdkOrderType, String> {
+    match normalize_tif(tif).as_str() {
+        "FAK" => Ok(SdkOrderType::FAK),
+        "FOK" => Ok(SdkOrderType::FOK),
+        "GTC" => Ok(SdkOrderType::GTC),
+        "GTD" => Ok(SdkOrderType::GTD),
+        other => Err(format!("unsupported_order_type:{}", other)),
+    }
+}
+
+pub(crate) fn is_market_order_type(tif: &str) -> bool {
+    matches!(normalize_tif(tif).as_str(), "FAK" | "FOK")
+}
+
 pub(super) fn parse_decimal_from_f64(
     value: f64,
     precision: usize,

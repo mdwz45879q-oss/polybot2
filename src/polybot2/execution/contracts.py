@@ -230,7 +230,7 @@ class FastExecutionConfig:
 class OrderRequest:
     token_id: str
     side: OrderSide | str
-    notional_usdc: float
+    amount_usdc: float
     limit_price: float
     time_in_force: TimeInForce | str
     client_order_id: str
@@ -244,8 +244,8 @@ class OrderRequest:
             raise ValueError("client_order_id must be non-empty")
         _normalize_side(str(self.side))
         tif = _normalize_tif(str(self.time_in_force))
-        if float(self.notional_usdc) <= 0.0:
-            raise ValueError("notional_usdc must be > 0")
+        if float(self.amount_usdc) <= 0.0:
+            raise ValueError("amount_usdc must be > 0")
         if float(self.limit_price) <= 0.0 or float(self.limit_price) >= 1.0:
             raise ValueError("limit_price must be in (0, 1)")
         if tif == "GTD":
@@ -290,8 +290,8 @@ class OrderState:
     exchange_order_id: str
     token_id: str
     side: str
-    requested_notional_usdc: float
-    filled_notional_usdc: float
+    requested_amount_usdc: float
+    filled_amount_usdc: float
     limit_price: float
     time_in_force: str
     status: str

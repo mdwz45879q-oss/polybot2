@@ -32,7 +32,6 @@ def test_native_service_paper_mode_uses_noop_dispatch() -> None:
     assert str(payload.get("dispatch_mode") or "") == "noop"
     assert "amount_usdc" in runtime_payload
     assert "limit_price" in runtime_payload
-    assert "notional_usdc" not in runtime_payload
     assert "buy_yes_limit_price" not in runtime_payload
     assert int(runtime_payload.get("subscribe_lead_minutes") or 0) == 7
     assert int(runtime_payload.get("subscription_refresh_seconds") or 0) == 33

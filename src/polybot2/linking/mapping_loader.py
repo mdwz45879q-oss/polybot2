@@ -388,10 +388,6 @@ def validate_loaded_live_trading_policy(policy: LoadedLiveTradingPolicy) -> None
             raise MappingValidationError(f"HOTPATH_EXECUTION_POLICY league key must be normalized: {league!r}")
         if not isinstance(cfg, dict):
             raise MappingValidationError(f"HOTPATH_EXECUTION_POLICY[{league!r}] must be dict")
-        if "notional_usdc" in cfg:
-            raise MappingValidationError(
-                f"HOTPATH_EXECUTION_POLICY[{league!r}].notional_usdc is removed; use amount_usdc"
-            )
         if "buy_yes_limit_price" in cfg:
             raise MappingValidationError(
                 f"HOTPATH_EXECUTION_POLICY[{league!r}].buy_yes_limit_price is removed; use limit_price"

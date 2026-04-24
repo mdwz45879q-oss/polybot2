@@ -77,7 +77,7 @@ def test_live_trading_execution_policy_rejects_legacy_keys(tmp_path: Path) -> No
                 "LIVE_TRADING_VERSION='v1'",
                 "LIVE_BETTING_LEAGUES={'mlb'}",
                 "LIVE_BETTING_MARKET_TYPES={'mlb': ['totals']}",
-                "HOTPATH_EXECUTION_POLICY={'mlb': {'notional_usdc': 5.0, 'buy_yes_limit_price': 0.52}}",
+                "HOTPATH_EXECUTION_POLICY={'mlb': {'amount_usdc': 5.0, 'buy_yes_limit_price': 0.52}}",
                 "HOTPATH_RUNTIME_POLICY={'mlb': {'plan_horizon_hours': 24, 'subscribe_lead_minutes': 90, 'unsubscribe_grace_minutes': 15, 'reload_interval_seconds': 120, 'provider_catalog_max_age_seconds': 600}}",
             ]
         ),

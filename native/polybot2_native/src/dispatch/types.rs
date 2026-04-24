@@ -15,10 +15,12 @@ pub(crate) struct PreSignKey {
 pub(crate) struct OrderRequestData {
     pub(super) token_id: String,
     pub(super) side: String,
-    pub(super) notional_usdc: f64,
+    pub(super) amount_usdc: f64,
     pub(super) limit_price: f64,
     pub(super) time_in_force: String,
     pub(super) client_order_id: String,
+    pub(super) size_shares: f64,
+    pub(super) expiration_ts: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -26,8 +28,8 @@ pub(crate) struct OrderStateData {
     pub(super) client_order_id: String,
     pub(super) exchange_order_id: String,
     pub(super) side: String,
-    pub(super) requested_notional_usdc: f64,
-    pub(super) filled_notional_usdc: f64,
+    pub(super) requested_amount_usdc: f64,
+    pub(super) filled_amount_usdc: f64,
     pub(super) limit_price: f64,
     pub(super) time_in_force: String,
     pub(super) status: String,
@@ -50,6 +52,7 @@ pub(crate) struct ActiveOrderRef {
     pub(super) status: String,
     pub(super) source_universal_id: String,
     pub(super) chain_id: String,
+    pub(super) inserted_ns: i64,
 }
 
 pub(crate) struct PreSignedOrderData {
@@ -61,7 +64,7 @@ pub(crate) struct PreSignedOrderData {
 pub(crate) struct PresignTemplateData {
     pub(super) token_id: String,
     pub(super) side: Option<String>,
-    pub(super) notional_usdc: Option<f64>,
+    pub(super) amount_usdc: Option<f64>,
     pub(super) limit_price: Option<f64>,
     pub(super) time_in_force: Option<String>,
 }

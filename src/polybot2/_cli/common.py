@@ -139,7 +139,7 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: MlbOrder
                     OrderRequest(
                         token_id=token_id,
                         side="buy_yes",
-                        notional_usdc=float(order_policy.amount_usdc),
+                        amount_usdc=float(order_policy.amount_usdc),
                         limit_price=float(order_policy.limit_price),
                         time_in_force=str(order_policy.time_in_force),
                         client_order_id=f"hp_template_{len(out) + 1}",

@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn scheduler_activation_respects_lead_and_completion() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 5.0, 0.52, "FAK".to_string());
         let now = crate::dispatch::now_unix_s();
         engine
             .kickoff_ts_by_game
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn refresh_active_subscriptions_changes_only_on_transition() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 5.0, 0.52, "FAK".to_string());
         let now = crate::dispatch::now_unix_s();
         engine.kickoff_ts_by_game.insert("g1".to_string(), now - 60);
         engine.token_ids_by_game.insert(
