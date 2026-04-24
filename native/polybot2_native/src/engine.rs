@@ -23,6 +23,7 @@ impl NativeMlbEngine {
         decision_cooldown_seconds=0.5,
         decision_debounce_seconds=0.1,
         amount_usdc=5.0,
+        size_shares=5.0,
         limit_price=0.52,
         time_in_force="FAK".to_string(),
     ))]
@@ -31,6 +32,7 @@ impl NativeMlbEngine {
         decision_cooldown_seconds: f64,
         decision_debounce_seconds: f64,
         amount_usdc: f64,
+        size_shares: f64,
         limit_price: f64,
         time_in_force: String,
     ) -> Self {
@@ -39,6 +41,7 @@ impl NativeMlbEngine {
             decision_cooldown_ns: (decision_cooldown_seconds.max(0.0) * 1_000_000_000.0) as i64,
             decision_debounce_ns: (decision_debounce_seconds.max(0.0) * 1_000_000_000.0) as i64,
             amount_usdc,
+            size_shares,
             limit_price,
             time_in_force,
             over_targets_by_game: HashMap::new(),
@@ -867,7 +870,8 @@ fn result_to_py(py: Python<'_>, res: ProcessResult) -> PyResult<PyObject> {
         row.set_item("strategy_key", intent.strategy_key.clone())?;
         row.set_item("token_id", intent.token_id.clone())?;
         row.set_item("side", intent.side.clone())?;
-        row.set_item("notional_usdc", intent.notional_usdc)?;
+        row.set_item("amount_usdc", intent.amount_usdc)?;
+        row.set_item("size_shares", intent.size_shares)?;
         row.set_item("limit_price", intent.limit_price)?;
         row.set_item("time_in_force", intent.time_in_force.clone())?;
         row.set_item("condition_id", intent.condition_id.clone())?;
@@ -890,7 +894,7 @@ mod tests {
 
     #[test]
     fn observe_signals_propagated_in_batch() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
 
         let frame1 = json!({
             "type": "next",
@@ -934,7 +938,7 @@ mod tests {
 
     #[test]
     fn observe_signals_accumulate_across_batch_items() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
 
         let setup1 = json!({"type": "next", "payload": {"data": {"sportsMatchStateUpdatedV2": {
             "fixtureId": "g1", "matchSummary": {"eventState": "live", "homeScore": 0, "awayScore": 0}
@@ -968,7 +972,7 @@ mod tests {
 
     #[test]
     fn multi_market_totals_and_nrfi_both_evaluated() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
         let game_id = "g1".to_string();
 
         engine.over_targets_by_game.insert(
@@ -1036,7 +1040,7 @@ mod tests {
 
     #[test]
     fn evaluate_final_fires_alongside_totals_at_completion() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
         let game_id = "g1".to_string();
 
         engine.under_targets_by_game.insert(
@@ -1099,7 +1103,7 @@ mod tests {
 
     #[test]
     fn nrfi_late_subscription_past_first_inning_blocked() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
         let game_id = "g1".to_string();
 
         let mut nrfi_map = HashMap::new();
@@ -1135,7 +1139,7 @@ mod tests {
 
     #[test]
     fn nrfi_first_inning_subscription_allows_evaluation() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
         let game_id = "g1".to_string();
 
         let mut nrfi_map = HashMap::new();
@@ -1187,7 +1191,7 @@ mod tests {
 
     #[test]
     fn nrfi_completed_game_first_tick_blocked() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
         let game_id = "g1".to_string();
 
         let mut nrfi_map = HashMap::new();
@@ -1227,7 +1231,7 @@ mod tests {
 
     #[test]
     fn nrfi_no_inning_data_defers_evaluation() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
         let game_id = "g1".to_string();
 
         let mut nrfi_map = HashMap::new();

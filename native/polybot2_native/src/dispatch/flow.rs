@@ -10,13 +10,21 @@ impl DispatchRuntime {
     }
 
     fn build_request_from_intent(&self, intent: &Intent) -> OrderRequestData {
+        let tif = normalize_tif(intent.time_in_force.as_str());
+        let expiration_ts = if tif == "GTD" && self.cfg.gtd_expiration_seconds > 0 {
+            Some(now_unix_s() + self.cfg.gtd_expiration_seconds)
+        } else {
+            None
+        };
         OrderRequestData {
             token_id: intent.token_id.clone(),
             side: normalize_side(intent.side.as_str()),
-            notional_usdc: intent.notional_usdc.max(0.0),
+            amount_usdc: intent.amount_usdc.max(0.0),
             limit_price: intent.limit_price.max(0.0),
-            time_in_force: normalize_tif(intent.time_in_force.as_str()),
+            time_in_force: tif,
             client_order_id: new_client_order_id(),
+            size_shares: intent.size_shares.max(0.0),
+            expiration_ts,
         }
     }
 
@@ -42,6 +50,7 @@ impl DispatchRuntime {
                 status: state.status.clone(),
                 source_universal_id: source_universal_id.to_string(),
                 chain_id: chain_id.to_string(),
+                inserted_ns: now_unix_ns(),
             },
         );
     }
@@ -78,8 +87,8 @@ impl DispatchRuntime {
                 client_order_id: request.client_order_id.clone(),
                 exchange_order_id: format!("noop_{}", next_suffix()),
                 side: request.side.clone(),
-                requested_notional_usdc: request.notional_usdc,
-                filled_notional_usdc: 0.0,
+                requested_amount_usdc: request.amount_usdc,
+                filled_amount_usdc: 0.0,
                 limit_price: request.limit_price,
                 time_in_force: request.time_in_force.clone(),
                 status: "submitted".to_string(),
@@ -107,7 +116,7 @@ impl DispatchRuntime {
                         "side": request.side,
                         "time_in_force": request.time_in_force,
                         "limit_price": request.limit_price,
-                        "notional_usdc": request.notional_usdc,
+                        "amount_usdc": request.amount_usdc,
                     })
                 },
             );
@@ -130,8 +139,8 @@ impl DispatchRuntime {
             client_order_id: request.client_order_id.clone(),
             exchange_order_id: format!("noop_{}", next_suffix()),
             side: request.side.clone(),
-            requested_notional_usdc: request.notional_usdc,
-            filled_notional_usdc: 0.0,
+            requested_amount_usdc: request.amount_usdc,
+            filled_amount_usdc: 0.0,
             limit_price: request.limit_price,
             time_in_force: request.time_in_force.clone(),
             status: "submitted".to_string(),
@@ -154,7 +163,7 @@ impl DispatchRuntime {
                     "side": request.side,
                     "time_in_force": request.time_in_force,
                     "limit_price": request.limit_price,
-                    "notional_usdc": request.notional_usdc,
+                    "amount_usdc": request.amount_usdc,
                     "market_type": intent.market_type,
                     "outcome_semantic": intent.outcome_semantic,
                     "phase": "submit",
@@ -173,8 +182,8 @@ impl DispatchRuntime {
                 json!({
                     "dispatch_mode": "noop",
                     "status": state.status,
-                    "requested_notional_usdc": state.requested_notional_usdc,
-                    "filled_notional_usdc": state.filled_notional_usdc,
+                    "requested_amount_usdc": state.requested_amount_usdc,
+                    "filled_amount_usdc": state.filled_amount_usdc,
                 })
             },
         );
@@ -195,11 +204,9 @@ impl DispatchRuntime {
     }
 
     fn enforce_time_in_force_policy(&self, request: &OrderRequestData) -> Result<(), String> {
-        let tif = normalize_tif(request.time_in_force.as_str());
-        if tif == "FAK" {
-            return Ok(());
-        }
-        Err(format!("dispatch_tif_not_fak:{}", request.time_in_force))
+        map_sdk_order_type(request.time_in_force.as_str())
+            .map_err(|e| format!("dispatch_tif_invalid:{}", e))?;
+        Ok(())
     }
 
     async fn dispatch_intent_http_async(&mut self, intent: &Intent) -> Result<(), String> {
@@ -274,7 +281,7 @@ impl DispatchRuntime {
                                 "side": request.side,
                                 "time_in_force": request.time_in_force,
                                 "limit_price": request.limit_price,
-                                "notional_usdc": request.notional_usdc,
+                                "amount_usdc": request.amount_usdc,
                                 "market_type": intent.market_type,
                                 "outcome_semantic": intent.outcome_semantic,
                                 "dispatch_mode": "http",
@@ -297,7 +304,7 @@ impl DispatchRuntime {
                                 "side": request.side,
                                 "time_in_force": request.time_in_force,
                                 "limit_price": request.limit_price,
-                                "notional_usdc": request.notional_usdc,
+                                "amount_usdc": request.amount_usdc,
                                 "market_type": intent.market_type,
                                 "outcome_semantic": intent.outcome_semantic,
                                 "phase": "replace_submit",
@@ -324,7 +331,7 @@ impl DispatchRuntime {
                         "side": request.side,
                         "time_in_force": request.time_in_force,
                         "limit_price": request.limit_price,
-                        "notional_usdc": request.notional_usdc,
+                        "amount_usdc": request.amount_usdc,
                         "market_type": intent.market_type,
                         "outcome_semantic": intent.outcome_semantic,
                         "phase": "replace_submit",
@@ -342,8 +349,8 @@ impl DispatchRuntime {
                 || {
                     json!({
                         "status": state.status,
-                        "requested_notional_usdc": state.requested_notional_usdc,
-                        "filled_notional_usdc": state.filled_notional_usdc,
+                        "requested_amount_usdc": state.requested_amount_usdc,
+                        "filled_amount_usdc": state.filled_amount_usdc,
                         "phase": "replace_submit",
                     })
                 },
@@ -382,7 +389,7 @@ impl DispatchRuntime {
                             "side": request.side,
                             "time_in_force": request.time_in_force,
                             "limit_price": request.limit_price,
-                            "notional_usdc": request.notional_usdc,
+                            "amount_usdc": request.amount_usdc,
                             "market_type": intent.market_type,
                             "outcome_semantic": intent.outcome_semantic,
                             "phase": "submit",
@@ -404,7 +411,7 @@ impl DispatchRuntime {
                             "side": request.side,
                             "time_in_force": request.time_in_force,
                             "limit_price": request.limit_price,
-                            "notional_usdc": request.notional_usdc,
+                            "amount_usdc": request.amount_usdc,
                             "market_type": intent.market_type,
                             "outcome_semantic": intent.outcome_semantic,
                             "phase": "submit",
@@ -429,7 +436,7 @@ impl DispatchRuntime {
                     "side": request.side,
                     "time_in_force": request.time_in_force,
                     "limit_price": request.limit_price,
-                    "notional_usdc": request.notional_usdc,
+                    "amount_usdc": request.amount_usdc,
                     "market_type": intent.market_type,
                     "outcome_semantic": intent.outcome_semantic,
                     "phase": "submit",
@@ -447,8 +454,8 @@ impl DispatchRuntime {
             || {
                 json!({
                     "status": state.status,
-                    "requested_notional_usdc": state.requested_notional_usdc,
-                    "filled_notional_usdc": state.filled_notional_usdc,
+                    "requested_amount_usdc": state.requested_amount_usdc,
+                    "filled_amount_usdc": state.filled_amount_usdc,
                 })
             },
         );
@@ -480,6 +487,7 @@ impl DispatchRuntime {
     }
 
     pub(crate) async fn refresh_active_state_from_broker_async(&mut self) {
+        self.evict_stale_active_orders();
         if !matches!(self.cfg.mode, DispatchMode::Http) {
             return;
         }
@@ -511,6 +519,30 @@ impl DispatchRuntime {
                 }
                 Err(_) => {}
             }
+        }
+    }
+
+    pub(crate) fn evict_stale_active_orders(&mut self) {
+        const STALE_ACTIVE_ORDER_TTL_NS: i64 = 60_000_000_000;
+        let evict_cutoff = now_unix_ns().saturating_sub(STALE_ACTIVE_ORDER_TTL_NS);
+        let stale: Vec<_> = self
+            .active_orders_by_strategy
+            .iter()
+            .filter(|(_, r)| r.inserted_ns < evict_cutoff)
+            .map(|(k, r)| (k.clone(), r.clone()))
+            .collect();
+        for (key, r) in &stale {
+            self.active_orders_by_strategy.remove(key);
+            self.emit_event(
+                "order_failed",
+                r.source_universal_id.as_str(),
+                r.chain_id.as_str(),
+                key.as_str(),
+                r.client_order_id.as_str(),
+                r.exchange_order_id.as_str(),
+                "stale_active_order_evicted",
+                json!({ "age_ns": now_unix_ns().saturating_sub(r.inserted_ns) }),
+            );
         }
     }
 }

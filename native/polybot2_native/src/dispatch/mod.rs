@@ -28,7 +28,10 @@ pub(super) use types::{
 
 static NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-pub(crate) fn build_dispatch_config(exec_cfg: ExecStartConfig) -> Result<DispatchConfig, String> {
+pub(crate) fn build_dispatch_config_with_gtd(
+    exec_cfg: ExecStartConfig,
+    gtd_expiration_seconds: i64,
+) -> Result<DispatchConfig, String> {
     let mode_text = exec_cfg
         .dispatch_mode
         .unwrap_or_else(|| "noop".to_string())
@@ -87,6 +90,7 @@ pub(crate) fn build_dispatch_config(exec_cfg: ExecStartConfig) -> Result<Dispatc
             .active_order_refresh_interval_seconds
             .unwrap_or(0.25)
             .max(0.0),
+        gtd_expiration_seconds: gtd_expiration_seconds.max(0),
     })
 }
 
@@ -146,6 +150,20 @@ pub(super) fn map_sdk_signature_type(signature_type: i64) -> Result<SdkSignature
         2 => Ok(SdkSignatureType::GnosisSafe),
         other => Err(format!("unsupported_signature_type:{}", other)),
     }
+}
+
+pub(crate) fn map_sdk_order_type(tif: &str) -> Result<SdkOrderType, String> {
+    match normalize_tif(tif).as_str() {
+        "FAK" => Ok(SdkOrderType::FAK),
+        "FOK" => Ok(SdkOrderType::FOK),
+        "GTC" => Ok(SdkOrderType::GTC),
+        "GTD" => Ok(SdkOrderType::GTD),
+        other => Err(format!("unsupported_order_type:{}", other)),
+    }
+}
+
+pub(crate) fn is_market_order_type(tif: &str) -> bool {
+    matches!(normalize_tif(tif).as_str(), "FAK" | "FOK")
 }
 
 pub(super) fn parse_decimal_from_f64(

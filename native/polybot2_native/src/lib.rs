@@ -137,7 +137,8 @@ struct Intent {
     strategy_key: String,
     token_id: String,
     side: String,
-    notional_usdc: f64,
+    amount_usdc: f64,
+    size_shares: f64,
     limit_price: f64,
     time_in_force: String,
     condition_id: String,
@@ -179,8 +180,10 @@ struct RuntimeStartConfig {
     subscribe_lead_minutes: Option<i64>,
     subscription_refresh_seconds: Option<f64>,
     amount_usdc: Option<f64>,
+    size_shares: Option<f64>,
     limit_price: Option<f64>,
     time_in_force: Option<String>,
+    gtd_expiration_seconds: Option<i64>,
     live_enabled: Option<bool>,
     reconnect_sleep_seconds: Option<f64>,
     kalstrop_ws_url: Option<String>,
@@ -239,6 +242,7 @@ struct DispatchConfig {
     presign_refill_interval_seconds: f64,
     presign_startup_warm_timeout_seconds: f64,
     active_order_refresh_interval_seconds: f64,
+    gtd_expiration_seconds: i64,
 }
 
 impl Default for DispatchConfig {
@@ -259,6 +263,7 @@ impl Default for DispatchConfig {
             presign_refill_interval_seconds: 0.02,
             presign_startup_warm_timeout_seconds: 5.0,
             active_order_refresh_interval_seconds: 0.25,
+            gtd_expiration_seconds: 300,
         }
     }
 }
@@ -284,6 +289,7 @@ struct NativeMlbEngine {
     decision_cooldown_ns: i64,
     decision_debounce_ns: i64,
     amount_usdc: f64,
+    size_shares: f64,
     limit_price: f64,
     time_in_force: String,
     over_targets_by_game: HashMap<String, Vec<TotalsTarget>>,

@@ -35,18 +35,21 @@ impl DispatchRuntime {
         if token_id.is_empty() {
             return None;
         }
-        let notional_usdc = template.notional_usdc.unwrap_or(0.0);
+        let amount_usdc = template.amount_usdc.unwrap_or(0.0);
         let limit_price = template.limit_price.unwrap_or(0.0);
-        if notional_usdc <= 0.0 || limit_price <= 0.0 {
+        if amount_usdc <= 0.0 || limit_price <= 0.0 {
             return None;
         }
+        let price = limit_price.max(0.001);
         Some(OrderRequestData {
             token_id,
             side: normalize_side(template.side.as_deref().unwrap_or("buy_yes")),
-            notional_usdc,
+            amount_usdc,
             limit_price,
             time_in_force: normalize_tif(template.time_in_force.as_deref().unwrap_or("FAK")),
             client_order_id: "hp_template".to_string(),
+            size_shares: amount_usdc / price,
+            expiration_ts: None,
         })
     }
 
@@ -57,10 +60,9 @@ impl DispatchRuntime {
         self.last_refill_ns_by_key.clear();
         self.pending_refill_by_key.clear();
         for template in templates {
-            let Some(mut request) = Self::parse_template_request(template) else {
+            let Some(request) = Self::parse_template_request(template) else {
                 continue;
             };
-            request.time_in_force = "FAK".to_string();
             let key = Self::presign_key_for_token(request.token_id.as_str());
             self.presign_template_catalog.insert(key, request);
         }

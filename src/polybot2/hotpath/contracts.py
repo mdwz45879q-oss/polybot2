@@ -175,7 +175,7 @@ class OrderIntent:
     strategy_key: str
     token_id: str
     side: str
-    notional_usdc: float
+    amount_usdc: float
     limit_price: float
     time_in_force: str = "FAK"
     expire_ts: int | None = None

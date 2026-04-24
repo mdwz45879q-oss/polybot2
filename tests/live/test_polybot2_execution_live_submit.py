@@ -70,12 +70,12 @@ def test_live_execution_submit_small_notional_fak() -> None:
     token_id = _required_env("POLYBOT2_LIVE_EXEC_TOKEN_ID")
 
     limit_price = float(str(os.getenv("POLYBOT2_LIVE_EXEC_LIMIT_PRICE", "0.50") or "0.50"))
-    notional_usdc = float(str(os.getenv("POLYBOT2_LIVE_EXEC_NOTIONAL_USDC", "0.1") or "0.1"))
+    amount_usdc = float(str(os.getenv("POLYBOT2_LIVE_EXEC_NOTIONAL_USDC", "0.1") or "0.1"))
     side = str(os.getenv("POLYBOT2_LIVE_EXEC_SIDE", "buy_yes") or "buy_yes").strip().lower()
 
     assert outcome_index in {0, 1}
     assert 0.0 < float(limit_price) < 1.0
-    assert 0.0 < float(notional_usdc) <= 1.0
+    assert 0.0 < float(amount_usdc) <= 1.0
 
     runtime_db_path = str(os.getenv("POLYBOT2_LIVE_EXEC_DB_PATH", "") or "").strip()
     if runtime_db_path:
@@ -92,7 +92,7 @@ def test_live_execution_submit_small_notional_fak() -> None:
     request = OrderRequest(
         token_id=str(token_id),
         side=str(side),
-        notional_usdc=float(notional_usdc),
+        amount_usdc=float(amount_usdc),
         limit_price=float(limit_price),
         time_in_force="FAK",
         client_order_id=f"live_exec_smoke_{int(time.time())}_{outcome_index}",

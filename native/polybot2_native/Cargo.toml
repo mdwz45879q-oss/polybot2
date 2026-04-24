@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["rt", "sync", "time"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 futures-util = "0.3"
 urlencoding = "2.1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 polymarket-client-sdk = { version = "0.4.4", features = ["clob"] }
 alloy = { version = "=1.6.3", default-features = false, features = ["signers"] }
 rustls = { version = "0.23", default-features = false, features = ["std", "aws-lc-rs"] }

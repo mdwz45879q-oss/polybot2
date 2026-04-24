@@ -108,8 +108,8 @@ impl DispatchRuntime {
                 "side": state.side,
                 "time_in_force": state.time_in_force,
                 "limit_price": state.limit_price,
-                "requested_notional_usdc": state.requested_notional_usdc,
-                "filled_notional_usdc": state.filled_notional_usdc,
+                "requested_amount_usdc": state.requested_amount_usdc,
+                "filled_amount_usdc": state.filled_amount_usdc,
                 "error_code": state.error_code,
             }),
         );

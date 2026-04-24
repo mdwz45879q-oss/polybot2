@@ -135,7 +135,7 @@ def test_observe_store_filters_to_high_signal_and_meaningful_state_changes() -> 
             level="info",
             event_type="order_submit_called",
             game_id="g1",
-            payload={"side": "buy_yes", "limit_price": 0.41, "notional_usdc": 10.0, "time_in_force": "FAK"},
+            payload={"side": "buy_yes", "limit_price": 0.41, "amount_usdc": 10.0, "time_in_force": "FAK"},
         ),
         with_color=False,
     )

@@ -467,7 +467,7 @@ class ObserveStore:
             mkt = str(event.payload.get("market_type") or "").lower()
             sem = str(event.payload.get("outcome_semantic") or "").upper()
             price = event.payload.get("limit_price")
-            notional = event.payload.get("notional_usdc")
+            notional = event.payload.get("amount_usdc")
             tif = str(event.payload.get("time_in_force") or "")
             line_val = _extract_line_from_reason(str(event.reason_code or ""))
             if mkt == "totals" and line_val:
@@ -484,18 +484,18 @@ class ObserveStore:
         elif et in {"order_submit_ok", "order_acknowledged"}:
             tag = "📦 ACK"
             status = str(event.payload.get("status") or "ok")
-            req = event.payload.get("requested_notional_usdc")
-            fill = event.payload.get("filled_notional_usdc")
+            req = event.payload.get("requested_amount_usdc")
+            fill = event.payload.get("filled_amount_usdc")
             msg = f"status={status} | filled={fill}/{req}"
         elif et == "order_filled":
             tag = "✅ FILL"
-            req = event.payload.get("requested_notional_usdc")
-            fill = event.payload.get("filled_notional_usdc")
+            req = event.payload.get("requested_amount_usdc")
+            fill = event.payload.get("filled_amount_usdc")
             msg = f"filled={fill}/{req}"
         elif et == "order_partially_filled":
             tag = "🟨 PARTIAL"
-            req = event.payload.get("requested_notional_usdc")
-            fill = event.payload.get("filled_notional_usdc")
+            req = event.payload.get("requested_amount_usdc")
+            fill = event.payload.get("filled_amount_usdc")
             msg = f"filled={fill}/{req}"
         elif et == "order_resting":
             tag = "⏳ RESTING"

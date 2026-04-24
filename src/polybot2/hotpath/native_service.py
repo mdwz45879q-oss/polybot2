@@ -146,7 +146,7 @@ class NativeHotPathService:
         return {
             "token_id": str(order.token_id or ""),
             "side": str(order.side or ""),
-            "notional_usdc": float(order.notional_usdc),
+            "amount_usdc": float(order.amount_usdc),
             "limit_price": float(order.limit_price),
             "time_in_force": str(order.time_in_force or ""),
         }
@@ -179,8 +179,10 @@ class NativeHotPathService:
             "subscribe_lead_minutes": int(self._subscribe_lead_minutes),
             "subscription_refresh_seconds": int(self._subscription_refresh_seconds),
             "amount_usdc": float(self._native_order_policy.amount_usdc),
+            "size_shares": float(self._native_order_policy.size_shares),
             "limit_price": float(self._native_order_policy.limit_price),
             "time_in_force": str(self._native_order_policy.time_in_force),
+            "gtd_expiration_seconds": int(self._native_order_policy.gtd_expiration_seconds),
             "live_enabled": True,
             "reconnect_sleep_seconds": float(self._config.reconnect_base_sleep_seconds),
             "kalstrop_ws_url": str(getattr(provider_cfg, "ws_url", "") or ""),

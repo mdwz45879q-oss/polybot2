@@ -306,7 +306,7 @@ def _passes_decision_gates(
         str(intent.strategy_key),
         str(intent.token_id),
         str(intent.side),
-        float(intent.notional_usdc),
+        float(intent.amount_usdc),
         float(intent.limit_price),
         str(intent.time_in_force),
         int(intent.expire_ts) if intent.expire_ts is not None else None,

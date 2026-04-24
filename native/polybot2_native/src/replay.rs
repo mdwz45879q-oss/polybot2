@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn shared_pipeline_records_no_action_message() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 0.52, "GTC".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 5.0, 0.52, "GTC".to_string());
         let frame = json!({
             "type":"next",
             "payload":{
