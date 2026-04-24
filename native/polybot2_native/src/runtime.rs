@@ -77,11 +77,11 @@ impl NativeHotPathRuntime {
                     crate::dispatch::now_unix_s(),
                     subscribe_lead_minutes,
                 );
-            let initial_active_tokens = self
+            let all_plan_tokens = self
                 .engine
                 .as_ref()
                 .ok_or_else(|| PyValueError::new_err("engine unavailable"))?
-                .active_token_ids_for_games(initial_active_subscriptions.as_slice());
+                .all_token_ids();
             let subs = Arc::new(RwLock::new(initial_active_subscriptions.clone()));
             let health = Arc::new(Mutex::new(RuntimeHealth {
                 running: true,
@@ -100,8 +100,8 @@ impl NativeHotPathRuntime {
                 DispatchRuntime::new(dispatch_cfg.clone(), telemetry_emitter.clone());
             dispatch_runtime.set_presign_templates(self.presign_templates.as_slice());
             dispatch_runtime
-                .activate_presign_templates_for_tokens(initial_active_tokens.as_slice());
-            if dispatch_cfg.presign_enabled && !initial_active_subscriptions.is_empty() {
+                .activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
+            if dispatch_cfg.presign_enabled && !all_plan_tokens.is_empty() {
                 let warm_result = py.allow_threads(|| {
                     match TokioBuilder::new_current_thread().enable_all().build() {
                         Ok(rt) => rt.block_on(dispatch_runtime.warm_presign_startup_async()),

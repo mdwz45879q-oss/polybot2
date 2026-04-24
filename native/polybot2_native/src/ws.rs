@@ -152,7 +152,6 @@ async fn sleep_with_command_poll(
 async fn refresh_active_subscriptions(
     engine: &NativeMlbEngine,
     cfg: &RuntimeStartConfig,
-    dispatch_runtime: &mut DispatchRuntime,
     subscriptions: &Arc<RwLock<Vec<String>>>,
     candidate_subs: &[String],
     active_subs: &mut Vec<String>,
@@ -170,8 +169,6 @@ async fn refresh_active_subscriptions(
     if let Ok(mut lock) = subscriptions.write() {
         *lock = active_subs.clone();
     }
-    let active_tokens = engine.active_token_ids_for_games(active_subs.as_slice());
-    dispatch_runtime.activate_presign_templates_for_tokens(active_tokens.as_slice());
     Ok(true)
 }
 
@@ -230,7 +227,6 @@ pub(crate) async fn run_live_worker_async(
             if let Err(e) = refresh_active_subscriptions(
                 engine,
                 &cfg,
-                &mut dispatch_runtime,
                 &subscriptions,
                 candidate_subs.as_slice(),
                 &mut active_subs,
@@ -430,7 +426,6 @@ pub(crate) async fn run_live_worker_async(
                 match refresh_active_subscriptions(
                     engine,
                     &cfg,
-                    &mut dispatch_runtime,
                     &subscriptions,
                     candidate_subs.as_slice(),
                     &mut active_subs,
@@ -633,7 +628,6 @@ pub(crate) async fn run_live_worker_async(
                 }
                 last_heartbeat = now;
             }
-            dispatch_runtime.refill_presign_tick_async().await;
         }
     }
 }
@@ -711,7 +705,6 @@ mod tests {
             subscribe_lead_minutes: Some(5),
             ..RuntimeStartConfig::default()
         };
-        let mut dispatch = DispatchRuntime::new(DispatchConfig::default(), None);
         let subscriptions = Arc::new(RwLock::new(Vec::<String>::new()));
         let mut active_subs = Vec::<String>::new();
         let candidates = vec!["g1".to_string()];
@@ -723,7 +716,6 @@ mod tests {
             .block_on(refresh_active_subscriptions(
                 &engine,
                 &cfg,
-                &mut dispatch,
                 &subscriptions,
                 candidates.as_slice(),
                 &mut active_subs,
@@ -735,7 +727,6 @@ mod tests {
             .block_on(refresh_active_subscriptions(
                 &engine,
                 &cfg,
-                &mut dispatch,
                 &subscriptions,
                 candidates.as_slice(),
                 &mut active_subs,

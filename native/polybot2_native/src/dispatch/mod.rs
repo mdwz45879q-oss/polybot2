@@ -76,12 +76,7 @@ pub(crate) fn build_dispatch_config_with_gtd(
                 .or_else(|| std::env::var("PRIVATE_KEY").ok())
                 .unwrap_or_default()
         }),
-        presign_pool_target_per_key: exec_cfg.presign_pool_target_per_key.unwrap_or(8).max(0),
-        presign_refill_batch_size: exec_cfg.presign_refill_batch_size.unwrap_or(4).max(1),
-        presign_refill_interval_seconds: exec_cfg
-            .presign_refill_interval_seconds
-            .unwrap_or(0.02)
-            .max(0.001),
+        presign_pool_target_per_key: exec_cfg.presign_pool_target_per_key.unwrap_or(1).max(0),
         presign_startup_warm_timeout_seconds: exec_cfg
             .presign_startup_warm_timeout_seconds
             .unwrap_or(5.0)

@@ -440,15 +440,13 @@ impl NativeMlbEngine {
         out
     }
 
-    pub(crate) fn active_token_ids_for_games(&self, game_ids: &[String]) -> Vec<String> {
+    pub(crate) fn all_token_ids(&self) -> Vec<String> {
         let mut tokens: HashSet<String> = HashSet::new();
-        for uid in game_ids {
-            if let Some(ids) = self.token_ids_by_game.get(uid.as_str()) {
-                for token_id in ids {
-                    let t = token_id.trim();
-                    if !t.is_empty() {
-                        tokens.insert(t.to_string());
-                    }
+        for ids in self.token_ids_by_game.values() {
+            for token_id in ids {
+                let t = token_id.trim();
+                if !t.is_empty() {
+                    tokens.insert(t.to_string());
                 }
             }
         }

@@ -11,8 +11,6 @@ impl DispatchRuntime {
             presign_template_catalog: HashMap::new(),
             presign_templates: HashMap::new(),
             presign_pool: HashMap::new(),
-            last_refill_ns_by_key: HashMap::new(),
-            pending_refill_by_key: HashMap::new(),
             broker_failure_count: HashMap::new(),
             telemetry,
         }

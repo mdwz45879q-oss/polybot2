@@ -77,8 +77,6 @@ pub(crate) struct DispatchRuntime {
     pub(super) presign_template_catalog: HashMap<PreSignKey, OrderRequestData>,
     pub(super) presign_templates: HashMap<PreSignKey, OrderRequestData>,
     pub(super) presign_pool: HashMap<PreSignKey, VecDeque<PreSignedOrderData>>,
-    pub(super) last_refill_ns_by_key: HashMap<PreSignKey, i64>,
-    pub(super) pending_refill_by_key: HashMap<PreSignKey, ()>,
     pub(super) broker_failure_count: HashMap<String, u64>,
     pub(super) telemetry: Option<TelemetryEmitter>,
 }

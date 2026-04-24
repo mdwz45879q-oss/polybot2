@@ -17,15 +17,6 @@ impl DispatchRuntime {
         self.cfg.presign_pool_target_per_key.max(0) as usize
     }
 
-    fn presign_low_watermark(&self) -> usize {
-        let target = self.presign_target_depth();
-        if target <= 1 {
-            0
-        } else {
-            (target / 2).max(1)
-        }
-    }
-
     fn presign_depth(&self, key: &PreSignKey) -> usize {
         self.presign_pool.get(key).map(|q| q.len()).unwrap_or(0)
     }
@@ -57,8 +48,6 @@ impl DispatchRuntime {
         self.presign_template_catalog.clear();
         self.presign_templates.clear();
         self.presign_pool.clear();
-        self.last_refill_ns_by_key.clear();
-        self.pending_refill_by_key.clear();
         for template in templates {
             let Some(request) = Self::parse_template_request(template) else {
                 continue;
@@ -79,12 +68,6 @@ impl DispatchRuntime {
         self.presign_templates = next_active;
         self.presign_pool
             .retain(|k, _| self.presign_templates.contains_key(k));
-        self.last_refill_ns_by_key
-            .retain(|k, _| self.presign_templates.contains_key(k));
-        self.pending_refill_by_key.clear();
-        for key in self.presign_templates.keys() {
-            self.pending_refill_by_key.insert(key.clone(), ());
-        }
         self.presign_templates.len()
     }
 
@@ -163,7 +146,6 @@ impl DispatchRuntime {
                 )
             })?;
 
-        let now_ns = now_unix_ns();
         for result in results {
             let (key, batch_result) =
                 result.map_err(|e| format!("presign_task_panicked:{}", e))?;
@@ -174,8 +156,6 @@ impl DispatchRuntime {
                     signed_order: signed,
                 });
             }
-            self.last_refill_ns_by_key.insert(key.clone(), now_ns);
-            self.pending_refill_by_key.remove(&key);
         }
 
         for key in &keys {
@@ -192,96 +172,6 @@ impl DispatchRuntime {
         Ok(())
     }
 
-    async fn refill_presign_key_async(
-        &mut self,
-        key: &PreSignKey,
-        force: bool,
-    ) -> Result<(), String> {
-        if !self.cfg.presign_enabled || self.presign_target_depth() == 0 {
-            return Ok(());
-        }
-        let target = self.presign_target_depth();
-        let current_depth = self.presign_depth(key);
-        if current_depth >= target {
-            self.pending_refill_by_key.remove(key);
-            return Ok(());
-        }
-        let last_refill_ns = *self.last_refill_ns_by_key.get(key).unwrap_or(&0);
-        let refill_interval_ns =
-            (self.cfg.presign_refill_interval_seconds.max(0.001) * 1_000_000_000.0) as i64;
-        let now_ns = now_unix_ns();
-        if !force && current_depth > 0 && now_ns.saturating_sub(last_refill_ns) < refill_interval_ns
-        {
-            return Ok(());
-        }
-        let template = match self.presign_templates.get(key) {
-            Some(v) => v.clone(),
-            None => {
-                self.pending_refill_by_key.remove(key);
-                self.presign_pool.remove(key);
-                self.last_refill_ns_by_key.remove(key);
-                return Err(format!(
-                    "presign_template_missing:{}",
-                    redact_token_id(key.token_id.as_str())
-                ));
-            }
-        };
-        let batch = self.cfg.presign_refill_batch_size.max(1) as usize;
-        let want = target.saturating_sub(current_depth).min(batch);
-        let mut built: Vec<PreSignedOrderData> = Vec::with_capacity(want);
-        for _ in 0..want {
-            let signed_order = self.build_signed_order_async(&template).await?;
-            built.push(PreSignedOrderData { signed_order });
-        }
-        let q = self.presign_pool.entry(key.clone()).or_default();
-        for item in built {
-            q.push_back(item);
-        }
-        self.last_refill_ns_by_key.insert(key.clone(), now_ns);
-        if self.presign_depth(key) >= target {
-            self.pending_refill_by_key.remove(key);
-        } else {
-            self.pending_refill_by_key.insert(key.clone(), ());
-        }
-        Ok(())
-    }
-
-    pub(crate) async fn refill_presign_tick_async(&mut self) {
-        if !self.cfg.presign_enabled || self.presign_target_depth() == 0 {
-            return;
-        }
-        if self.pending_refill_by_key.is_empty() {
-            let low_watermark = self.presign_low_watermark();
-            for key in self.presign_templates.keys() {
-                if self.presign_depth(key) <= low_watermark {
-                    self.pending_refill_by_key.insert(key.clone(), ());
-                }
-            }
-        }
-        if self.pending_refill_by_key.is_empty() {
-            return;
-        }
-        let keys = self.pending_refill_by_key.keys().cloned().collect::<Vec<_>>();
-        for key in keys {
-            if let Err(err) = self.refill_presign_key_async(&key, false).await {
-                self.emit_event(
-                    "exec_error",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "presign_refill_failed",
-                    json!({
-                        "token_id": redact_token_id(key.token_id.as_str()),
-                        "error": err,
-                        "pool_depth": self.presign_depth(&key),
-                    }),
-                );
-            }
-        }
-    }
-
     pub(super) fn pop_presigned_order(&mut self, key: &PreSignKey) -> Option<PreSignedOrderData> {
         let q = self.presign_pool.get_mut(key)?;
         let out = q.pop_front();
@@ -291,9 +181,4 @@ impl DispatchRuntime {
         out
     }
 
-    pub(super) fn schedule_refill_if_needed(&mut self, key: &PreSignKey) {
-        if self.presign_depth(key) <= self.presign_low_watermark() {
-            self.pending_refill_by_key.insert(key.clone(), ());
-        }
-    }
 }

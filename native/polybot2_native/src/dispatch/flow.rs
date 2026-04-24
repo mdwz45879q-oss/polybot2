@@ -67,7 +67,6 @@ impl DispatchRuntime {
                     redact_token_id(key.token_id.as_str())
                 )
             })?;
-            self.schedule_refill_if_needed(&key);
             return self
                 .post_signed_order_async(presigned.signed_order, request)
                 .await;
