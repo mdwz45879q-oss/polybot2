@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import polybot2.hotpath as hotpath_pkg
+
+from polybot2.execution import FastExecutionConfig, OrderRequest
+from polybot2.hotpath import HotPathConfig, NativeHotPathService, OrderIntent
+
+
+def test_execution_contracts_smoke() -> None:
+    cfg = FastExecutionConfig()
+    assert cfg.timeout_seconds > 0
+    req = OrderRequest(
+        token_id="tok",
+        side="buy_yes",
+        notional_usdc=10.0,
+        limit_price=0.25,
+        time_in_force="GTC",
+        client_order_id="c1",
+    )
+    assert req.normalized_side == "buy_yes"
+
+
+def test_hotpath_contracts_smoke() -> None:
+    cfg = HotPathConfig(run_scores=True, run_odds=False)
+    assert cfg.run_scores is True
+    intent = OrderIntent(
+        strategy_key="s1",
+        token_id="tok",
+        side="buy_yes",
+        notional_usdc=5.0,
+        limit_price=0.2,
+    )
+    assert intent.strategy_key == "s1"
+
+
+def test_hotpath_runtime_exports_are_native_only() -> None:
+    assert hasattr(hotpath_pkg, "NativeHotPathService")
+    assert NativeHotPathService is hotpath_pkg.NativeHotPathService
+    assert not hasattr(hotpath_pkg, "HotPathService")

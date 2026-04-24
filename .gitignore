@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.venv/
+.pydeps/
+.DS_Store
+native/polybot2_native/target/
+artifacts/
+data/
+*.sqlite
+*.db
+.env
+.env.*

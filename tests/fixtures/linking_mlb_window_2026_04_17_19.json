@@ -1,0 +1,370 @@
+{
+  "league": "mlb",
+  "provider": "boltodds",
+  "provider_games": [
+    {
+      "away_raw": "SD Padres",
+      "game_date_et": "2026-04-17",
+      "home_raw": "LA Angels",
+      "hour_et": 21,
+      "parse_status": "ok",
+      "provider_game_id": "2f8d1e1462ce"
+    },
+    {
+      "away_raw": "SF Giants",
+      "game_date_et": "2026-04-17",
+      "home_raw": "WAS Nationals",
+      "hour_et": 18,
+      "parse_status": "ok",
+      "provider_game_id": "6a4b46479ad5"
+    },
+    {
+      "away_raw": "ATL Braves",
+      "game_date_et": "2026-04-17",
+      "home_raw": "PHI Phillies",
+      "hour_et": 18,
+      "parse_status": "ok",
+      "provider_game_id": "6e4cc03fc705"
+    },
+    {
+      "away_raw": "BAL Orioles",
+      "game_date_et": "2026-04-17",
+      "home_raw": "CLE Guardians",
+      "hour_et": 18,
+      "parse_status": "ok",
+      "provider_game_id": "7720ea09f1c7"
+    },
+    {
+      "away_raw": "STL Cardinals",
+      "game_date_et": "2026-04-17",
+      "home_raw": "HOU Astros",
+      "hour_et": 20,
+      "parse_status": "ok",
+      "provider_game_id": "8bec2318c497"
+    },
+    {
+      "away_raw": "TEX Rangers",
+      "game_date_et": "2026-04-17",
+      "home_raw": "SEA Mariners",
+      "hour_et": 21,
+      "parse_status": "ok",
+      "provider_game_id": "912f5aed3267"
+    },
+    {
+      "away_raw": "KC Royals",
+      "game_date_et": "2026-04-17",
+      "home_raw": "NY Yankees",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "97357edf6c46"
+    },
+    {
+      "away_raw": "LA Dodgers",
+      "game_date_et": "2026-04-17",
+      "home_raw": "COL Rockies",
+      "hour_et": 20,
+      "parse_status": "ok",
+      "provider_game_id": "bd2b540f239d"
+    },
+    {
+      "away_raw": "New York Mets",
+      "game_date_et": "2026-04-17",
+      "home_raw": "Chicago Cubs",
+      "hour_et": 14,
+      "parse_status": "ok",
+      "provider_game_id": "cc265d30252b"
+    },
+    {
+      "away_raw": "MIL Brewers",
+      "game_date_et": "2026-04-17",
+      "home_raw": "MIA Marlins",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "d57bf7f2a826"
+    },
+    {
+      "away_raw": "DET Tigers",
+      "game_date_et": "2026-04-17",
+      "home_raw": "BOS Red Sox",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "d7e8ba730496"
+    },
+    {
+      "away_raw": "CIN Reds",
+      "game_date_et": "2026-04-17",
+      "home_raw": "MIN Twins",
+      "hour_et": 20,
+      "parse_status": "ok",
+      "provider_game_id": "e4513d1d58bc"
+    },
+    {
+      "away_raw": "CHI White Sox",
+      "game_date_et": "2026-04-17",
+      "home_raw": "Athletics",
+      "hour_et": 21,
+      "parse_status": "ok",
+      "provider_game_id": "e5880437d67c"
+    },
+    {
+      "away_raw": "TB Rays",
+      "game_date_et": "2026-04-17",
+      "home_raw": "PIT Pirates",
+      "hour_et": 18,
+      "parse_status": "ok",
+      "provider_game_id": "e5b90c4fdc75"
+    },
+    {
+      "away_raw": "TOR Blue Jays",
+      "game_date_et": "2026-04-17",
+      "home_raw": "ARI Diamondbacks",
+      "hour_et": 21,
+      "parse_status": "ok",
+      "provider_game_id": "984f04ed76c8"
+    },
+    {
+      "away_raw": "ATL Braves",
+      "game_date_et": "2026-04-18",
+      "home_raw": "PHI Phillies",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "282c85a0fb6b"
+    },
+    {
+      "away_raw": "CHI White Sox",
+      "game_date_et": "2026-04-18",
+      "home_raw": "Athletics",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "2b02bd7434d8"
+    },
+    {
+      "away_raw": "STL Cardinals",
+      "game_date_et": "2026-04-18",
+      "home_raw": "HOU Astros",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "35e9c90d2ed4"
+    },
+    {
+      "away_raw": "TB Rays",
+      "game_date_et": "2026-04-18",
+      "home_raw": "PIT Pirates",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "407d725a6102"
+    },
+    {
+      "away_raw": "TOR Blue Jays",
+      "game_date_et": "2026-04-18",
+      "home_raw": "ARI Diamondbacks",
+      "hour_et": 20,
+      "parse_status": "ok",
+      "provider_game_id": "42cc15b3d589"
+    },
+    {
+      "away_raw": "SF Giants",
+      "game_date_et": "2026-04-18",
+      "home_raw": "WAS Nationals",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "7af9d51bf63a"
+    },
+    {
+      "away_raw": "TEX Rangers",
+      "game_date_et": "2026-04-18",
+      "home_raw": "SEA Mariners",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "a784522da6c3"
+    },
+    {
+      "away_raw": "KC Royals",
+      "game_date_et": "2026-04-18",
+      "home_raw": "NY Yankees",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "aa6fb7b82f75"
+    },
+    {
+      "away_raw": "LA Dodgers",
+      "game_date_et": "2026-04-18",
+      "home_raw": "COL Rockies",
+      "hour_et": 20,
+      "parse_status": "ok",
+      "provider_game_id": "b142c37ebfff"
+    },
+    {
+      "away_raw": "SD Padres",
+      "game_date_et": "2026-04-18",
+      "home_raw": "LA Angels",
+      "hour_et": 21,
+      "parse_status": "ok",
+      "provider_game_id": "b542dccdac5e"
+    },
+    {
+      "away_raw": "BAL Orioles",
+      "game_date_et": "2026-04-18",
+      "home_raw": "CLE Guardians",
+      "hour_et": 18,
+      "parse_status": "ok",
+      "provider_game_id": "c73e8e7e3af5"
+    },
+    {
+      "away_raw": "MIL Brewers",
+      "game_date_et": "2026-04-18",
+      "home_raw": "MIA Marlins",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "d6a834ed062c"
+    },
+    {
+      "away_raw": "New York Mets",
+      "game_date_et": "2026-04-18",
+      "home_raw": "Chicago Cubs",
+      "hour_et": 14,
+      "parse_status": "ok",
+      "provider_game_id": "e7c4a82f757e"
+    },
+    {
+      "away_raw": "DET Tigers",
+      "game_date_et": "2026-04-18",
+      "home_raw": "BOS Red Sox",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "f578e4c8d347"
+    },
+    {
+      "away_raw": "Cincinnati Reds",
+      "game_date_et": "2026-04-18",
+      "home_raw": "Minnesota Twins",
+      "hour_et": 14,
+      "parse_status": "ok",
+      "provider_game_id": "f7ef852bb3c9"
+    },
+    {
+      "away_raw": "Cincinnati Reds",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Minnesota Twins",
+      "hour_et": 14,
+      "parse_status": "ok",
+      "provider_game_id": "11137568f9f4"
+    },
+    {
+      "away_raw": "Kansas City Royals",
+      "game_date_et": "2026-04-19",
+      "home_raw": "New York Yankees",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "1e9682811847"
+    },
+    {
+      "away_raw": "Atlanta Braves",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Philadelphia Phillies",
+      "hour_et": 19,
+      "parse_status": "ok",
+      "provider_game_id": "29ca30399ff3"
+    },
+    {
+      "away_raw": "Toronto Blue Jays",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Arizona Diamondbacks",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "3da6fac47396"
+    },
+    {
+      "away_raw": "Texas Rangers",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Seattle Mariners",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "43ce21eef5a9"
+    },
+    {
+      "away_raw": "Milwaukee Brewers",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Miami Marlins",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "6f37d925f3da"
+    },
+    {
+      "away_raw": "San Diego Padres",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Los Angeles Angels",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "7a05352621cd"
+    },
+    {
+      "away_raw": "San Francisco Giants",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Washington Nationals",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "7bfaae36b497"
+    },
+    {
+      "away_raw": "New York Mets",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Chicago Cubs",
+      "hour_et": 14,
+      "parse_status": "ok",
+      "provider_game_id": "98a2be156a37"
+    },
+    {
+      "away_raw": "Tampa Bay Rays",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Pittsburgh Pirates",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "a72890c6e555"
+    },
+    {
+      "away_raw": "Detroit Tigers",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Boston Red Sox",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "a96dce8a09ba"
+    },
+    {
+      "away_raw": "Chicago White Sox",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Oakland Athletics",
+      "hour_et": 16,
+      "parse_status": "ok",
+      "provider_game_id": "c0b6e615b124"
+    },
+    {
+      "away_raw": "Baltimore Orioles",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Cleveland Guardians",
+      "hour_et": 13,
+      "parse_status": "ok",
+      "provider_game_id": "cd909b7b2f22"
+    },
+    {
+      "away_raw": "St Louis Cardinals",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Houston Astros",
+      "hour_et": 14,
+      "parse_status": "ok",
+      "provider_game_id": "ea48760df555"
+    },
+    {
+      "away_raw": "Los Angeles Dodgers",
+      "game_date_et": "2026-04-19",
+      "home_raw": "Colorado Rockies",
+      "hour_et": 15,
+      "parse_status": "ok",
+      "provider_game_id": "f38a180b5f68"
+    }
+  ],
+  "window": {
+    "from": "2026-04-17",
+    "to": "2026-04-19"
+  }
+}

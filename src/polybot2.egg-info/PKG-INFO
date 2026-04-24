@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: polybot2
+Version: 0.1.0
+Summary: Polymarket + provider deterministic linking, execution, and hotpath
+Requires-Python: >=3.11
+Requires-Dist: httpx>=0.25
+Requires-Dist: polars>=1.0
+Requires-Dist: pyarrow>=15.0
+Requires-Dist: tqdm>=4.65
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: websockets>=12.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21; extra == "dev"
+Requires-Dist: maturin>=1.6; extra == "dev"

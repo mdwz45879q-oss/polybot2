@@ -1,0 +1,516 @@
+use super::*;
+
+impl DispatchRuntime {
+    pub(crate) fn dispatch_mode_label(&self) -> &'static str {
+        if matches!(self.cfg.mode, DispatchMode::Http) {
+            "http"
+        } else {
+            "noop"
+        }
+    }
+
+    fn build_request_from_intent(&self, intent: &Intent) -> OrderRequestData {
+        OrderRequestData {
+            token_id: intent.token_id.clone(),
+            side: normalize_side(intent.side.as_str()),
+            notional_usdc: intent.notional_usdc.max(0.0),
+            limit_price: intent.limit_price.max(0.0),
+            time_in_force: normalize_tif(intent.time_in_force.as_str()),
+            client_order_id: new_client_order_id(),
+        }
+    }
+
+    fn mark_active_state(
+        &mut self,
+        strategy_key: &str,
+        state: &OrderStateData,
+        source_universal_id: &str,
+        chain_id: &str,
+    ) {
+        if strategy_key.trim().is_empty() {
+            return;
+        }
+        if state.is_terminal() {
+            self.active_orders_by_strategy.remove(strategy_key);
+            return;
+        }
+        self.active_orders_by_strategy.insert(
+            strategy_key.to_string(),
+            ActiveOrderRef {
+                client_order_id: state.client_order_id.clone(),
+                exchange_order_id: state.exchange_order_id.clone(),
+                status: state.status.clone(),
+                source_universal_id: source_universal_id.to_string(),
+                chain_id: chain_id.to_string(),
+            },
+        );
+    }
+
+    pub(super) async fn submit_with_policy_async(
+        &mut self,
+        request: &OrderRequestData,
+    ) -> Result<OrderStateData, String> {
+        if self.cfg.presign_enabled && self.cfg.presign_pool_target_per_key > 0 {
+            let key = self.build_presign_key(request);
+            let presigned = self.pop_presigned_order(&key).ok_or_else(|| {
+                format!(
+                    "submit_presigned_miss:token_id={}",
+                    redact_token_id(key.token_id.as_str())
+                )
+            })?;
+            self.schedule_refill_if_needed(&key);
+            return self
+                .post_signed_order_async(presigned.signed_order, request)
+                .await;
+        }
+        self.submit_order_async(request).await
+    }
+
+    fn dispatch_intent_noop(&mut self, intent: &Intent) -> Result<(), String> {
+        let strategy_key = intent.strategy_key.trim();
+        if strategy_key.is_empty() {
+            return Ok(());
+        }
+        let request = self.build_request_from_intent(intent);
+        self.enforce_time_in_force_policy(&request)?;
+        if self.active_orders_by_strategy.contains_key(strategy_key) {
+            let state = OrderStateData {
+                client_order_id: request.client_order_id.clone(),
+                exchange_order_id: format!("noop_{}", next_suffix()),
+                side: request.side.clone(),
+                requested_notional_usdc: request.notional_usdc,
+                filled_notional_usdc: 0.0,
+                limit_price: request.limit_price,
+                time_in_force: request.time_in_force.clone(),
+                status: "submitted".to_string(),
+                reason: "ok".to_string(),
+                error_code: String::new(),
+                parent_client_order_id: String::new(),
+            };
+            let prev = self
+                .active_orders_by_strategy
+                .get(strategy_key)
+                .map(|x| x.status.clone())
+                .unwrap_or_default();
+            self.emit_event_lazy(
+                "order_replace_called",
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+                strategy_key,
+                request.client_order_id.as_str(),
+                "",
+                intent.reason.as_str(),
+                || {
+                    json!({
+                        "dispatch_mode": "noop",
+                        "token_id": request.token_id,
+                        "side": request.side,
+                        "time_in_force": request.time_in_force,
+                        "limit_price": request.limit_price,
+                        "notional_usdc": request.notional_usdc,
+                    })
+                },
+            );
+            self.emit_lifecycle_transition(
+                strategy_key,
+                prev.as_str(),
+                &state,
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+            );
+            self.mark_active_state(
+                strategy_key,
+                &state,
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+            );
+            return Ok(());
+        }
+        let state = OrderStateData {
+            client_order_id: request.client_order_id.clone(),
+            exchange_order_id: format!("noop_{}", next_suffix()),
+            side: request.side.clone(),
+            requested_notional_usdc: request.notional_usdc,
+            filled_notional_usdc: 0.0,
+            limit_price: request.limit_price,
+            time_in_force: request.time_in_force.clone(),
+            status: "submitted".to_string(),
+            reason: "ok".to_string(),
+            error_code: String::new(),
+            parent_client_order_id: String::new(),
+        };
+        self.emit_event_lazy(
+            "order_submit_called",
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+            strategy_key,
+            request.client_order_id.as_str(),
+            "",
+            intent.reason.as_str(),
+            || {
+                json!({
+                    "dispatch_mode": "noop",
+                    "token_id": request.token_id,
+                    "side": request.side,
+                    "time_in_force": request.time_in_force,
+                    "limit_price": request.limit_price,
+                    "notional_usdc": request.notional_usdc,
+                    "market_type": intent.market_type,
+                    "outcome_semantic": intent.outcome_semantic,
+                    "phase": "submit",
+                })
+            },
+        );
+        self.emit_event_lazy(
+            "order_submit_ok",
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+            strategy_key,
+            state.client_order_id.as_str(),
+            state.exchange_order_id.as_str(),
+            "ok",
+            || {
+                json!({
+                    "dispatch_mode": "noop",
+                    "status": state.status,
+                    "requested_notional_usdc": state.requested_notional_usdc,
+                    "filled_notional_usdc": state.filled_notional_usdc,
+                })
+            },
+        );
+        self.emit_lifecycle_transition(
+            strategy_key,
+            "",
+            &state,
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+        );
+        self.mark_active_state(
+            strategy_key,
+            &state,
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+        );
+        Ok(())
+    }
+
+    fn enforce_time_in_force_policy(&self, request: &OrderRequestData) -> Result<(), String> {
+        let tif = normalize_tif(request.time_in_force.as_str());
+        if tif == "FAK" {
+            return Ok(());
+        }
+        Err(format!("dispatch_tif_not_fak:{}", request.time_in_force))
+    }
+
+    async fn dispatch_intent_http_async(&mut self, intent: &Intent) -> Result<(), String> {
+        let strategy_key = intent.strategy_key.trim().to_string();
+        let request = self.build_request_from_intent(intent);
+        self.enforce_time_in_force_policy(&request)?;
+
+        let active = if strategy_key.is_empty() {
+            None
+        } else {
+            self.active_orders_by_strategy
+                .get(strategy_key.as_str())
+                .cloned()
+        };
+
+        if let Some(active_order) = active {
+            let target_exchange = active_order.exchange_order_id.trim().to_string();
+            if target_exchange.is_empty() {
+                return Err("replace_missing_exchange_order_id".to_string());
+            }
+            match self.cancel_order_async(target_exchange.as_str()).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err("replace_cancel_false".to_string());
+                }
+                Err(err) => {
+                    return Err(format!("replace_cancel_error:{}", err));
+                }
+            }
+            self.emit_event_lazy(
+                "order_cancel_called",
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+                strategy_key.as_str(),
+                active_order.client_order_id.as_str(),
+                target_exchange.as_str(),
+                "replace_cancel_then_submit",
+                || {
+                    json!({
+                        "dispatch_mode": "http",
+                        "exchange_order_id": target_exchange,
+                        "phase": "replace_cancel",
+                    })
+                },
+            );
+            self.mark_active_state(
+                strategy_key.as_str(),
+                &OrderStateData {
+                    status: "canceled".to_string(),
+                    client_order_id: active_order.client_order_id.clone(),
+                    exchange_order_id: target_exchange.clone(),
+                    ..OrderStateData::default()
+                },
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+            );
+
+            let mut state = match self.submit_with_policy_async(&request).await {
+                Ok(s) => s,
+                Err(err) => {
+                    self.emit_event_lazy(
+                        "order_submit_called",
+                        intent.source_universal_id.as_str(),
+                        intent.chain_id.as_str(),
+                        strategy_key.as_str(),
+                        request.client_order_id.as_str(),
+                        "",
+                        intent.reason.as_str(),
+                        || {
+                            json!({
+                                "token_id": request.token_id,
+                                "side": request.side,
+                                "time_in_force": request.time_in_force,
+                                "limit_price": request.limit_price,
+                                "notional_usdc": request.notional_usdc,
+                                "market_type": intent.market_type,
+                                "outcome_semantic": intent.outcome_semantic,
+                                "dispatch_mode": "http",
+                                "phase": "replace_submit",
+                            })
+                        },
+                    );
+                    self.emit_event_lazy(
+                        "order_submit_failed",
+                        intent.source_universal_id.as_str(),
+                        intent.chain_id.as_str(),
+                        strategy_key.as_str(),
+                        request.client_order_id.as_str(),
+                        "",
+                        err.as_str(),
+                        || {
+                            json!({
+                                "dispatch_mode": "http",
+                                "token_id": request.token_id,
+                                "side": request.side,
+                                "time_in_force": request.time_in_force,
+                                "limit_price": request.limit_price,
+                                "notional_usdc": request.notional_usdc,
+                                "market_type": intent.market_type,
+                                "outcome_semantic": intent.outcome_semantic,
+                                "phase": "replace_submit",
+                            })
+                        },
+                    );
+                    return Err(err);
+                }
+            };
+            if !active_order.client_order_id.trim().is_empty() {
+                state.parent_client_order_id = active_order.client_order_id;
+            }
+            self.emit_event_lazy(
+                "order_submit_called",
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+                strategy_key.as_str(),
+                request.client_order_id.as_str(),
+                "",
+                intent.reason.as_str(),
+                || {
+                    json!({
+                        "token_id": request.token_id,
+                        "side": request.side,
+                        "time_in_force": request.time_in_force,
+                        "limit_price": request.limit_price,
+                        "notional_usdc": request.notional_usdc,
+                        "market_type": intent.market_type,
+                        "outcome_semantic": intent.outcome_semantic,
+                        "phase": "replace_submit",
+                    })
+                },
+            );
+            self.emit_event_lazy(
+                "order_submit_ok",
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+                strategy_key.as_str(),
+                state.client_order_id.as_str(),
+                state.exchange_order_id.as_str(),
+                state.reason.as_str(),
+                || {
+                    json!({
+                        "status": state.status,
+                        "requested_notional_usdc": state.requested_notional_usdc,
+                        "filled_notional_usdc": state.filled_notional_usdc,
+                        "phase": "replace_submit",
+                    })
+                },
+            );
+            self.emit_lifecycle_transition(
+                strategy_key.as_str(),
+                active_order.status.as_str(),
+                &state,
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+            );
+            self.mark_active_state(
+                strategy_key.as_str(),
+                &state,
+                intent.source_universal_id.as_str(),
+                intent.chain_id.as_str(),
+            );
+            return Ok(());
+        }
+
+        let state = match self.submit_with_policy_async(&request).await {
+            Ok(s) => s,
+            Err(err) => {
+                self.emit_event_lazy(
+                    "order_submit_called",
+                    intent.source_universal_id.as_str(),
+                    intent.chain_id.as_str(),
+                    strategy_key.as_str(),
+                    request.client_order_id.as_str(),
+                    "",
+                    intent.reason.as_str(),
+                    || {
+                        json!({
+                            "dispatch_mode": "http",
+                            "token_id": request.token_id,
+                            "side": request.side,
+                            "time_in_force": request.time_in_force,
+                            "limit_price": request.limit_price,
+                            "notional_usdc": request.notional_usdc,
+                            "market_type": intent.market_type,
+                            "outcome_semantic": intent.outcome_semantic,
+                            "phase": "submit",
+                        })
+                    },
+                );
+                self.emit_event_lazy(
+                    "order_submit_failed",
+                    intent.source_universal_id.as_str(),
+                    intent.chain_id.as_str(),
+                    strategy_key.as_str(),
+                    request.client_order_id.as_str(),
+                    "",
+                    err.as_str(),
+                    || {
+                        json!({
+                            "dispatch_mode": "http",
+                            "token_id": request.token_id,
+                            "side": request.side,
+                            "time_in_force": request.time_in_force,
+                            "limit_price": request.limit_price,
+                            "notional_usdc": request.notional_usdc,
+                            "market_type": intent.market_type,
+                            "outcome_semantic": intent.outcome_semantic,
+                            "phase": "submit",
+                        })
+                    },
+                );
+                return Err(err);
+            }
+        };
+        self.emit_event_lazy(
+            "order_submit_called",
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+            strategy_key.as_str(),
+            request.client_order_id.as_str(),
+            "",
+            intent.reason.as_str(),
+            || {
+                json!({
+                    "dispatch_mode": "http",
+                    "token_id": request.token_id,
+                    "side": request.side,
+                    "time_in_force": request.time_in_force,
+                    "limit_price": request.limit_price,
+                    "notional_usdc": request.notional_usdc,
+                    "market_type": intent.market_type,
+                    "outcome_semantic": intent.outcome_semantic,
+                    "phase": "submit",
+                })
+            },
+        );
+        self.emit_event_lazy(
+            "order_submit_ok",
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+            strategy_key.as_str(),
+            state.client_order_id.as_str(),
+            state.exchange_order_id.as_str(),
+            state.reason.as_str(),
+            || {
+                json!({
+                    "status": state.status,
+                    "requested_notional_usdc": state.requested_notional_usdc,
+                    "filled_notional_usdc": state.filled_notional_usdc,
+                })
+            },
+        );
+        self.emit_lifecycle_transition(
+            strategy_key.as_str(),
+            "",
+            &state,
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+        );
+        self.mark_active_state(
+            strategy_key.as_str(),
+            &state,
+            intent.source_universal_id.as_str(),
+            intent.chain_id.as_str(),
+        );
+        Ok(())
+    }
+
+    pub(crate) async fn dispatch_intent_async(&mut self, intent: &Intent) -> Result<(), String> {
+        if matches!(self.cfg.mode, DispatchMode::Noop) {
+            return self.dispatch_intent_noop(intent);
+        }
+        self.dispatch_intent_http_async(intent).await
+    }
+
+    pub(crate) fn active_order_refresh_interval_seconds(&self) -> f64 {
+        self.cfg.active_order_refresh_interval_seconds.max(0.0)
+    }
+
+    pub(crate) async fn refresh_active_state_from_broker_async(&mut self) {
+        if !matches!(self.cfg.mode, DispatchMode::Http) {
+            return;
+        }
+        let keys = self
+            .active_orders_by_strategy
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Vec<_>>();
+        for (strategy_key, active_ref) in keys {
+            let exchange_id = active_ref.exchange_order_id.clone();
+            if exchange_id.trim().is_empty() {
+                continue;
+            }
+            match self.get_order_async(exchange_id.as_str()).await {
+                Ok(state) => {
+                    self.emit_lifecycle_transition(
+                        strategy_key.as_str(),
+                        active_ref.status.as_str(),
+                        &state,
+                        active_ref.source_universal_id.as_str(),
+                        active_ref.chain_id.as_str(),
+                    );
+                    self.mark_active_state(
+                        strategy_key.as_str(),
+                        &state,
+                        active_ref.source_universal_id.as_str(),
+                        active_ref.chain_id.as_str(),
+                    );
+                }
+                Err(_) => {}
+            }
+        }
+    }
+}
