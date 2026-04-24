@@ -56,7 +56,7 @@ sudo dnf -y update
 sudo dnf -y install \
   git gcc gcc-c++ make pkgconfig \
   openssl-devel libffi-devel bzip2-devel xz-devel zlib-devel \
-  tar gzip curl wget which htop tmux jq
+  tar gzip wget which htop tmux jq
 
 # ───────────────────────────────────────────────────────────────────────────
 # 2. Miniconda
