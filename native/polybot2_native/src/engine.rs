@@ -45,7 +45,6 @@ impl NativeMlbEngine {
             limit_price,
             time_in_force,
             over_targets_by_game: HashMap::new(),
-            over_lines_by_game: HashMap::new(),
             under_targets_by_game: HashMap::new(),
             nrfi_targets_by_game: HashMap::new(),
             moneyline_by_game: HashMap::new(),
@@ -81,7 +80,6 @@ impl NativeMlbEngine {
 
     pub fn load_plan(&mut self, plan: &Bound<'_, PyDict>) -> PyResult<()> {
         self.over_targets_by_game.clear();
-        self.over_lines_by_game.clear();
         self.under_targets_by_game.clear();
         self.nrfi_targets_by_game.clear();
         self.moneyline_by_game.clear();
@@ -212,8 +210,6 @@ impl NativeMlbEngine {
                     .then_with(|| a.strategy_key.cmp(&b.strategy_key))
             });
             if !over_targets.is_empty() {
-                let lines = over_targets.iter().map(|x| x.line).collect::<Vec<_>>();
-                self.over_lines_by_game.insert(uid.clone(), lines);
                 self.over_targets_by_game.insert(uid.clone(), over_targets);
             }
 
@@ -984,9 +980,6 @@ mod tests {
                 strategy_key: "sk_over".to_string(),
             }],
         );
-        engine
-            .over_lines_by_game
-            .insert(game_id.clone(), vec![0.5]);
 
         let mut nrfi_map = HashMap::new();
         nrfi_map.insert(
@@ -1262,6 +1255,210 @@ mod tests {
         assert!(!has_nrfi, "no inning data should defer NRFI evaluation");
         assert!(!engine.nrfi_first_inning_observed.contains(&game_id));
         assert!(!engine.nrfi_resolved_games.contains(&game_id));
+    }
+
+    fn setup_over_targets(engine: &mut NativeMlbEngine, game_id: &str, lines: &[f64]) {
+        let targets: Vec<TotalsTarget> = lines
+            .iter()
+            .map(|&line| TotalsTarget {
+                line,
+                token_id: format!("tok_over_{}", line),
+                condition_id: format!("cond_over_{}", line),
+                strategy_key: format!("sk_over_{}", line),
+            })
+            .collect();
+        engine
+            .over_targets_by_game
+            .insert(game_id.to_string(), targets);
+    }
+
+    fn setup_under_targets(engine: &mut NativeMlbEngine, game_id: &str, lines: &[f64]) {
+        let targets: Vec<TotalsTarget> = lines
+            .iter()
+            .map(|&line| TotalsTarget {
+                line,
+                token_id: format!("tok_under_{}", line),
+                condition_id: format!("cond_under_{}", line),
+                strategy_key: format!("sk_under_{}", line),
+            })
+            .collect();
+        engine
+            .under_targets_by_game
+            .insert(game_id.to_string(), targets);
+    }
+
+    fn tick_with_score(game_id: &str, home: i64, away: i64, ns: i64) -> Tick {
+        Tick {
+            universal_id: game_id.to_string(),
+            action: "update".to_string(),
+            recv_monotonic_ns: ns,
+            goals_home: Some(home),
+            goals_away: Some(away),
+            inning_number: Some(3),
+            inning_half: "top".to_string(),
+            game_state: "live".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn totals_over_multi_line_crossing() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
+        let gid = "g1";
+        setup_over_targets(&mut engine, gid, &[1.5, 2.5, 3.5]);
+
+        // Baseline: 0-0
+        let _ = engine.process_tick(tick_with_score(gid, 0, 0, 1000));
+
+        // Score jumps to 3-0 (total 0→3), crossing lines 1.5 and 2.5 but not 3.5
+        let out = engine.process_tick(tick_with_score(gid, 3, 0, 2000));
+
+        let over_intents: Vec<&str> = out
+            .intents
+            .iter()
+            .filter(|i| i.market_type == "totals" && i.outcome_semantic == "over")
+            .map(|i| i.strategy_key.as_str())
+            .collect();
+        assert_eq!(
+            over_intents.len(),
+            2,
+            "should emit intents for both crossed lines 1.5 and 2.5, got {:?}",
+            over_intents
+        );
+        assert!(over_intents.contains(&"sk_over_1.5"));
+        assert!(over_intents.contains(&"sk_over_2.5"));
+        assert!(
+            !over_intents.contains(&"sk_over_3.5"),
+            "3.5 was not crossed (total=3, line=3.5)"
+        );
+    }
+
+    #[test]
+    fn totals_over_sequential_crossings() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
+        let gid = "g1";
+        setup_over_targets(&mut engine, gid, &[1.5, 2.5]);
+
+        // Baseline: 1-0
+        let _ = engine.process_tick(tick_with_score(gid, 1, 0, 1000));
+
+        // Total 1→2: crosses 1.5 only
+        let out1 = engine.process_tick(tick_with_score(gid, 2, 0, 2000));
+        let keys1: Vec<&str> = out1
+            .intents
+            .iter()
+            .filter(|i| i.market_type == "totals")
+            .map(|i| i.strategy_key.as_str())
+            .collect();
+        assert_eq!(keys1, vec!["sk_over_1.5"]);
+
+        // Total 2→3: crosses 2.5 only (1.5 already fired, one-shot blocks)
+        let out2 = engine.process_tick(tick_with_score(gid, 2, 1, 3000));
+        let keys2: Vec<&str> = out2
+            .intents
+            .iter()
+            .filter(|i| i.market_type == "totals")
+            .map(|i| i.strategy_key.as_str())
+            .collect();
+        assert_eq!(keys2, vec!["sk_over_2.5"]);
+    }
+
+    #[test]
+    fn totals_over_no_crossing() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
+        let gid = "g1";
+        setup_over_targets(&mut engine, gid, &[5.5, 6.5]);
+
+        let _ = engine.process_tick(tick_with_score(gid, 0, 0, 1000));
+        let out = engine.process_tick(tick_with_score(gid, 1, 1, 2000));
+
+        let over_count = out
+            .intents
+            .iter()
+            .filter(|i| i.market_type == "totals")
+            .count();
+        assert_eq!(over_count, 0, "total 2 is below all lines (5.5, 6.5)");
+    }
+
+    #[test]
+    fn totals_over_one_shot_prevents_duplicate() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
+        let gid = "g1";
+        setup_over_targets(&mut engine, gid, &[1.5]);
+
+        let _ = engine.process_tick(tick_with_score(gid, 0, 0, 1000));
+        let out1 = engine.process_tick(tick_with_score(gid, 2, 0, 2000));
+        assert_eq!(out1.intents.len(), 1, "first crossing should fire");
+        assert!(engine.attempted_strategy_keys.contains("sk_over_1.5"));
+
+        // Score goes higher — 1.5 was already fired, one-shot blocks
+        let out2 = engine.process_tick(tick_with_score(gid, 3, 0, 3000));
+        let over_intents: Vec<_> = out2
+            .intents
+            .iter()
+            .filter(|i| i.strategy_key == "sk_over_1.5")
+            .collect();
+        assert!(
+            over_intents.is_empty(),
+            "one-shot should prevent duplicate intent for 1.5"
+        );
+    }
+
+    #[test]
+    fn totals_under_final_all_lines_above_total() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
+        let gid = "g1";
+        setup_under_targets(&mut engine, gid, &[5.5, 6.5, 7.5]);
+
+        // Baseline
+        let _ = engine.process_tick(tick_with_score(gid, 3, 2, 1000));
+
+        // Game ends: total=5, all under lines (5.5, 6.5, 7.5) are above
+        let mut final_tick = tick_with_score(gid, 3, 2, 2000);
+        final_tick.match_completed = Some(true);
+        final_tick.game_state = "FINAL".to_string();
+        let out = engine.process_tick(final_tick);
+
+        let under_keys: Vec<&str> = out
+            .intents
+            .iter()
+            .filter(|i| i.market_type == "totals" && i.outcome_semantic == "under")
+            .map(|i| i.strategy_key.as_str())
+            .collect();
+        assert_eq!(under_keys.len(), 3, "all three under lines should fire");
+        assert!(under_keys.contains(&"sk_under_5.5"));
+        assert!(under_keys.contains(&"sk_under_6.5"));
+        assert!(under_keys.contains(&"sk_under_7.5"));
+    }
+
+    #[test]
+    fn totals_over_grand_slam_jump() {
+        let mut engine = NativeMlbEngine::new(2.0, 0.0, 0.0, 5.0, 5.0, 0.52, "FAK".to_string());
+        let gid = "g1";
+        setup_over_targets(&mut engine, gid, &[3.5, 4.5, 5.5, 6.5]);
+
+        // Baseline: 2-1 (total=3)
+        let _ = engine.process_tick(tick_with_score(gid, 2, 1, 1000));
+
+        // Grand slam: 6-1 (total 3→7), crosses all four lines
+        let out = engine.process_tick(tick_with_score(gid, 6, 1, 2000));
+
+        let over_keys: Vec<&str> = out
+            .intents
+            .iter()
+            .filter(|i| i.market_type == "totals" && i.outcome_semantic == "over")
+            .map(|i| i.strategy_key.as_str())
+            .collect();
+        assert_eq!(
+            over_keys.len(),
+            4,
+            "all four lines should be crossed, got {:?}",
+            over_keys
+        );
+        assert!(over_keys.contains(&"sk_over_3.5"));
+        assert!(over_keys.contains(&"sk_over_4.5"));
+        assert!(over_keys.contains(&"sk_over_5.5"));
+        assert!(over_keys.contains(&"sk_over_6.5"));
     }
 }
 
