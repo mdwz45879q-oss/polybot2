@@ -75,6 +75,10 @@ else
   echo ">>> Miniconda already installed at $CONDA_DIR"
 fi
 
+# Accept conda terms of service (required by newer conda versions)
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true"
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true"
+
 # ───────────────────────────────────────────────────────────────────────────
 # 3. Conda environment with Python 3.11
 # ───────────────────────────────────────────────────────────────────────────
