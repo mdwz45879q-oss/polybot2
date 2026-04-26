@@ -30,7 +30,7 @@ pytest tests/ --ignore=tests/live -q                            # Python tests
 pytest tests/test_polybot2_hotpath_observe.py -k "heartbeat"    # single test
 ```
 
-Tests in `tests/live/` require real API credentials and `POLYBOT2_ENABLE_LIVE_*` env vars. The live Rust execution tests (`live_rust_submit_*`) are gated behind `POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1` and validate SDK order construction for FAK, FOK, GTC, and GTD against the real Polymarket CLOB using sub-minimum orders that get rejected without risking money.
+Tests in `tests/live/` require real API credentials and `POLYBOT2_ENABLE_LIVE_*` env vars. The live Rust execution tests (`live_rust_submit_*`) are gated behind `POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1` and validate SDK order construction for FAK, FOK, and GTC against the real Polymarket CLOB using sub-minimum orders that get rejected without risking money.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ The hot path is designed for minimum latency. It does exactly three things: pars
 | `eval.rs` | MLB evaluation strategies: totals (over/under), NRFI, moneyline, spread. Strategy-key-as-lookup pattern. |
 | `dispatch/flow.rs` | Order dispatch: `dispatch_order(token_id)` → noop (paper) or http (live) |
 | `dispatch/presign_pool.rs` | Presign order pool: parallel warmup at startup (1 per token, no runtime refill) |
-| `dispatch/sdk_exec.rs` | Polymarket SDK integration: sign, submit. Branches by order type: FAK/FOK use `market_order()`, GTC/GTD use `limit_order()` |
+| `dispatch/sdk_exec.rs` | Polymarket SDK integration: sign, submit. Branches by order type: FAK/FOK use `market_order()`, GTC uses `limit_order()` |
 | `ws.rs` | Live worker: Kalstrop WS connection with TCP_NODELAY, subscription management, frame drain loop |
 | `runtime.rs` | PyO3 `NativeHotPathRuntime`: start/stop, health snapshot, FFI boundary |
 | `replay.rs` | Dispatch bridge: `process_decoded_frame_async` calls engine then dispatch, then writes log |
@@ -67,7 +67,7 @@ The hot path is designed for minimum latency. It does exactly three things: pars
 ```
 WS frame (Message::Text)
   → serde_json::from_str<KalstropFrame<'a>>   (zero-copy, skips unknown fields)
-  → parse_tick_from_kalstrop_update            (borrows from frame, 2 heap allocs: universal_id + period)
+  → parse_tick_from_kalstrop_update            (borrows from frame, 1 heap alloc: universal_id)
   → process_tick                               (dedup → update state → evaluate → one-shot filter)
   → dispatch_order(token_id)                   (pop presigned order → HTTP POST)
   → log_writer.log_tick + log_order             (JSONL append, after dispatch, off critical path)
@@ -153,7 +153,7 @@ In presign mode, dispatch takes a fast path: pop presigned order by token_id →
 
 6. **Independent evaluation:** `evaluate_totals`, `evaluate_nrfi`, and `evaluate_final` all run independently on every tick (not an if/else chain). A game with both totals and NRFI targets will evaluate both.
 
-7. **NRFI first-inning gate:** `nrfi_first_inning_observed` HashSet tracks whether the engine was observing during the first inning. Late subscriptions (inning > 1) are permanently skipped. Ticks without inning data defer evaluation. Extra innings are guarded: if `freeText` contains "extra", `inning_number` is set to `None`.
+7. **NRFI first-inning gate:** `nrfi_first_inning_observed` HashSet tracks whether the engine was observing during the first inning. Late subscriptions (inning > 1) are permanently skipped. Ticks without inning data defer evaluation. Extra innings are guarded: if `freeText` contains "extra", `inning_number` is set to `None`. Kalstrop break naming: `"Break top 1 bottom 1"` = mid-inning break (bottom of 1st not yet played, first inning NOT over); `"Break top 2 bottom 1"` = first inning fully done (NRFI NO can fire here if total=0).
 
 8. **Zero-copy parsing:** The live WS path deserializes directly into borrowed `KalstropFrame<'a>` structs. Only `universal_id` and `period` are heap-allocated per tick. All other string fields are `&'static str` (fixed enum values).
 

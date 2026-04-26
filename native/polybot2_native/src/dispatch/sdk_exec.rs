@@ -54,7 +54,7 @@ impl DispatchRuntime {
                 self.cfg.signature_type
             ));
         }
-        let client_cfg = SdkConfig::builder().use_server_time(true).build();
+        let client_cfg = SdkConfig::builder().use_server_time(false).build();
         let client = SdkClient::new(self.cfg.clob_host.as_str(), client_cfg)
             .map_err(|e| format!("sdk_client_new:{}", e))?;
 
@@ -183,6 +183,45 @@ impl DispatchRuntime {
             .ok_or_else(|| "cached_signer_missing".to_string())
     }
 
+    pub(super) async fn post_signed_orders_batch_async(
+        &mut self,
+        signed_orders: Vec<SdkSignedOrder>,
+    ) -> Result<Vec<Result<String, String>>, String> {
+        if signed_orders.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.ensure_sdk_runtime().await?;
+        let sdk = self
+            .sdk_runtime
+            .as_ref()
+            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
+        let count = signed_orders.len();
+        let responses = sdk
+            .client
+            .post_orders(signed_orders)
+            .await
+            .map_err(|e| format!("batch_submit_failed:{}", e))?;
+        if responses.len() != count {
+            return Err(format!(
+                "batch_response_count_mismatch:expected={},got={}",
+                count,
+                responses.len()
+            ));
+        }
+        Ok(responses
+            .into_iter()
+            .map(|resp| {
+                if resp.success {
+                    Ok(resp.order_id)
+                } else {
+                    Err(format!(
+                        "submit_failed:errorMsg:{}",
+                        resp.error_msg.unwrap_or_else(|| "unknown".to_string())
+                    ))
+                }
+            })
+            .collect())
+    }
 }
 
 pub(super) async fn sign_order_batch(

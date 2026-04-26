@@ -147,6 +147,14 @@ class LiveObserver:
 
     def run(self) -> None:
         """Tail the log file and redraw on each new line. Blocks forever."""
+        import signal
+        stop = False
+        def _on_signal(signum: int, frame: Any) -> None:
+            nonlocal stop
+            stop = True
+        signal.signal(signal.SIGINT, _on_signal)
+        signal.signal(signal.SIGTERM, _on_signal)
+
         with open(self.log_path, "r") as f:
             # Catch up on existing lines
             for line in f:
@@ -155,18 +163,15 @@ class LiveObserver:
                     self._process_line(stripped)
             self._redraw()
             # Tail for new lines
-            try:
-                while True:
-                    line = f.readline()
-                    if line:
-                        stripped = line.strip()
-                        if stripped:
-                            self._process_line(stripped)
-                            self._redraw()
-                    else:
-                        time.sleep(0.1)
-            except KeyboardInterrupt:
-                pass
+            while not stop:
+                line = f.readline()
+                if line:
+                    stripped = line.strip()
+                    if stripped:
+                        self._process_line(stripped)
+                        self._redraw()
+                else:
+                    time.sleep(0.1)
 
     def _process_line(self, line: str) -> None:
         try:

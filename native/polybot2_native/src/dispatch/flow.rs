@@ -68,4 +68,90 @@ impl DispatchRuntime {
         }
         self.dispatch_sign_and_submit_async(token_id).await
     }
+
+    pub(crate) async fn dispatch_orders_batch(
+        &mut self,
+        token_ids: &[&str],
+    ) -> Vec<Result<String, String>> {
+        let count = token_ids.len();
+        if count == 0 {
+            return Vec::new();
+        }
+
+        if matches!(self.cfg.mode, DispatchMode::Noop) {
+            return vec![Ok("noop".to_string()); count];
+        }
+
+        let use_presign = self.cfg.presign_enabled && self.cfg.presign_pool_target_per_key > 0;
+
+        let mut signed_orders: Vec<Option<SdkSignedOrder>> = Vec::with_capacity(count);
+        let mut early_errors: Vec<Option<String>> = vec![None; count];
+
+        for (i, &token_id) in token_ids.iter().enumerate() {
+            if use_presign {
+                let key = PreSignKey {
+                    token_id: token_id.trim().to_string(),
+                };
+                match self.pop_presigned_order(&key) {
+                    Some(presigned) => signed_orders.push(Some(presigned.signed_order)),
+                    None => {
+                        early_errors[i] = Some(format!(
+                            "submit_presigned_miss:token_id={}",
+                            redact_token_id(key.token_id.as_str())
+                        ));
+                        signed_orders.push(None);
+                    }
+                }
+            } else {
+                let request = self.build_order_request(token_id);
+                match self.build_signed_order_async(&request).await {
+                    Ok(signed) => signed_orders.push(Some(signed)),
+                    Err(e) => {
+                        early_errors[i] = Some(e);
+                        signed_orders.push(None);
+                    }
+                }
+            }
+        }
+
+        let mut batch_indices: Vec<usize> = Vec::new();
+        let mut batch_orders: Vec<SdkSignedOrder> = Vec::new();
+        for (i, maybe_signed) in signed_orders.into_iter().enumerate() {
+            if let Some(signed) = maybe_signed {
+                batch_indices.push(i);
+                batch_orders.push(signed);
+            }
+        }
+
+        let mut results: Vec<Result<String, String>> = early_errors
+            .into_iter()
+            .map(|e| match e {
+                Some(err) => Err(err),
+                None => Ok(String::new()),
+            })
+            .collect();
+
+        const MAX_BATCH_SIZE: usize = 15;
+        let mut batch_offset = 0;
+        while !batch_orders.is_empty() {
+            let chunk_len = batch_orders.len().min(MAX_BATCH_SIZE);
+            let chunk: Vec<SdkSignedOrder> = batch_orders.drain(..chunk_len).collect();
+            let chunk_count = chunk.len();
+            match self.post_signed_orders_batch_async(chunk).await {
+                Ok(chunk_results) => {
+                    for (j, result) in chunk_results.into_iter().enumerate() {
+                        results[batch_indices[batch_offset + j]] = result;
+                    }
+                }
+                Err(transport_err) => {
+                    for j in 0..chunk_count {
+                        results[batch_indices[batch_offset + j]] = Err(transport_err.clone());
+                    }
+                }
+            }
+            batch_offset += chunk_count;
+        }
+
+        results
+    }
 }

@@ -341,6 +341,12 @@ impl NativeMlbEngine {
             emitted.push(intent);
         }
 
+        // Defer cleanup for completed games until after intents are selected
+        // but before returning (dispatch happens in the caller, after this returns).
+        if state.match_completed.unwrap_or(false) && self.final_resolved_games.contains(&game_id) {
+            self.cleanup_completed_game(&game_id);
+        }
+
         TickResult {
             game_id,
             state,

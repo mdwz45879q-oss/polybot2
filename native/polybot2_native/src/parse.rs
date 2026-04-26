@@ -100,7 +100,7 @@ fn parse_tick_from_event(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -> Ti
 ///   "Not started"            → (None, "")
 ///   "Ended"                  → (None, "")
 pub(crate) fn parse_period(text: &str) -> (Option<i64>, &'static str) {
-    let s = text.trim().to_lowercase();
+    let s = text.trim();
     if s.is_empty() {
         return (None, "");
     }
@@ -108,108 +108,128 @@ pub(crate) fn parse_period(text: &str) -> (Option<i64>, &'static str) {
     // TODO: Handle extra innings. Kalstrop's exact freeText format for extras
     // is unknown. Guard: if "extra" appears anywhere, return None to avoid
     // misidentifying it as inning 1.
-    if s.contains("extra") {
+    if contains_ascii_ci(s, "extra") {
         return (None, "");
     }
 
     // "4th inning top" / "4th inning bottom"
-    if s.contains("inning") {
-        let half = if s.contains("top") {
+    if contains_ascii_ci(s, "inning") {
+        let half = if contains_ascii_ci(s, "top") {
             "top"
-        } else if s.contains("bottom") {
+        } else if contains_ascii_ci(s, "bottom") {
             "bottom"
         } else {
             ""
         };
-        let number = extract_first_number(&s);
+        let number = extract_first_number_fast(s.as_bytes());
         return (number, half);
     }
 
     // "Break top 3 bottom 3"
-    if s.starts_with("break") {
-        let number = extract_first_number(&s);
+    if s.len() >= 5 && s.as_bytes()[..5].eq_ignore_ascii_case(b"break") {
+        let number = extract_first_number_fast(s.as_bytes());
         return (number, "break");
     }
 
     (None, "")
 }
 
-fn extract_first_number(s: &str) -> Option<i64> {
-    let digits: String = s
-        .chars()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    if digits.is_empty() {
-        None
-    } else {
-        digits.parse().ok()
+fn extract_first_number_fast(bytes: &[u8]) -> Option<i64> {
+    let mut i = 0;
+    while i < bytes.len() && !bytes[i].is_ascii_digit() {
+        i += 1;
     }
+    if i >= bytes.len() {
+        return None;
+    }
+    let mut n: i64 = 0;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        n = n * 10 + (bytes[i] - b'0') as i64;
+        i += 1;
+    }
+    Some(n)
+}
+
+fn contains_ascii_ci(haystack: &str, needle: &str) -> bool {
+    let h = haystack.as_bytes();
+    let n = needle.as_bytes();
+    if n.len() > h.len() {
+        return false;
+    }
+    for start in 0..=(h.len() - n.len()) {
+        if h[start..start + n.len()].eq_ignore_ascii_case(n) {
+            return true;
+        }
+    }
+    false
 }
 
 fn map_inning_half(s: &str) -> &'static str {
-    match s.trim().to_lowercase().as_str() {
-        "top" => "top",
-        "bottom" => "bottom",
-        "break" => "break",
-        _ => "",
+    let t = s.trim();
+    if t.eq_ignore_ascii_case("top") {
+        "top"
+    } else if t.eq_ignore_ascii_case("bottom") {
+        "bottom"
+    } else if t.eq_ignore_ascii_case("break") {
+        "break"
+    } else {
+        ""
     }
 }
 
 fn is_completed_state(event_state: &str) -> bool {
-    matches!(
-        event_state.trim().to_uppercase().as_str(),
-        "FINISHED" | "ENDED" | "MATCH_COMPLETED" | "CLOSED" | "FINAL" | "FT" | "COMPLETE" | "COMPLETED"
-    )
+    let s = event_state.trim();
+    s.eq_ignore_ascii_case("FINISHED")
+        || s.eq_ignore_ascii_case("ENDED")
+        || s.eq_ignore_ascii_case("MATCH_COMPLETED")
+        || s.eq_ignore_ascii_case("CLOSED")
+        || s.eq_ignore_ascii_case("FINAL")
+        || s.eq_ignore_ascii_case("FT")
+        || s.eq_ignore_ascii_case("COMPLETE")
+        || s.eq_ignore_ascii_case("COMPLETED")
 }
 
 pub(crate) fn normalize_game_state(event_state: &str) -> &'static str {
-    let s = event_state.trim().to_lowercase();
+    let s = event_state.trim();
     if s.is_empty() {
         return "UNKNOWN";
     }
-    if matches!(
-        s.as_str(),
-        "closed"
-            | "resolved"
-            | "ended"
-            | "finished"
-            | "final"
-            | "complete"
-            | "completed"
-            | "cancelled"
-            | "canceled"
-            | "ft"
-    ) {
+    if s.eq_ignore_ascii_case("closed")
+        || s.eq_ignore_ascii_case("resolved")
+        || s.eq_ignore_ascii_case("ended")
+        || s.eq_ignore_ascii_case("finished")
+        || s.eq_ignore_ascii_case("final")
+        || s.eq_ignore_ascii_case("complete")
+        || s.eq_ignore_ascii_case("completed")
+        || s.eq_ignore_ascii_case("cancelled")
+        || s.eq_ignore_ascii_case("canceled")
+        || s.eq_ignore_ascii_case("ft")
+    {
         return "FINAL";
     }
-    if matches!(
-        s.as_str(),
-        "live"
-            | "inplay"
-            | "in_play"
-            | "ongoing"
-            | "in_progress"
-            | "started"
-            | "halftime"
-            | "overtime"
-    ) {
+    if s.eq_ignore_ascii_case("live")
+        || s.eq_ignore_ascii_case("inplay")
+        || s.eq_ignore_ascii_case("in_play")
+        || s.eq_ignore_ascii_case("ongoing")
+        || s.eq_ignore_ascii_case("in_progress")
+        || s.eq_ignore_ascii_case("started")
+        || s.eq_ignore_ascii_case("halftime")
+        || s.eq_ignore_ascii_case("overtime")
+    {
         return "LIVE";
     }
-    if matches!(
-        s.as_str(),
-        "scheduled"
-            | "upcoming"
-            | "not_started"
-            | "not started"
-            | "pending"
-            | "pre"
-            | "pregame"
-            | "pre_game"
-            | "pre-match"
-            | "pre_match"
-            | "prematch"
-    ) {
+    if s.eq_ignore_ascii_case("scheduled")
+        || s.eq_ignore_ascii_case("upcoming")
+        || s.eq_ignore_ascii_case("not_started")
+        || s.eq_ignore_ascii_case("not started")
+        || s.eq_ignore_ascii_case("pending")
+        || s.eq_ignore_ascii_case("pre")
+        || s.eq_ignore_ascii_case("pregame")
+        || s.eq_ignore_ascii_case("pre_game")
+        || s.eq_ignore_ascii_case("pre-match")
+        || s.eq_ignore_ascii_case("pre_match")
+        || s.eq_ignore_ascii_case("prematch")
+    {
         return "NOT STARTED";
     }
     "UNKNOWN"

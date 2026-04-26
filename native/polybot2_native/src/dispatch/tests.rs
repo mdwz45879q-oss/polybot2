@@ -230,6 +230,52 @@ fn live_rust_submit_fok_min_notional_rejection() {
 }
 
 #[test]
+fn noop_dispatch_batch_succeeds() {
+    let mut rt = DispatchRuntime::new(DispatchConfig::default());
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let results = tokio_rt.block_on(rt.dispatch_orders_batch(&["t1", "t2", "t3"]));
+    assert_eq!(results.len(), 3);
+    for r in &results {
+        assert_eq!(r.as_ref().unwrap(), "noop");
+    }
+}
+
+#[test]
+fn empty_dispatch_batch_returns_empty() {
+    let mut rt = DispatchRuntime::new(DispatchConfig::default());
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let results = tokio_rt.block_on(rt.dispatch_orders_batch(&[]));
+    assert!(results.is_empty());
+}
+
+#[test]
+fn presign_batch_miss_is_per_order() {
+    let cfg = DispatchConfig {
+        mode: DispatchMode::Http,
+        presign_enabled: true,
+        presign_pool_target_per_key: 1,
+        ..DispatchConfig::default()
+    };
+    let mut rt = DispatchRuntime::new(cfg);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let results = tokio_rt.block_on(rt.dispatch_orders_batch(&["t1", "t2"]));
+    assert_eq!(results.len(), 2);
+    for r in &results {
+        assert!(r.is_err());
+        assert!(r.as_ref().unwrap_err().contains("submit_presigned_miss"));
+    }
+}
+
+#[test]
 fn live_rust_submit_gtc_min_size_rejection() {
     let Some(mut cfg) = build_live_dispatch_config() else {
         eprintln!("skipping live GTC test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
@@ -253,5 +299,36 @@ fn live_rust_submit_gtc_min_size_rejection() {
         "unexpected GTC live rejection: {}",
         err
     );
+}
+
+#[test]
+fn live_rust_batch_submit_roundtrip() {
+    let Some(mut cfg) = build_live_dispatch_config() else {
+        eprintln!("skipping live batch test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+        return;
+    };
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    cfg.amount_usdc = 0.5;
+    cfg.limit_price = 0.5;
+    cfg.size_shares = 1.0;
+    cfg.time_in_force = OrderTimeInForce::FAK;
+    let mut rt = DispatchRuntime::new(cfg);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let results = tokio_rt.block_on(
+        rt.dispatch_orders_batch(&[token_id.as_str(), token_id.as_str()])
+    );
+    assert_eq!(results.len(), 2, "batch should return one result per order");
+    // The batch endpoint may accept or reject sub-minimum orders depending on
+    // server-side validation. We verify the round-trip works and returns a
+    // per-order result for each input.
+    for (i, r) in results.iter().enumerate() {
+        match r {
+            Ok(eid) => eprintln!("batch order {}: accepted eid={}", i, eid),
+            Err(err) => eprintln!("batch order {}: rejected err={}", i, err),
+        }
+    }
 }
 

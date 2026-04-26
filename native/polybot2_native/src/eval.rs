@@ -179,7 +179,6 @@ impl NativeMlbEngine {
         }
 
         self.final_resolved_games.insert(uid.clone());
-        self.cleanup_completed_game(uid);
         intents
     }
 }

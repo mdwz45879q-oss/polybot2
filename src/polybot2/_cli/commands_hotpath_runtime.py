@@ -325,25 +325,9 @@ def run_hotpath(args: Any, *, logger: logging.Logger) -> int:
                 _sock_path = "/tmp/polybot2_hotpath_telemetry.sock"
                 logger.info("socket after monitor.start(): exists=%s", _os.path.exists(_sock_path))
             hotpath.start()
-            if monitor is not None:
-                import os as _os
-                _sock_path = "/tmp/polybot2_hotpath_telemetry.sock"
-                logger.info("socket after hotpath.start(): exists=%s", _os.path.exists(_sock_path))
             logger.info("hotpath started at %s (Ctrl+C to stop)", started_at)
-            _health_tick = 0
             while not stop:
                 time.sleep(1.0)
-                _health_tick += 1
-                if _health_tick % 15 == 0:
-                    _h = hotpath.health() if hasattr(hotpath, "health") else {}
-                    logger.info(
-                        "health: running=%s subs=%d emitted=%d dropped=%d last_error=%s",
-                        _h.get("running"),
-                        len(_h.get("subscriptions") or []),
-                        _h.get("telemetry_emitted", 0),
-                        _h.get("telemetry_dropped", 0),
-                        _h.get("last_error", ""),
-                    )
         except Exception as exc:
             logger.error("hotpath run failed: %s: %s", type(exc).__name__, exc)
             return 1
