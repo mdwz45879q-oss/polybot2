@@ -30,7 +30,6 @@ from polybot2.hotpath import ReplayConfig
 from polybot2.hotpath import compile_hotpath_plan
 from polybot2.hotpath import evaluate_hotpath_scope
 from polybot2.hotpath import run_hotpath_replay as run_hotpath_replay_api
-from polybot2.hotpath.observe import run_hotpath_observer
 from polybot2.linking import BindingResolver
 from polybot2.linking import load_live_trading_policy as _load_live_trading_policy
 from polybot2.data import open_database
@@ -366,7 +365,45 @@ def run_hotpath(args: Any, *, logger: logging.Logger) -> int:
 
 def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
     try:
-        return int(run_hotpath_observer(args, logger=logger))
+        from polybot2.hotpath.live_observer import LiveObserver, find_latest_log
+
+        log_file = str(getattr(args, "log_file", "") or "").strip()
+        if not log_file:
+            log_dir = str(getattr(args, "log_dir", "") or "").strip()
+            if not log_dir:
+                log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
+            run_id = getattr(args, "run_id", None)
+            log_file = find_latest_log(log_dir, run_id=run_id) or ""
+        if not log_file or not os.path.isfile(log_file):
+            logger.error("no hotpath log file found (use --log-file or set POLYBOT2_LOG_DIR)")
+            return 1
+        logger.info("observing log file: %s", log_file)
+
+        # Try to load compiled plan for team name resolution
+        compiled_plan = None
+        try:
+            link_run_id = getattr(args, "link_run_id", None)
+            league_key = str(getattr(args, "league", "mlb") or "mlb").strip().lower()
+            if link_run_id is not None:
+                db_path = str(getattr(args, "db", "") or "").strip()
+                if not db_path:
+                    db_path = os.environ.get("POLYBOT2_DB_PATH", "")
+                if db_path and os.path.isfile(db_path):
+                    from polybot2.hotpath.compiler import compile_plan
+                    compiled_plan = compile_plan(
+                        db_path=db_path,
+                        provider="kalstrop",
+                        league=league_key,
+                        link_run_id=int(link_run_id),
+                    )
+        except Exception:
+            pass  # observer works without plan, just shows game IDs instead of team codes
+
+        observer = LiveObserver(log_path=log_file, compiled_plan=compiled_plan)
+        observer.run()
+        return 0
+    except KeyboardInterrupt:
+        return 0
     except Exception as exc:
         logger.error("hotpath observe failed: %s: %s", type(exc).__name__, exc)
         return 1

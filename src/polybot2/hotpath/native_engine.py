@@ -90,10 +90,6 @@ class NativeMlbEngineBridge:
             dedup_ttl_seconds=float(config.dedup_ttl_seconds),
             decision_cooldown_seconds=float(config.decision_cooldown_seconds),
             decision_debounce_seconds=float(config.decision_debounce_seconds),
-            amount_usdc=float(order_policy.amount_usdc),
-            size_shares=float(order_policy.size_shares),
-            limit_price=float(order_policy.limit_price),
-            time_in_force=str(order_policy.time_in_force),
         )
 
     def load_plan(self, plan: CompiledPlan | None) -> None:

@@ -1,18 +1,15 @@
 use super::*;
-use super::events::normalize_status;
+use super::normalize_status;
 
 impl DispatchRuntime {
-    pub(crate) fn new(dispatch_cfg: DispatchConfig, telemetry: Option<TelemetryEmitter>) -> Self {
+    pub(crate) fn new(dispatch_cfg: DispatchConfig) -> Self {
         Self {
             cfg: dispatch_cfg,
             sdk_runtime: None,
             cached_signer: None,
-            active_orders_by_strategy: HashMap::new(),
             presign_template_catalog: HashMap::new(),
             presign_templates: HashMap::new(),
             presign_pool: HashMap::new(),
-            broker_failure_count: HashMap::new(),
-            telemetry,
         }
     }
 
@@ -91,13 +88,13 @@ impl DispatchRuntime {
             .ok_or_else(|| "sdk_runtime_missing".to_string())?;
         let token_id = parse_sdk_token_id(request.token_id.as_str())?;
         let side = map_sdk_side(request.side.as_str())?;
-        let order_type = map_sdk_order_type(request.time_in_force.as_str())?;
+        let order_type = map_sdk_order_type(request.time_in_force);
         let signer = self
             .cached_signer
             .clone()
             .ok_or_else(|| "cached_signer_missing:call_ensure_sdk_runtime_first".to_string())?;
 
-        let signable = if is_market_order_type(request.time_in_force.as_str()) {
+        let signable = if request.time_in_force.is_market_order() {
             let amount_usdc =
                 parse_decimal_from_f64(request.amount_usdc, 6, "amount_usdc")?;
             let limit_price =
@@ -119,7 +116,7 @@ impl DispatchRuntime {
             let size = parse_decimal_from_f64(request.size_shares, 2, "size_shares")?;
             let limit_price =
                 parse_decimal_from_f64(request.limit_price, 6, "limit_price")?.normalize();
-            let mut builder = sdk
+            let builder = sdk
                 .client
                 .limit_order()
                 .token_id(token_id)
@@ -127,13 +124,6 @@ impl DispatchRuntime {
                 .side(side)
                 .order_type(order_type)
                 .price(limit_price);
-            if let Some(exp_ts) = request.expiration_ts {
-                if exp_ts > 0 {
-                    let dt = chrono::DateTime::from_timestamp(exp_ts, 0)
-                        .ok_or_else(|| format!("invalid_expiration_ts:{}", exp_ts))?;
-                    builder = builder.expiration(dt);
-                }
-            }
             builder
                 .build()
                 .await
@@ -175,7 +165,7 @@ impl DispatchRuntime {
             requested_amount_usdc: request.amount_usdc.max(0.0),
             filled_amount_usdc: 0.0,
             limit_price: request.limit_price.max(0.0),
-            time_in_force: request.time_in_force.clone(),
+            time_in_force: format!("{:?}", request.time_in_force),
             status: normalize_status(format!("{}", resp.status).as_str()),
             reason: resp.error_msg.unwrap_or_default(),
             error_code: String::new(),
@@ -206,35 +196,6 @@ impl DispatchRuntime {
             .ok_or_else(|| "cached_signer_missing".to_string())
     }
 
-    pub(super) async fn get_order_async(
-        &mut self,
-        exchange_order_id: &str,
-    ) -> Result<OrderStateData, String> {
-        self.ensure_sdk_runtime().await?;
-        let sdk = self
-            .sdk_runtime
-            .as_ref()
-            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
-        let order = sdk
-            .client
-            .order(exchange_order_id.trim())
-            .await
-            .map_err(|e| format!("get_order_failed:{}", e))?;
-
-        Ok(OrderStateData {
-            client_order_id: String::new(),
-            exchange_order_id: order.id,
-            side: format!("{}", order.side).to_ascii_lowercase(),
-            requested_amount_usdc: 0.0,
-            filled_amount_usdc: 0.0,
-            limit_price: order.price.to_string().parse::<f64>().unwrap_or(0.0),
-            time_in_force: format!("{}", order.order_type),
-            status: normalize_status(format!("{}", order.status).as_str()),
-            reason: String::new(),
-            error_code: String::new(),
-
-        })
-    }
 }
 
 pub(super) async fn sign_order_batch(
@@ -245,8 +206,8 @@ pub(super) async fn sign_order_batch(
 ) -> Result<Vec<SdkSignedOrder>, String> {
     let token_id = parse_sdk_token_id(template.token_id.as_str())?;
     let side = map_sdk_side(template.side.as_str())?;
-    let order_type = map_sdk_order_type(template.time_in_force.as_str())?;
-    let is_market = is_market_order_type(template.time_in_force.as_str());
+    let order_type = map_sdk_order_type(template.time_in_force);
+    let is_market = template.time_in_force.is_market_order();
 
     let mut results = Vec::with_capacity(count);
     for _ in 0..count {
@@ -273,20 +234,13 @@ pub(super) async fn sign_order_batch(
                 parse_decimal_from_f64(template.size_shares, 2, "size_shares")?;
             let limit_price =
                 parse_decimal_from_f64(template.limit_price, 6, "limit_price")?.normalize();
-            let mut builder = client
+            let builder = client
                 .limit_order()
                 .token_id(token_id)
                 .size(size)
                 .side(side)
                 .order_type(order_type.clone())
                 .price(limit_price);
-            if let Some(exp_ts) = template.expiration_ts {
-                if exp_ts > 0 {
-                    if let Some(dt) = chrono::DateTime::from_timestamp(exp_ts, 0) {
-                        builder = builder.expiration(dt);
-                    }
-                }
-            }
             builder
                 .build()
                 .await

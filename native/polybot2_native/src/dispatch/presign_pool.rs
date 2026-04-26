@@ -37,7 +37,8 @@ impl DispatchRuntime {
             side: normalize_side(template.side.as_deref().unwrap_or("buy_yes")),
             amount_usdc,
             limit_price,
-            time_in_force: normalize_tif(template.time_in_force.as_deref().unwrap_or("FAK")),
+            time_in_force: parse_time_in_force(template.time_in_force.as_deref().unwrap_or("FAK"))
+                .unwrap_or(OrderTimeInForce::FAK),
             client_order_id: "hp_template".to_string(),
             size_shares: template.size_shares.filter(|v| *v > 0.0).unwrap_or(amount_usdc / price),
             expiration_ts: None,

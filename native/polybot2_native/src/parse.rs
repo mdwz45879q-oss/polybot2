@@ -1,4 +1,50 @@
 use super::*;
+use crate::kalstrop_types::KalstropUpdate;
+
+// ---------------------------------------------------------------------------
+// Zero-copy Kalstrop parse (live WS path)
+// ---------------------------------------------------------------------------
+
+pub(crate) fn parse_tick_from_kalstrop_update(
+    update: &KalstropUpdate<'_>,
+    recv_monotonic_ns: i64,
+) -> Tick {
+    let summary = update.match_summary.as_ref();
+    let event_state = summary.and_then(|s| s.event_state).unwrap_or("");
+    let free_text = summary
+        .and_then(|s| s.first_free_text)
+        .unwrap_or("");
+    let period_text = if free_text.is_empty() {
+        event_state
+    } else {
+        free_text
+    };
+    let (inning_number, inning_half) = parse_period(period_text);
+
+    Tick {
+        universal_id: update.fixture_id.to_owned(),
+        action: "sportsMatchStateUpdatedV2",
+        recv_monotonic_ns,
+        goals_home: summary
+            .and_then(|s| s.home_score)
+            .and_then(|s| s.parse().ok()),
+        goals_away: summary
+            .and_then(|s| s.away_score)
+            .and_then(|s| s.parse().ok()),
+        inning_number,
+        inning_half,
+        match_completed: if event_state.is_empty() {
+            None
+        } else {
+            Some(is_completed_state(event_state))
+        },
+        game_state: normalize_game_state(event_state),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PyO3 parse paths (Python callers — not the live WS hot path)
+// ---------------------------------------------------------------------------
 
 pub(crate) fn parse_tick_any(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -> Tick {
     if let Ok(as_dict) = event.downcast::<PyDict>() {
@@ -8,9 +54,10 @@ pub(crate) fn parse_tick_any(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -
 }
 
 pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>, recv_monotonic_ns: i64) -> Tick {
+    let inning_half_str = get_str(event, "inning_half");
     Tick {
         universal_id: get_str(event, "universal_id"),
-        action: get_str(event, "action"),
+        action: "sportsMatchStateUpdatedV2",
         recv_monotonic_ns: if recv_monotonic_ns > 0 {
             recv_monotonic_ns
         } else {
@@ -19,282 +66,107 @@ pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>, recv_monotonic_ns:
         goals_home: get_i64_opt(event, "goals_home"),
         goals_away: get_i64_opt(event, "goals_away"),
         inning_number: get_i64_opt(event, "inning_number"),
-        inning_half: get_str(event, "inning_half"),
-        outs: get_i64_opt(event, "outs"),
-        balls: get_i64_opt(event, "balls"),
-        strikes: get_i64_opt(event, "strikes"),
-        runner_on_first: get_bool_opt(event, "runner_on_first"),
-        runner_on_second: get_bool_opt(event, "runner_on_second"),
-        runner_on_third: get_bool_opt(event, "runner_on_third"),
+        inning_half: map_inning_half(&inning_half_str),
         match_completed: get_bool_opt(event, "match_completed"),
-        period: get_str(event, "period"),
-        game_state: get_str(event, "game_state"),
+        game_state: normalize_game_state(&get_str(event, "game_state")),
     }
 }
 
 fn parse_tick_from_event(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -> Tick {
-    let mut baseball: Option<Bound<'_, PyDict>> = None;
-    if let Ok(raw_payload) = event.getattr("raw_payload") {
-        if let Ok(raw_dict) = raw_payload.downcast::<PyDict>() {
-            if let Ok(Some(baseball_obj)) = raw_dict.get_item("_hotpath_baseball") {
-                if let Ok(baseball_dict) = baseball_obj.downcast::<PyDict>() {
-                    baseball = Some(baseball_dict.clone());
-                }
-            }
-        }
-    }
-
-    let inning_number = baseball
-        .as_ref()
-        .and_then(|b| get_i64_opt(b, "inning_number"));
-    let inning_half = baseball
-        .as_ref()
-        .map(|b| get_str(b, "inning_half"))
-        .unwrap_or_else(String::new);
-    let outs = baseball.as_ref().and_then(|b| get_i64_opt(b, "outs"));
-    let balls = baseball.as_ref().and_then(|b| get_i64_opt(b, "balls"));
-    let strikes = baseball.as_ref().and_then(|b| get_i64_opt(b, "strikes"));
-    let runner_on_first = baseball
-        .as_ref()
-        .and_then(|b| get_bool_opt(b, "runner_on_first"));
-    let runner_on_second = baseball
-        .as_ref()
-        .and_then(|b| get_bool_opt(b, "runner_on_second"));
-    let runner_on_third = baseball
-        .as_ref()
-        .and_then(|b| get_bool_opt(b, "runner_on_third"));
-    let match_completed = baseball
-        .as_ref()
-        .and_then(|b| get_bool_opt(b, "match_completed"))
-        .or_else(|| get_attr_bool_opt(event, "match_completed"));
-
+    let match_completed = get_attr_bool_opt(event, "match_completed");
     Tick {
         universal_id: get_attr_str(event, "universal_id"),
-        action: get_attr_str(event, "action"),
+        action: "sportsMatchStateUpdatedV2",
         recv_monotonic_ns,
         goals_home: get_attr_i64_opt(event, "home_score"),
         goals_away: get_attr_i64_opt(event, "away_score"),
-        inning_number,
-        inning_half,
-        outs,
-        balls,
-        strikes,
-        runner_on_first,
-        runner_on_second,
-        runner_on_third,
+        inning_number: None,
+        inning_half: "",
         match_completed,
-        period: get_attr_str(event, "period"),
-        game_state: get_attr_str(event, "game_state"),
+        game_state: normalize_game_state(&get_attr_str(event, "game_state")),
     }
 }
 
-pub(crate) fn parse_tick_from_kalstrop_row(
-    row: &Bound<'_, PyDict>,
-    recv_monotonic_ns: i64,
-    _source_recv_monotonic_ns: i64,
-) -> Tick {
-    let uid = ["fixtureId", "fixture_id", "id", "universal_id", "uid"]
-        .iter()
-        .find_map(|k| {
-            let v = get_str(row, k);
-            if v.trim().is_empty() {
-                None
-            } else {
-                Some(v)
-            }
-        })
-        .unwrap_or_default();
+// ---------------------------------------------------------------------------
+// Period / inning parsing
+// ---------------------------------------------------------------------------
 
-    let match_summary = get_dict(row, "matchSummary");
-    let event_state = match_summary
-        .as_ref()
-        .map(|s| get_str(s, "eventState"))
-        .unwrap_or_default();
-    let period_text = match_summary
-        .as_ref()
-        .map(|s| extract_period_text(s, &event_state))
-        .unwrap_or_else(|| event_state.clone());
-    let match_completed = if event_state.trim().is_empty() {
+/// Parse inning_number and inning_half from Kalstrop freeText.
+///
+/// Known patterns:
+///   "4th inning top"         → (Some(4), "top")
+///   "4th inning bottom"      → (Some(4), "bottom")
+///   "Break top 3 bottom 3"   → (Some(3), "break")
+///   "Not started"            → (None, "")
+///   "Ended"                  → (None, "")
+pub(crate) fn parse_period(text: &str) -> (Option<i64>, &'static str) {
+    let s = text.trim().to_lowercase();
+    if s.is_empty() {
+        return (None, "");
+    }
+
+    // TODO: Handle extra innings. Kalstrop's exact freeText format for extras
+    // is unknown. Guard: if "extra" appears anywhere, return None to avoid
+    // misidentifying it as inning 1.
+    if s.contains("extra") {
+        return (None, "");
+    }
+
+    // "4th inning top" / "4th inning bottom"
+    if s.contains("inning") {
+        let half = if s.contains("top") {
+            "top"
+        } else if s.contains("bottom") {
+            "bottom"
+        } else {
+            ""
+        };
+        let number = extract_first_number(&s);
+        return (number, half);
+    }
+
+    // "Break top 3 bottom 3"
+    if s.starts_with("break") {
+        let number = extract_first_number(&s);
+        return (number, "break");
+    }
+
+    (None, "")
+}
+
+fn extract_first_number(s: &str) -> Option<i64> {
+    let digits: String = s
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.is_empty() {
         None
     } else {
-        Some(is_completed_state(&event_state))
-    };
-
-    let (
-        inning_number,
-        inning_half,
-        outs,
-        balls,
-        strikes,
-        runner_on_first,
-        runner_on_second,
-        runner_on_third,
-        resolved_match_completed,
-    ) = if let Some(summary) = match_summary.as_ref() {
-        parse_kalstrop_baseball(row, summary, &period_text, match_completed)
-    } else {
-        (
-            None,
-            String::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            match_completed,
-        )
-    };
-
-    let goals_home = match_summary
-        .as_ref()
-        .and_then(|s| get_i64_opt(s, "homeScore"));
-    let goals_away = match_summary
-        .as_ref()
-        .and_then(|s| get_i64_opt(s, "awayScore"));
-
-    Tick {
-        universal_id: uid,
-        action: "sportsMatchStateUpdatedV2".to_string(),
-        recv_monotonic_ns,
-        goals_home,
-        goals_away,
-        inning_number,
-        inning_half,
-        outs,
-        balls,
-        strikes,
-        runner_on_first,
-        runner_on_second,
-        runner_on_third,
-        match_completed: resolved_match_completed,
-        period: period_text,
-        game_state: normalize_game_state(event_state.as_str()),
+        digits.parse().ok()
     }
 }
 
-pub(crate) fn parse_tick_from_kalstrop_row_value(
-    row: &Value,
-    recv_monotonic_ns: i64,
-    _source_recv_monotonic_ns: i64,
-) -> Tick {
-    let mut uid = String::new();
-    for key in ["fixtureId", "fixture_id", "id", "universal_id", "uid"] {
-        let candidate = get_value_str(row, key);
-        if !candidate.trim().is_empty() {
-            uid = candidate;
-            break;
-        }
+fn map_inning_half(s: &str) -> &'static str {
+    match s.trim().to_lowercase().as_str() {
+        "top" => "top",
+        "bottom" => "bottom",
+        "break" => "break",
+        _ => "",
     }
-
-    let match_summary = row.get("matchSummary").unwrap_or(&Value::Null);
-    let event_state = get_value_str(match_summary, "eventState");
-    let period_text = if match_summary.is_object() {
-        extract_period_text_value(match_summary, &event_state)
-    } else {
-        event_state.clone()
-    };
-    let match_completed = if event_state.trim().is_empty() {
-        None
-    } else {
-        Some(is_completed_state(&event_state))
-    };
-    let (
-        inning_number,
-        inning_half,
-        outs,
-        balls,
-        strikes,
-        runner_on_first,
-        runner_on_second,
-        runner_on_third,
-        resolved_match_completed,
-    ) = if match_summary.is_object() {
-        parse_kalstrop_baseball_value(row, match_summary, &period_text, match_completed)
-    } else {
-        (
-            None,
-            String::new(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            match_completed,
-        )
-    };
-
-    Tick {
-        universal_id: uid,
-        action: "sportsMatchStateUpdatedV2".to_string(),
-        recv_monotonic_ns,
-        goals_home: get_value_i64_opt(match_summary, "homeScore"),
-        goals_away: get_value_i64_opt(match_summary, "awayScore"),
-        inning_number,
-        inning_half,
-        outs,
-        balls,
-        strikes,
-        runner_on_first,
-        runner_on_second,
-        runner_on_third,
-        match_completed: resolved_match_completed,
-        period: period_text,
-        game_state: normalize_game_state(event_state.as_str()),
-    }
-}
-
-pub(crate) fn iter_payload_items_value<'a>(parsed: &'a Value) -> Vec<&'a Value> {
-    if let Some(items) = parsed.as_array() {
-        return items.iter().collect();
-    }
-    vec![parsed]
-}
-
-fn parse_inning_text(text: &str) -> (Option<i64>, String) {
-    let src = text.trim().to_lowercase();
-    if src.is_empty() {
-        return (None, String::new());
-    }
-    let mut digits = String::new();
-    let mut seen_digit = false;
-    for ch in src.chars() {
-        if ch.is_ascii_digit() {
-            digits.push(ch);
-            seen_digit = true;
-        } else if seen_digit {
-            break;
-        }
-    }
-    let inning_number = if digits.is_empty() {
-        None
-    } else {
-        digits.parse::<i64>().ok()
-    };
-    let inning_half = if src.contains("top") {
-        "top".to_string()
-    } else if src.contains("bottom") || src.contains("bot") {
-        "bottom".to_string()
-    } else if src.contains("end") {
-        "end".to_string()
-    } else {
-        String::new()
-    };
-    (inning_number, inning_half)
 }
 
 fn is_completed_state(event_state: &str) -> bool {
     matches!(
         event_state.trim().to_uppercase().as_str(),
-        "FINISHED" | "ENDED" | "MATCH_COMPLETED" | "CLOSED" | "FINAL" | "FT"
+        "FINISHED" | "ENDED" | "MATCH_COMPLETED" | "CLOSED" | "FINAL" | "FT" | "COMPLETE" | "COMPLETED"
     )
 }
 
-pub(crate) fn normalize_game_state(event_state: &str) -> String {
+pub(crate) fn normalize_game_state(event_state: &str) -> &'static str {
     let s = event_state.trim().to_lowercase();
     if s.is_empty() {
-        return "UNKNOWN".to_string();
+        return "UNKNOWN";
     }
     if matches!(
         s.as_str(),
@@ -309,7 +181,7 @@ pub(crate) fn normalize_game_state(event_state: &str) -> String {
             | "canceled"
             | "ft"
     ) {
-        return "FINAL".to_string();
+        return "FINAL";
     }
     if matches!(
         s.as_str(),
@@ -322,7 +194,7 @@ pub(crate) fn normalize_game_state(event_state: &str) -> String {
             | "halftime"
             | "overtime"
     ) {
-        return "LIVE".to_string();
+        return "LIVE";
     }
     if matches!(
         s.as_str(),
@@ -338,210 +210,18 @@ pub(crate) fn normalize_game_state(event_state: &str) -> String {
             | "pre_match"
             | "prematch"
     ) {
-        return "NOT STARTED".to_string();
+        return "NOT STARTED";
     }
-    "UNKNOWN".to_string()
+    "UNKNOWN"
 }
 
-fn extract_period_text(match_summary: &Bound<'_, PyDict>, event_state: &str) -> String {
-    if let Some(display) = get_list(match_summary, "matchStatusDisplay") {
-        for item in display.iter() {
-            if let Ok(row) = item.downcast::<PyDict>() {
-                let free_text = get_str(&row, "freeText");
-                if !free_text.trim().is_empty() {
-                    return free_text;
-                }
-            }
-        }
-    }
-    event_state.to_string()
-}
+// ---------------------------------------------------------------------------
+// freeText extraction (PyDict path only)
+// ---------------------------------------------------------------------------
 
-fn extract_period_text_value(match_summary: &Value, event_state: &str) -> String {
-    if let Some(display) = match_summary
-        .get("matchStatusDisplay")
-        .and_then(|x| x.as_array())
-    {
-        for item in display.iter() {
-            if let Some(free_text) = item.get("freeText").and_then(|x| x.as_str()) {
-                if !free_text.trim().is_empty() {
-                    return free_text.to_string();
-                }
-            }
-        }
-    }
-    event_state.to_string()
-}
-
-fn parse_kalstrop_baseball(
-    row: &Bound<'_, PyDict>,
-    match_summary: &Bound<'_, PyDict>,
-    period_text: &str,
-    match_completed: Option<bool>,
-) -> (
-    Option<i64>,
-    String,
-    Option<i64>,
-    Option<i64>,
-    Option<i64>,
-    Option<bool>,
-    Option<bool>,
-    Option<bool>,
-    Option<bool>,
-) {
-    if let Some(baseball) = get_dict(row, "_hotpath_baseball") {
-        let inning_number = get_i64_opt(&baseball, "inning_number");
-        let inning_half = get_str(&baseball, "inning_half");
-        let outs = get_i64_opt(&baseball, "outs");
-        let balls = get_i64_opt(&baseball, "balls");
-        let strikes = get_i64_opt(&baseball, "strikes");
-        let runner_on_first = get_bool_opt(&baseball, "runner_on_first");
-        let runner_on_second = get_bool_opt(&baseball, "runner_on_second");
-        let runner_on_third = get_bool_opt(&baseball, "runner_on_third");
-        let baseball_completed = get_bool_opt(&baseball, "match_completed").or(match_completed);
-        return (
-            inning_number,
-            inning_half,
-            outs,
-            balls,
-            strikes,
-            runner_on_first,
-            runner_on_second,
-            runner_on_third,
-            baseball_completed,
-        );
-    }
-
-    let mut inning_number: Option<i64> = None;
-    let mut inning_half = String::new();
-    let mut texts: Vec<String> = vec![period_text.to_string()];
-    if let Some(display) = get_list(match_summary, "matchStatusDisplay") {
-        for item in display.iter() {
-            if let Ok(row) = item.downcast::<PyDict>() {
-                texts.push(get_str(&row, "freeText"));
-            }
-        }
-    }
-    if let Some(phases) = get_list(match_summary, "phases") {
-        for item in phases.iter() {
-            if let Ok(row) = item.downcast::<PyDict>() {
-                texts.push(get_str(&row, "phaseText"));
-            }
-        }
-    }
-    for text in texts.iter() {
-        let (num, half) = parse_inning_text(text);
-        if inning_number.is_none() && num.is_some() {
-            inning_number = num;
-        }
-        if inning_half.is_empty() && !half.is_empty() {
-            inning_half = half;
-        }
-        if inning_number.is_some() && !inning_half.is_empty() {
-            break;
-        }
-    }
-    (
-        inning_number,
-        inning_half,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        match_completed,
-    )
-}
-
-fn parse_kalstrop_baseball_value(
-    row: &Value,
-    match_summary: &Value,
-    period_text: &str,
-    match_completed: Option<bool>,
-) -> (
-    Option<i64>,
-    String,
-    Option<i64>,
-    Option<i64>,
-    Option<i64>,
-    Option<bool>,
-    Option<bool>,
-    Option<bool>,
-    Option<bool>,
-) {
-    if let Some(baseball) = row.get("_hotpath_baseball") {
-        if baseball.is_object() {
-            let inning_number = get_value_i64_opt(baseball, "inning_number");
-            let inning_half = get_value_str(baseball, "inning_half");
-            let outs = get_value_i64_opt(baseball, "outs");
-            let balls = get_value_i64_opt(baseball, "balls");
-            let strikes = get_value_i64_opt(baseball, "strikes");
-            let runner_on_first = get_value_bool_opt(baseball, "runner_on_first");
-            let runner_on_second = get_value_bool_opt(baseball, "runner_on_second");
-            let runner_on_third = get_value_bool_opt(baseball, "runner_on_third");
-            let baseball_completed =
-                get_value_bool_opt(baseball, "match_completed").or(match_completed);
-            return (
-                inning_number,
-                inning_half,
-                outs,
-                balls,
-                strikes,
-                runner_on_first,
-                runner_on_second,
-                runner_on_third,
-                baseball_completed,
-            );
-        }
-    }
-
-    let mut inning_number: Option<i64> = None;
-    let mut inning_half = String::new();
-    let mut texts: Vec<String> = vec![period_text.to_string()];
-    if let Some(display) = match_summary
-        .get("matchStatusDisplay")
-        .and_then(|x| x.as_array())
-    {
-        for item in display.iter() {
-            if let Some(text) = item.get("freeText").and_then(|x| x.as_str()) {
-                texts.push(text.to_string());
-            }
-        }
-    }
-    if let Some(phases) = match_summary.get("phases").and_then(|x| x.as_array()) {
-        for item in phases.iter() {
-            if let Some(text) = item.get("phaseText").and_then(|x| x.as_str()) {
-                texts.push(text.to_string());
-            }
-        }
-    }
-    for text in texts.iter() {
-        let (num, half) = parse_inning_text(text);
-        if inning_number.is_none() && num.is_some() {
-            inning_number = num;
-        }
-        if inning_half.is_empty() && !half.is_empty() {
-            inning_half = half;
-        }
-        if inning_number.is_some() && !inning_half.is_empty() {
-            break;
-        }
-    }
-    (
-        inning_number,
-        inning_half,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        match_completed,
-    )
-}
-
-// --- PyO3 extraction helpers ---
+// ---------------------------------------------------------------------------
+// PyO3 extraction helpers
+// ---------------------------------------------------------------------------
 
 pub(crate) fn get_str(obj: &Bound<'_, PyDict>, key: &str) -> String {
     if let Ok(Some(value)) = obj.get_item(key) {
@@ -550,24 +230,6 @@ pub(crate) fn get_str(obj: &Bound<'_, PyDict>, key: &str) -> String {
         }
     }
     String::new()
-}
-
-fn get_dict<'py>(obj: &Bound<'py, PyDict>, key: &str) -> Option<Bound<'py, PyDict>> {
-    if let Ok(Some(value)) = obj.get_item(key) {
-        if let Ok(dict) = value.downcast::<PyDict>() {
-            return Some(dict.clone());
-        }
-    }
-    None
-}
-
-fn get_list<'py>(obj: &Bound<'py, PyDict>, key: &str) -> Option<Bound<'py, PyList>> {
-    if let Ok(Some(value)) = obj.get_item(key) {
-        if let Ok(list) = value.downcast::<PyList>() {
-            return Some(list.clone());
-        }
-    }
-    None
 }
 
 pub(crate) fn get_i64_opt(obj: &Bound<'_, PyDict>, key: &str) -> Option<i64> {
@@ -706,60 +368,66 @@ fn get_attr_str(obj: &Bound<'_, PyAny>, key: &str) -> String {
     String::new()
 }
 
-// --- serde_json Value helpers ---
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub(crate) fn get_value_str(obj: &Value, key: &str) -> String {
-    obj.get(key)
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string()
-}
+    #[test]
+    fn parse_period_inning_top() {
+        let (num, half) = parse_period("4th inning top");
+        assert_eq!(num, Some(4));
+        assert_eq!(half, "top");
+    }
 
-pub(crate) fn get_value_i64_opt(obj: &Value, key: &str) -> Option<i64> {
-    let val = obj.get(key)?;
-    if val.is_null() {
-        return None;
+    #[test]
+    fn parse_period_inning_bottom() {
+        let (num, half) = parse_period("1st inning bottom");
+        assert_eq!(num, Some(1));
+        assert_eq!(half, "bottom");
     }
-    if let Some(v) = val.as_i64() {
-        return Some(v);
-    }
-    if let Some(v) = val.as_u64() {
-        return i64::try_from(v).ok();
-    }
-    if let Some(v) = val.as_f64() {
-        return Some(v as i64);
-    }
-    if let Some(v) = val.as_str() {
-        let text = v.trim();
-        if text.is_empty() {
-            return None;
-        }
-        if let Ok(parsed) = text.parse::<i64>() {
-            return Some(parsed);
-        }
-    }
-    None
-}
 
-fn get_value_bool_opt(obj: &Value, key: &str) -> Option<bool> {
-    let val = obj.get(key)?;
-    if val.is_null() {
-        return None;
+    #[test]
+    fn parse_period_break() {
+        let (num, half) = parse_period("Break top 3 bottom 3");
+        assert_eq!(num, Some(3));
+        assert_eq!(half, "break");
     }
-    if let Some(v) = val.as_bool() {
-        return Some(v);
+
+    #[test]
+    fn parse_period_not_started() {
+        let (num, half) = parse_period("Not started");
+        assert_eq!(num, None);
+        assert_eq!(half, "");
     }
-    if let Some(v) = val.as_i64() {
-        return Some(v != 0);
+
+    #[test]
+    fn parse_period_ended() {
+        let (num, half) = parse_period("Ended");
+        assert_eq!(num, None);
+        assert_eq!(half, "");
     }
-    if let Some(v) = val.as_str() {
-        let t = v.trim().to_lowercase();
-        if ["1", "true", "yes", "y", "on"].contains(&t.as_str()) {
-            return Some(true);
-        }
-        if ["0", "false", "no", "n", "off"].contains(&t.as_str()) {
-            return Some(false);
-        }
+
+    #[test]
+    fn parse_period_extra_innings_guard() {
+        let (num, half) = parse_period("1st Extra inning top");
+        assert_eq!(
+            num, None,
+            "extra innings must not be misidentified as inning 1"
+        );
+        assert_eq!(half, "");
     }
-    None
+
+    #[test]
+    fn parse_period_empty() {
+        let (num, half) = parse_period("");
+        assert_eq!(num, None);
+        assert_eq!(half, "");
+    }
+
+    #[test]
+    fn parse_period_double_digit_inning() {
+        let (num, half) = parse_period("10th inning top");
+        assert_eq!(num, Some(10));
+        assert_eq!(half, "top");
+    }
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::dispatch::DispatchRuntime;
-use crate::replay::TelemetryRuntimeState;
-use crate::telemetry::TelemetryEmitter;
+use crate::log_writer::LogWriter;
+use tokio_tungstenite::connect_async_tls_with_config;
 
 fn kalstrop_signature(client_id: &str, shared_secret_raw: &str, timestamp: &str) -> String {
     let mut hasher = Sha256::new();
@@ -185,32 +185,22 @@ pub(crate) async fn run_live_worker_async(
     engine: &mut NativeMlbEngine,
     cfg: RuntimeStartConfig,
     mut dispatch_runtime: DispatchRuntime,
-    telemetry: Option<TelemetryEmitter>,
     subscriptions: Arc<RwLock<Vec<String>>>,
     health: Arc<Mutex<RuntimeHealth>>,
     initial_candidate_subs: Vec<String>,
     initial_active_subs: Vec<String>,
     mut command_rx: tokio_mpsc::UnboundedReceiver<LiveWorkerCommand>,
+    mut log: LogWriter,
 ) {
     let reconnect_sleep_s = cfg.reconnect_sleep_seconds.unwrap_or(0.2).max(0.01);
     let subscription_refresh_interval =
         Duration::from_secs_f64(cfg.subscription_refresh_seconds.unwrap_or(120.0).max(1.0));
     let mut next_subscription_refresh = Instant::now();
-    let mut telemetry_state = TelemetryRuntimeState::default();
-    let refresh_interval_s = dispatch_runtime.active_order_refresh_interval_seconds();
-    let refresh_interval = if refresh_interval_s > 0.0 {
-        Some(Duration::from_secs_f64(refresh_interval_s.max(0.01)))
-    } else {
-        None
-    };
-    let mut last_active_refresh = Instant::now();
     let mut candidate_subs = normalize_subscriptions(initial_candidate_subs);
     let mut active_subs = normalize_subscriptions(initial_active_subs);
     if let Ok(mut lock) = subscriptions.write() {
         *lock = active_subs.clone();
     }
-    let heartbeat_interval = Duration::from_secs(30);
-    let mut last_heartbeat = Instant::now();
 
     loop {
         let mut candidate_changed = false;
@@ -233,18 +223,6 @@ pub(crate) async fn run_live_worker_async(
             )
             .await
             {
-                if let Some(emitter) = telemetry.as_ref() {
-                    emitter.emit(
-                        "ws_disconnected",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "subscription_refresh_error",
-                        json!({"error": e.clone()}),
-                    );
-                }
                 with_health(&health, |h| {
                     h.running = false;
                     h.last_error = format!("subscription_refresh: {}", e);
@@ -274,18 +252,6 @@ pub(crate) async fn run_live_worker_async(
         let uri = match build_kalstrop_ws_uri(&cfg) {
             Some(v) => v,
             None => {
-                if let Some(emitter) = telemetry.as_ref() {
-                    emitter.emit(
-                        "ws_disconnected",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "missing_kalstrop_ws_credentials",
-                        json!({}),
-                    );
-                }
                 with_health(&health, |h| {
                     h.last_error = "missing_kalstrop_ws_credentials".to_string();
                 });
@@ -305,21 +271,10 @@ pub(crate) async fn run_live_worker_async(
                 continue;
             }
         };
-        let (mut ws, _) = match connect_async(uri.as_str()).await {
+        let (mut ws, _) = match connect_async_tls_with_config(uri.as_str(), None, true, None).await
+        {
             Ok(v) => v,
             Err(e) => {
-                if let Some(emitter) = telemetry.as_ref() {
-                    emitter.emit(
-                        "ws_disconnected",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "ws_connect_error",
-                        json!({"error": e.to_string()}),
-                    );
-                }
                 with_health(&health, |h| {
                     h.reconnects += 1;
                     h.last_error = format!("ws_connect: {}", e);
@@ -341,18 +296,6 @@ pub(crate) async fn run_live_worker_async(
             }
         };
         if let Err(e) = send_kalstrop_subscribe_async(&mut ws, &active_subs).await {
-            if let Some(emitter) = telemetry.as_ref() {
-                emitter.emit(
-                    "ws_disconnected",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "ws_subscribe_error",
-                    json!({"error": e.clone()}),
-                );
-            }
             with_health(&health, |h| {
                 h.reconnects += 1;
                 h.last_error = format!("ws_subscribe: {}", e);
@@ -374,33 +317,9 @@ pub(crate) async fn run_live_worker_async(
             h.running = true;
             h.last_error.clear();
         });
-        if let Some(emitter) = telemetry.as_ref() {
-            emitter.emit(
-                "ws_connected",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                json!({
-                    "subscriptions": active_subs.clone(),
-                }),
-            );
-            emitter.emit(
-                "exec_connected",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                json!({
-                    "dispatch_mode": dispatch_runtime.dispatch_mode_label(),
-                }),
-            );
-        }
+        log.log_ws_connect(&active_subs);
 
+        let mut reconn_reason = String::new();
         'event_loop: loop {
             let mut candidate_changed_inner = false;
             loop {
@@ -436,18 +355,6 @@ pub(crate) async fn run_live_worker_async(
                         active_changed = changed;
                     }
                     Err(e) => {
-                        if let Some(emitter) = telemetry.as_ref() {
-                            emitter.emit(
-                                "ws_disconnected",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "subscription_refresh_error",
-                                json!({"error": e.clone()}),
-                            );
-                        }
                         with_health(&health, |h| {
                             h.running = false;
                             h.last_error = format!("subscription_refresh: {}", e);
@@ -458,34 +365,7 @@ pub(crate) async fn run_live_worker_async(
             }
 
             if active_changed {
-                if let Some(emitter) = telemetry.as_ref() {
-                    emitter.emit(
-                        "subscriptions_changed",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        json!({
-                            "active_count": active_subs.len(),
-                            "active_subscriptions": active_subs.clone(),
-                        }),
-                    );
-                }
                 if let Err(e) = send_kalstrop_resubscribe_async(&mut ws, &active_subs).await {
-                    if let Some(emitter) = telemetry.as_ref() {
-                        emitter.emit(
-                            "ws_reconnected",
-                            "",
-                            "",
-                            "",
-                            "",
-                            "",
-                            "ws_resubscribe_error",
-                            json!({"error": e.clone()}),
-                        );
-                    }
                     with_health(&health, |h| {
                         h.reconnects += 1;
                         h.last_error = format!("ws_resubscribe: {}", e);
@@ -497,9 +377,7 @@ pub(crate) async fn run_live_worker_async(
                 }
             }
 
-            // Drain all pending WS frames before housekeeping.
-            // First read blocks up to 100ms; subsequent reads are non-blocking
-            // to drain any frames buffered while housekeeping ran.
+            // Frame drain loop — process all pending frames before housekeeping
             let mut first_read = true;
             loop {
                 let wait = if first_read {
@@ -515,12 +393,14 @@ pub(crate) async fn run_live_worker_async(
                             h.reconnects += 1;
                             h.last_error = "ws_stream_closed".to_string();
                         });
+                        reconn_reason = "ws_stream_closed".to_string();
                         break 'event_loop;
                     }
                     Ok(Some(Err(e))) => {
+                        reconn_reason = format!("ws_read: {}", e);
                         with_health(&health, |h| {
                             h.reconnects += 1;
-                            h.last_error = format!("ws_read: {}", e);
+                            h.last_error = reconn_reason.clone();
                         });
                         break 'event_loop;
                     }
@@ -529,106 +409,36 @@ pub(crate) async fn run_live_worker_async(
                 first_read = false;
 
                 let source_recv_ns = crate::dispatch::now_unix_ns();
-                let frame: Value = match msg {
-                    Message::Text(text) => match parse_json_text(text.as_ref()) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            if let Some(emitter) = telemetry.as_ref() {
-                                emitter.emit_empty(
-                                    "provider_decode_error",
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    "json_text_decode_error",
-                                );
-                            }
-                            continue;
-                        }
-                    },
-                    Message::Binary(bytes) => match parse_json_bytes(bytes.as_ref()) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            if let Some(emitter) = telemetry.as_ref() {
-                                emitter.emit_empty(
-                                    "provider_decode_error",
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    "",
-                                    "json_binary_decode_error",
-                                );
-                            }
-                            continue;
-                        }
+                let frame_text: &str = match &msg {
+                    Message::Text(text) => text.as_ref(),
+                    Message::Binary(bytes) => match std::str::from_utf8(bytes.as_ref()) {
+                        Ok(s) => s,
+                        Err(_) => continue,
                     },
                     Message::Ping(p) => {
-                        let _ = ws.send(Message::Pong(p)).await;
+                        let _ = ws.send(Message::Pong(p.clone())).await;
                         continue;
                     }
-                    Message::Close(_) => break 'event_loop,
+                    Message::Close(_) => {
+                        reconn_reason = "ws_close_received".to_string();
+                        break 'event_loop;
+                    }
                     _ => continue,
                 };
 
-                let mut dispatch_error: Option<String> = None;
                 crate::replay::process_decoded_frame_async(
                     engine,
-                    &frame,
-                    source_recv_ns,
+                    frame_text,
                     source_recv_ns,
                     &mut dispatch_runtime,
-                    telemetry.as_ref(),
-                    &mut telemetry_state,
-                    |err| {
-                        if dispatch_error.is_none() {
-                            dispatch_error = Some(err);
-                        }
-                    },
+                    &mut log,
                 )
                 .await;
-                if let Some(err) = dispatch_error {
-                    if let Some(emitter) = telemetry.as_ref() {
-                        emitter.emit_empty("exec_error", "", "", "", "", "", err.as_str());
-                    }
-                    with_health(&health, |h| h.last_error = format!("dispatch: {}", err));
-                }
             }
-
-            // Housekeeping: runs only when no WS frames are pending
-            if active_subs.is_empty() {
-                break;
-            }
-            let now = Instant::now();
-            if let Some(interval) = refresh_interval {
-                if now.duration_since(last_active_refresh) >= interval {
-                    dispatch_runtime
-                        .refresh_active_state_from_broker_async()
-                        .await;
-                    last_active_refresh = now;
-                }
-            }
-            if now.duration_since(last_heartbeat) >= heartbeat_interval {
-                if let Some(emitter) = telemetry.as_ref() {
-                    emitter.emit(
-                        "runtime_heartbeat",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        json!({
-                            "games": engine.dump_game_states_for_heartbeat(active_subs.as_slice()),
-                            "teams": engine.dump_team_names(active_subs.as_slice()),
-                            "dm": dispatch_runtime.dispatch_mode_label(),
-                        }),
-                    );
-                }
-                last_heartbeat = now;
-            }
+            log.flush();
         }
+        let reconnects = if let Ok(h) = health.lock() { h.reconnects } else { 0 };
+        log.log_ws_disconnect(&reconn_reason, reconnects);
     }
 }
 
@@ -663,7 +473,7 @@ mod tests {
 
     #[test]
     fn scheduler_activation_respects_lead_and_completion() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1);
         let now = crate::dispatch::now_unix_s();
         engine
             .kickoff_ts_by_game
@@ -694,7 +504,7 @@ mod tests {
 
     #[test]
     fn refresh_active_subscriptions_changes_only_on_transition() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1, 5.0, 5.0, 0.52, "FAK".to_string());
+        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1);
         let now = crate::dispatch::now_unix_s();
         engine.kickoff_ts_by_game.insert("g1".to_string(), now - 60);
         engine.token_ids_by_game.insert(

@@ -1,296 +1,201 @@
 use super::*;
 
-impl NativeMlbEngine {
-    pub(crate) fn mk_intent(
-        &self,
-        target_token_id: &str,
-        target_condition_id: &str,
-        strategy_key: &str,
-        uid: &str,
-        reason: &str,
-        market_type: &str,
-        outcome_semantic: &str,
-    ) -> Intent {
-        Intent {
-            strategy_key: strategy_key.to_string(),
-            token_id: target_token_id.to_string(),
-            side: "buy_yes".to_string(),
-            amount_usdc: self.amount_usdc,
-            size_shares: self.size_shares,
-            limit_price: self.limit_price,
-            time_in_force: self.time_in_force.clone(),
-            condition_id: target_condition_id.to_string(),
-            source_universal_id: uid.to_string(),
-            chain_id: String::new(),
-            reason: reason.to_string(),
-            market_type: market_type.to_string(),
-            outcome_semantic: outcome_semantic.to_string(),
-        }
+/// Format a line value to match Python's `_line_key()`:
+/// 6 decimal places, strip trailing zeros, strip trailing dot.
+pub(crate) fn line_key(value: f64) -> String {
+    let text = format!("{:.6}", value);
+    let trimmed = text.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
     }
+}
 
+impl NativeMlbEngine {
     pub(crate) fn evaluate_totals(
         &mut self,
         delta: &DeltaEvent,
         state: &GameState,
-        intents: &mut Vec<Intent>,
-    ) -> Option<String> {
-        let uid = delta.universal_id.clone();
-        if !self.over_targets_by_game.contains_key(&uid)
-            && !self.under_targets_by_game.contains_key(&uid)
-        {
-            return None;
+    ) -> Vec<Intent> {
+        let uid = &delta.universal_id;
+        if !self.games_with_totals.contains(uid) {
+            return vec![];
         }
-        let total_now = state.total;
-        let prev_total = state.prev_total;
-        let (Some(total_now_int), Some(prev_total_int)) = (total_now, prev_total) else {
-            return Some("mlb_totals_missing_state".to_string());
+        let (Some(total_now), Some(prev_total)) = (state.total, state.prev_total) else {
+            return vec![];
         };
 
-        let mut over_crossed = 0i64;
-        let mut under_final = 0i64;
+        let mut intents = Vec::new();
 
-        if total_now_int > prev_total_int {
-            if let Some(targets) = self.over_targets_by_game.get(&uid) {
-                let prev = prev_total_int as f64;
-                let now = total_now_int as f64;
-                for target in targets.iter() {
-                    if target.line > prev && target.line <= now {
-                        intents.push(self.mk_intent(
-                            &target.token_id,
-                            &target.condition_id,
-                            &target.strategy_key,
-                            &uid,
-                            &format!("mlb_totals_over_cross:{}", target.line),
-                            "totals",
-                            "over",
-                        ));
-                        over_crossed += 1;
-                    }
+        // OVER: probe crossed half-integer lines
+        if total_now > prev_total {
+            for i in prev_total..total_now {
+                let line = i as f64 + 0.5;
+                let key = format!("{}:TOTAL:OVER:{}", uid, line_key(line));
+                if let Some(target) = self.targets.get(&key) {
+                    intents.push(Intent {
+                        strategy_key: key,
+                        token_id: target.token_id.clone(),
+                    });
                 }
             }
         }
 
-        if state.match_completed.unwrap_or(false) && !self.totals_final_under_emitted.contains(&uid)
+        // UNDER: at game completion, check all under lines above final total
+        if state.match_completed.unwrap_or(false)
+            && !self.totals_final_under_emitted.contains(uid)
         {
             self.totals_final_under_emitted.insert(uid.clone());
-            if let Some(targets) = self.under_targets_by_game.get(&uid) {
-                for target in targets.iter() {
-                    if target.line > (total_now_int as f64) {
-                        intents.push(self.mk_intent(
-                            &target.token_id,
-                            &target.condition_id,
-                            &target.strategy_key,
-                            &uid,
-                            &format!("mlb_totals_under_final:{}", target.line),
-                            "totals",
-                            "under",
-                        ));
-                        under_final += 1;
+            let empty = Vec::new();
+            let under_lines = self.under_lines_by_game.get(uid).unwrap_or(&empty);
+            for &ul in under_lines {
+                if ul > (total_now as f64) {
+                    let key = format!("{}:TOTAL:UNDER:{}", uid, line_key(ul));
+                    if let Some(target) = self.targets.get(&key) {
+                        intents.push(Intent {
+                            strategy_key: key,
+                            token_id: target.token_id.clone(),
+                        });
                     }
                 }
             }
         }
 
-        if intents.is_empty() {
-            Some("mlb_totals_no_signal".to_string())
-        } else {
-            Some(format!(
-                "mlb_totals_emit:intents={}:over_crossed={}:under_final={}",
-                intents.len(),
-                over_crossed,
-                under_final
-            ))
-        }
+        intents
     }
 
     pub(crate) fn evaluate_nrfi(
         &mut self,
         delta: &DeltaEvent,
         state: &GameState,
-        intents: &mut Vec<Intent>,
-    ) -> Option<String> {
-        let uid = delta.universal_id.clone();
-        if self.nrfi_resolved_games.contains(&uid) {
-            return Some("mlb_nrfi_already_resolved".to_string());
+    ) -> Vec<Intent> {
+        let uid = &delta.universal_id;
+        if !self.games_with_nrfi.contains(uid) {
+            return vec![];
         }
-        if !self.nrfi_first_inning_observed.contains(&uid) {
+        if self.nrfi_resolved_games.contains(uid) {
+            return vec![];
+        }
+        if !self.nrfi_first_inning_observed.contains(uid) {
             match state.inning_number {
                 Some(1) => {
                     self.nrfi_first_inning_observed.insert(uid.clone());
                 }
                 Some(_) => {
                     self.nrfi_resolved_games.insert(uid.clone());
-                    return Some("mlb_nrfi_skip_late_subscription".to_string());
+                    return vec![];
                 }
                 None => {
-                    return Some("mlb_nrfi_awaiting_inning_data".to_string());
+                    return vec![];
                 }
             }
         }
-        let targets = if let Some(targets) = self.nrfi_targets_by_game.get(&uid) {
-            targets
-        } else {
-            return None;
-        };
 
         let run_delta = delta.goal_delta_home + delta.goal_delta_away;
-        if run_delta > 0 && is_first_inning(state, true) {
-            if let Some(target) = targets.get("yes") {
+        if run_delta > 0 && is_first_inning(state) {
+            let key = format!("{}:NRFI:YES", uid);
+            if let Some(target) = self.targets.get(&key) {
                 self.nrfi_resolved_games.insert(uid.clone());
-                let reason = "mlb_nrfi_yes_first_inning_run".to_string();
-                intents.push(self.mk_intent(
-                    &target.token_id,
-                    &target.condition_id,
-                    &target.strategy_key,
-                    &uid,
-                    &reason,
-                    "nrfi",
-                    "yes",
-                ));
-                return Some(reason);
+                return vec![Intent {
+                    strategy_key: key,
+                    token_id: target.token_id.clone(),
+                }];
             }
         }
 
-        if is_first_inning_complete(state) {
+        if has_first_inning_ended(state) {
             if state.total.unwrap_or(-1) == 0 {
-                if let Some(target) = targets.get("no") {
+                let key = format!("{}:NRFI:NO", uid);
+                if let Some(target) = self.targets.get(&key) {
                     self.nrfi_resolved_games.insert(uid.clone());
-                    let reason = "mlb_nrfi_no_first_inning_complete_zero".to_string();
-                    intents.push(self.mk_intent(
-                        &target.token_id,
-                        &target.condition_id,
-                        &target.strategy_key,
-                        &uid,
-                        &reason,
-                        "nrfi",
-                        "no",
-                    ));
-                    return Some(reason);
+                    return vec![Intent {
+                        strategy_key: key,
+                        token_id: target.token_id.clone(),
+                    }];
                 }
             }
         }
 
-        Some("mlb_nrfi_no_signal".to_string())
+        vec![]
     }
 
     pub(crate) fn evaluate_final(
         &mut self,
         delta: &DeltaEvent,
         state: &GameState,
-        intents: &mut Vec<Intent>,
-    ) -> String {
-        let uid = delta.universal_id.clone();
-        if self.final_resolved_games.contains(&uid) {
-            return "mlb_final_already_resolved".to_string();
+    ) -> Vec<Intent> {
+        let uid = &delta.universal_id;
+        if self.final_resolved_games.contains(uid) {
+            return vec![];
+        }
+        if !self.games_with_final.contains(uid) {
+            return vec![];
         }
         if !state.match_completed.unwrap_or(false) {
-            if !self.moneyline_by_game.contains_key(&uid)
-                && !self.spreads_by_game.contains_key(&uid)
-            {
-                return "mlb_final_no_targets".to_string();
-            }
-            return "mlb_final_not_completed".to_string();
+            return vec![];
         }
         if state.home.is_none() || state.away.is_none() {
-            return "mlb_final_invalid_score_state".to_string();
+            return vec![];
         }
 
         let home = state.home.unwrap_or(0);
         let away = state.away.unwrap_or(0);
-        let mut unresolved = *self.unknown_by_game.get(&uid).unwrap_or(&0i64);
+        let mut intents = Vec::new();
 
-        if let Some(ml) = self.moneyline_by_game.get(&uid) {
-            let winner = if home > away {
-                "home"
-            } else if away > home {
-                "away"
-            } else {
-                ""
-            };
-            if !winner.is_empty() {
-                if let Some(target) = ml.get(winner) {
-                    intents.push(self.mk_intent(
-                        &target.token_id,
-                        &target.condition_id,
-                        &target.strategy_key,
-                        &uid,
-                        &format!("mlb_moneyline_final_winner:{}", winner),
-                        "moneyline",
-                        winner,
-                    ));
-                } else {
-                    unresolved += 1;
-                }
-            } else {
-                unresolved += 1;
+        // Moneyline — direct key probe
+        let winner = if home > away {
+            "HOME"
+        } else if away > home {
+            "AWAY"
+        } else {
+            ""
+        };
+        if !winner.is_empty() {
+            let key = format!("{}:MONEYLINE:{}", uid, winner);
+            if let Some(target) = self.targets.get(&key) {
+                intents.push(Intent {
+                    strategy_key: key,
+                    token_id: target.token_id.clone(),
+                });
             }
         }
 
+        // Spreads — iterate spread_lines index, probe each
         let margin_home = home - away;
-        let margin_away = -margin_home;
-        if let Some(spreads) = self.spreads_by_game.get(&uid) {
-            if let Some(home_spreads) = spreads.get("home") {
-                for target in home_spreads.iter() {
-                    if (margin_home as f64) + target.line > 0.0 {
-                        intents.push(self.mk_intent(
-                            &target.token_id,
-                            &target.condition_id,
-                            &target.strategy_key,
-                            &uid,
-                            &format!("mlb_spread_final_cover:home:{}", target.line),
-                            "spread",
-                            "home",
-                        ));
-                    }
-                }
-            }
-            if let Some(away_spreads) = spreads.get("away") {
-                for target in away_spreads.iter() {
-                    if (margin_away as f64) + target.line > 0.0 {
-                        intents.push(self.mk_intent(
-                            &target.token_id,
-                            &target.condition_id,
-                            &target.strategy_key,
-                            &uid,
-                            &format!("mlb_spread_final_cover:away:{}", target.line),
-                            "spread",
-                            "away",
-                        ));
-                    }
+        let empty = Vec::new();
+        let spread_lines = self.spread_lines_by_game.get(uid).unwrap_or(&empty);
+        for &(side, sl) in spread_lines {
+            let margin = if side == "HOME" { margin_home } else { -margin_home };
+            if (margin as f64) + sl > 0.0 {
+                let key = format!("{}:SPREAD:{}:{}", uid, side, line_key(sl));
+                if let Some(target) = self.targets.get(&key) {
+                    intents.push(Intent {
+                        strategy_key: key,
+                        token_id: target.token_id.clone(),
+                    });
                 }
             }
         }
 
         self.final_resolved_games.insert(uid.clone());
-        self.cleanup_completed_game(&uid);
-        if intents.is_empty() {
-            format!("mlb_final_no_signal:unresolved={}", unresolved)
-        } else {
-            format!(
-                "mlb_final_emit:intents={}:unresolved={}",
-                intents.len(),
-                unresolved
-            )
-        }
+        self.cleanup_completed_game(uid);
+        intents
     }
 }
 
-pub(crate) fn is_first_inning(state: &GameState, include_end: bool) -> bool {
+pub(crate) fn is_first_inning(state: &GameState) -> bool {
     if state.inning_number.unwrap_or(-1) != 1 {
         return false;
     }
-    let half = crate::engine::norm(&state.inning_half);
-    let allowed = matches!(half.as_str(), "top" | "bottom" | "")
-        || (include_end && half == "end");
-    if !allowed {
+    if !matches!(state.inning_half, "top" | "bottom" | "break" | "") {
         return false;
     }
     !state.match_completed.unwrap_or(false)
 }
 
-pub(crate) fn is_first_inning_complete(state: &GameState) -> bool {
+pub(crate) fn has_first_inning_ended(state: &GameState) -> bool {
     let inning = state.inning_number;
-    let half = crate::engine::norm(&state.inning_half);
     if inning.is_none() {
         return false;
     }
@@ -298,7 +203,7 @@ pub(crate) fn is_first_inning_complete(state: &GameState) -> bool {
     if inning_num > 1 {
         return true;
     }
-    if inning_num == 1 && half == "end" {
+    if inning_num == 1 && state.inning_half == "break" {
         return true;
     }
     inning_num == 1 && state.match_completed.unwrap_or(false)

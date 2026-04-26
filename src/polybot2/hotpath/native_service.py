@@ -67,6 +67,7 @@ class NativeHotPathService:
             if str(execution_mode or "").strip().lower() == "paper"
             else "live"
         )
+        self._log_dir: str | None = os.environ.get("POLYBOT2_LOG_DIR")
 
         self.set_compiled_plan(compiled_plan)
 
@@ -174,8 +175,6 @@ class NativeHotPathService:
         provider_cfg = getattr(self._provider, "config", None)
         plan = self._compiled_plan
         payload = {
-            "provider": ("" if plan is None else str(plan.provider or "")),
-            "league": ("" if plan is None else str(plan.league or "")),
             "dedup_ttl_seconds": float(self._config.dedup_ttl_seconds),
             "decision_cooldown_seconds": float(self._config.decision_cooldown_seconds),
             "decision_debounce_seconds": float(self._config.decision_debounce_seconds),
@@ -193,6 +192,8 @@ class NativeHotPathService:
             "kalstrop_shared_secret_raw": str(
                 getattr(provider_cfg, "shared_secret_raw", "") or ""
             ),
+            "log_dir": str(self._log_dir) if self._log_dir else ".",
+            "run_id": int(plan.run_id) if plan is not None else 0,
         }
         return payload
 
@@ -206,7 +207,6 @@ class NativeHotPathService:
             "api_passphrase": str(getattr(exec_cfg, "api_passphrase", "") or ""),
             "funder": str(getattr(exec_cfg, "funder", "") or ""),
             "signature_type": int(getattr(exec_cfg, "signature_type", 0) or 0),
-            "address": str(os.getenv("POLY_EXEC_ADDRESS", "") or ""),
             "chain_id": int(getattr(exec_cfg, "chain_id", 137) or 137),
             "presign_enabled": bool(getattr(exec_cfg, "presign_enabled", False)),
             "presign_private_key": str(
@@ -217,10 +217,6 @@ class NativeHotPathService:
             ),
             "presign_startup_warm_timeout_seconds": float(
                 getattr(exec_cfg, "presign_startup_warm_timeout_seconds", 5.0) or 5.0
-            ),
-            "active_order_refresh_interval_seconds": float(
-                getattr(exec_cfg, "active_order_refresh_interval_seconds", 0.25)
-                or 0.25
             ),
         }
 

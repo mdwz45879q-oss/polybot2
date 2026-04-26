@@ -21,29 +21,6 @@ fn env_or_default(name: &str, default: &str) -> String {
     }
 }
 
-fn env_parse_f64(name: &str, default: f64) -> f64 {
-    let raw = std::env::var(name).unwrap_or_default();
-    raw.trim().parse::<f64>().unwrap_or(default)
-}
-
-fn test_intent(strategy_key: &str) -> Intent {
-    Intent {
-        strategy_key: strategy_key.to_string(),
-        token_id: "t1".to_string(),
-        side: "buy_yes".to_string(),
-        amount_usdc: 5.0,
-        size_shares: 5.0,
-        limit_price: 0.52,
-        time_in_force: "FAK".to_string(),
-        condition_id: "c1".to_string(),
-        source_universal_id: "u1".to_string(),
-        chain_id: "u1:1".to_string(),
-        reason: "test".to_string(),
-        market_type: "totals".to_string(),
-        outcome_semantic: "over".to_string(),
-    }
-}
-
 fn contains_min_notional_rejection(err: &str) -> bool {
     let lowered = err.to_ascii_lowercase();
     lowered.contains("market buys must be greater than $1")
@@ -57,13 +34,13 @@ fn presign_key_is_token_only() {
         presign_pool_target_per_key: 2,
         ..DispatchConfig::default()
     };
-    let rt = DispatchRuntime::new(cfg, None);
+    let rt = DispatchRuntime::new(cfg);
     let req_a = OrderRequestData {
         token_id: "t".to_string(),
         side: "buy_yes".to_string(),
         amount_usdc: 6.2,
         limit_price: 0.531,
-        time_in_force: "FAK".to_string(),
+        time_in_force: OrderTimeInForce::FAK,
         client_order_id: "x1".to_string(),
         size_shares: 6.2 / 0.531,
         expiration_ts: None,
@@ -73,7 +50,7 @@ fn presign_key_is_token_only() {
         side: "buy_no".to_string(),
         amount_usdc: 50.0,
         limit_price: 0.11,
-        time_in_force: "FOK".to_string(),
+        time_in_force: OrderTimeInForce::FOK,
         client_order_id: "x2".to_string(),
         size_shares: 50.0 / 0.11,
         expiration_ts: None,
@@ -91,13 +68,13 @@ fn submit_presigned_miss_is_fail_closed() {
         presign_pool_target_per_key: 2,
         ..DispatchConfig::default()
     };
-    let mut rt = DispatchRuntime::new(cfg, None);
+    let mut rt = DispatchRuntime::new(cfg);
     let req = OrderRequestData {
         token_id: "t".to_string(),
         side: "buy_yes".to_string(),
         amount_usdc: 5.0,
         limit_price: 0.5,
-        time_in_force: "FAK".to_string(),
+        time_in_force: OrderTimeInForce::FAK,
         client_order_id: "cid".to_string(),
         size_shares: 10.0,
         expiration_ts: None,
@@ -107,7 +84,7 @@ fn submit_presigned_miss_is_fail_closed() {
         .build()
         .expect("tokio runtime");
     let err = tokio_rt
-        .block_on(rt.submit_with_policy_async(&req))
+        .block_on(rt.dispatch_order("t"))
         .expect_err("empty presign pool must fail closed");
     assert!(err.contains("submit_presigned_miss"));
 }
@@ -121,7 +98,7 @@ fn startup_warm_fails_when_templates_missing() {
         presign_startup_warm_timeout_seconds: 0.01,
         ..DispatchConfig::default()
     };
-    let mut rt = DispatchRuntime::new(cfg, None);
+    let mut rt = DispatchRuntime::new(cfg);
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -133,102 +110,33 @@ fn startup_warm_fails_when_templates_missing() {
 }
 
 #[test]
-fn invalid_tif_intents_are_rejected() {
-    let mut rt = DispatchRuntime::new(DispatchConfig::default(), None);
-    let mut intent = test_intent("s1");
-    intent.time_in_force = "BOGUS".to_string();
+fn noop_dispatch_succeeds() {
+    let mut rt = DispatchRuntime::new(DispatchConfig::default());
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");
-
-    let err = tokio_rt
-        .block_on(rt.dispatch_intent_async(&intent))
-        .expect_err("invalid TIF should be rejected");
-    assert!(err.contains("dispatch_tif_invalid"));
+    tokio_rt
+        .block_on(rt.dispatch_order("t1"))
+        .expect("noop dispatch should succeed");
 }
 
 #[test]
 fn map_sdk_order_type_all_variants() {
-    assert_eq!(map_sdk_order_type("FAK").unwrap(), SdkOrderType::FAK);
-    assert_eq!(map_sdk_order_type("FOK").unwrap(), SdkOrderType::FOK);
-    assert_eq!(map_sdk_order_type("GTC").unwrap(), SdkOrderType::GTC);
-    assert_eq!(map_sdk_order_type("GTD").unwrap(), SdkOrderType::GTD);
-    assert_eq!(map_sdk_order_type("fak").unwrap(), SdkOrderType::FAK);
-    assert_eq!(map_sdk_order_type("").unwrap(), SdkOrderType::FAK);
-    assert!(map_sdk_order_type("BOGUS").is_err());
+    assert_eq!(map_sdk_order_type(OrderTimeInForce::FAK), SdkOrderType::FAK);
+    assert_eq!(map_sdk_order_type(OrderTimeInForce::FOK), SdkOrderType::FOK);
+    assert_eq!(map_sdk_order_type(OrderTimeInForce::GTC), SdkOrderType::GTC);
 }
 
 #[test]
-fn fok_intent_accepted_in_noop() {
-    let mut rt = DispatchRuntime::new(DispatchConfig::default(), None);
-    let mut intent = test_intent("s1");
-    intent.time_in_force = "FOK".to_string();
-    let tokio_rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime");
-    tokio_rt
-        .block_on(rt.dispatch_intent_async(&intent))
-        .expect("FOK intent should be accepted in noop mode");
-}
-
-#[test]
-fn gtc_intent_accepted_in_noop() {
-    let mut rt = DispatchRuntime::new(DispatchConfig::default(), None);
-    let mut intent = test_intent("s1");
-    intent.time_in_force = "GTC".to_string();
-    let tokio_rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime");
-    tokio_rt
-        .block_on(rt.dispatch_intent_async(&intent))
-        .expect("GTC intent should be accepted in noop mode");
-}
-
-#[test]
-fn stale_active_order_evicted_after_ttl() {
-    let mut rt = DispatchRuntime::new(DispatchConfig::default(), None);
-    let stale_ns = now_unix_ns() - 120_000_000_000; // 120s ago
-    rt.active_orders_by_strategy.insert(
-        "sk_stale".to_string(),
-        ActiveOrderRef {
-            client_order_id: "cid1".to_string(),
-            exchange_order_id: "eid1".to_string(),
-            status: "submitted".to_string(),
-            source_universal_id: "g1".to_string(),
-            chain_id: "g1:1".to_string(),
-            inserted_ns: stale_ns,
-        },
-    );
-    assert!(rt.active_orders_by_strategy.contains_key("sk_stale"));
-    rt.evict_stale_active_orders();
-    assert!(
-        !rt.active_orders_by_strategy.contains_key("sk_stale"),
-        "stale entry should be evicted after 60s TTL"
-    );
-}
-
-#[test]
-fn fresh_active_order_not_evicted() {
-    let mut rt = DispatchRuntime::new(DispatchConfig::default(), None);
-    rt.active_orders_by_strategy.insert(
-        "sk_fresh".to_string(),
-        ActiveOrderRef {
-            client_order_id: "cid1".to_string(),
-            exchange_order_id: "eid1".to_string(),
-            status: "submitted".to_string(),
-            source_universal_id: "g1".to_string(),
-            chain_id: "g1:1".to_string(),
-            inserted_ns: now_unix_ns(),
-        },
-    );
-    rt.evict_stale_active_orders();
-    assert!(
-        rt.active_orders_by_strategy.contains_key("sk_fresh"),
-        "fresh entry should survive eviction"
-    );
+fn parse_time_in_force_all_variants() {
+    assert_eq!(parse_time_in_force("FAK").unwrap(), OrderTimeInForce::FAK);
+    assert_eq!(parse_time_in_force("fak").unwrap(), OrderTimeInForce::FAK);
+    assert_eq!(parse_time_in_force("FOK").unwrap(), OrderTimeInForce::FOK);
+    assert_eq!(parse_time_in_force("GTC").unwrap(), OrderTimeInForce::GTC);
+    assert_eq!(parse_time_in_force("").unwrap(), OrderTimeInForce::FAK);
+    assert!(parse_time_in_force("GTD").is_err());
+    assert!(parse_time_in_force("BOGUS").is_err());
 }
 
 #[test]
@@ -238,83 +146,6 @@ fn sdk_side_mapping_accepts_buy_and_rejects_sell_notional() {
     let err =
         map_sdk_side("sell_yes").expect_err("sell should be rejected for usdc notional flow");
     assert!(err.contains("sell_requires_share_amount"));
-}
-
-#[test]
-fn live_rust_submit_min_notional_rejection() {
-    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
-        eprintln!(
-            "skipping live rust execution test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1"
-        );
-        return;
-    }
-
-    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
-    assert!(
-        !token_id.trim().is_empty(),
-        "POLYBOT2_LIVE_EXEC_TOKEN_ID is required when POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1"
-    );
-
-    let mut cfg = DispatchConfig {
-        mode: DispatchMode::Http,
-        clob_host: env_or_default("POLY_EXEC_CLOB_HOST", "https://clob.polymarket.com"),
-        api_key: env_or_default("POLY_EXEC_API_KEY", ""),
-        api_secret: env_or_default("POLY_EXEC_API_SECRET", ""),
-        api_passphrase: env_or_default("POLY_EXEC_API_PASSPHRASE", ""),
-        funder: env_or_default("POLY_EXEC_FUNDER", ""),
-        signature_type: env_or_default("POLY_EXEC_SIGNATURE_TYPE", "1")
-            .parse::<i64>()
-            .unwrap_or(1),
-        presign_private_key: env_or_default("POLY_EXEC_PRESIGN_PRIVATE_KEY", ""),
-        ..DispatchConfig::default()
-    };
-    cfg.presign_enabled = false;
-
-    assert!(
-        !cfg.api_key.trim().is_empty()
-            && !cfg.api_secret.trim().is_empty()
-            && !cfg.api_passphrase.trim().is_empty()
-            && !cfg.funder.trim().is_empty()
-            && cfg.signature_type == 1
-            && !cfg.presign_private_key.trim().is_empty(),
-        "POLY_EXEC_API_KEY/POLY_EXEC_API_SECRET/POLY_EXEC_API_PASSPHRASE, POLY_EXEC_FUNDER, POLY_EXEC_SIGNATURE_TYPE=1 and POLY_EXEC_PRESIGN_PRIVATE_KEY are required"
-    );
-
-    let mut rt = DispatchRuntime::new(cfg, None);
-    let notional = env_parse_f64("POLYBOT2_LIVE_EXEC_NOTIONAL_USDC", 0.5);
-    let price = env_parse_f64("POLYBOT2_LIVE_EXEC_LIMIT_PRICE", 0.5);
-    let request = OrderRequestData {
-        token_id,
-        side: "buy_yes".to_string(),
-        amount_usdc: notional,
-        limit_price: price,
-        time_in_force: "FAK".to_string(),
-        client_order_id: format!("rust_live_exec_{}", now_unix_s()),
-        size_shares: notional / price.max(0.001),
-        expiration_ts: None,
-    };
-
-    let tokio_rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime");
-    let err = match tokio_rt.block_on(rt.submit_with_policy_async(&request)) {
-        Ok(state) => panic!(
-            "expected min-notional rejection, got success status={} exchange_order_id={}",
-            state.status, state.exchange_order_id
-        ),
-        Err(e) => e,
-    };
-    assert!(
-        contains_min_notional_rejection(err.as_str()),
-        "unexpected live rejection: {}",
-        err
-    );
-    assert!(
-        !err.to_ascii_lowercase().contains("invalid order payload"),
-        "payload contract still invalid: {}",
-        err
-    );
 }
 
 fn build_live_dispatch_config() -> Option<DispatchConfig> {
@@ -358,30 +189,72 @@ fn contains_min_size_rejection(err: &str) -> bool {
 }
 
 #[test]
-fn live_rust_submit_fok_min_notional_rejection() {
-    let Some(cfg) = build_live_dispatch_config() else {
-        eprintln!("skipping live FOK test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+fn live_rust_submit_min_notional_rejection() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!(
+            "skipping live rust execution test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1"
+        );
         return;
-    };
+    }
+
     let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
-    let mut rt = DispatchRuntime::new(cfg, None);
-    let request = OrderRequestData {
-        token_id,
-        side: "buy_yes".to_string(),
+    assert!(
+        !token_id.trim().is_empty(),
+        "POLYBOT2_LIVE_EXEC_TOKEN_ID is required when POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1"
+    );
+
+    let mut cfg = DispatchConfig {
+        mode: DispatchMode::Http,
+        clob_host: env_or_default("POLY_EXEC_CLOB_HOST", "https://clob.polymarket.com"),
+        api_key: env_or_default("POLY_EXEC_API_KEY", ""),
+        api_secret: env_or_default("POLY_EXEC_API_SECRET", ""),
+        api_passphrase: env_or_default("POLY_EXEC_API_PASSPHRASE", ""),
+        funder: env_or_default("POLY_EXEC_FUNDER", ""),
+        signature_type: env_or_default("POLY_EXEC_SIGNATURE_TYPE", "1")
+            .parse::<i64>()
+            .unwrap_or(1),
+        presign_private_key: env_or_default("POLY_EXEC_PRESIGN_PRIVATE_KEY", ""),
         amount_usdc: 0.5,
         limit_price: 0.5,
-        time_in_force: "FOK".to_string(),
-        client_order_id: format!("rust_live_fok_{}", now_unix_s()),
         size_shares: 1.0,
-        expiration_ts: None,
+        time_in_force: OrderTimeInForce::FAK,
+        ..DispatchConfig::default()
     };
+    cfg.presign_enabled = false;
 
+    let mut rt = DispatchRuntime::new(cfg);
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");
     let err = tokio_rt
-        .block_on(rt.submit_with_policy_async(&request))
+        .block_on(rt.dispatch_order(token_id.as_str()))
+        .expect_err("sub-$1 notional should be rejected");
+    assert!(
+        contains_min_notional_rejection(err.as_str()),
+        "unexpected live rejection: {}",
+        err
+    );
+}
+
+#[test]
+fn live_rust_submit_fok_min_notional_rejection() {
+    let Some(mut cfg) = build_live_dispatch_config() else {
+        eprintln!("skipping live FOK test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+        return;
+    };
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    cfg.amount_usdc = 0.5;
+    cfg.limit_price = 0.5;
+    cfg.size_shares = 1.0;
+    cfg.time_in_force = OrderTimeInForce::FOK;
+    let mut rt = DispatchRuntime::new(cfg);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let err = tokio_rt
+        .block_on(rt.dispatch_order(token_id.as_str()))
         .expect_err("FOK with sub-$1 notional should be rejected by exchange");
     assert!(
         contains_min_notional_rejection(err.as_str()),
@@ -392,29 +265,22 @@ fn live_rust_submit_fok_min_notional_rejection() {
 
 #[test]
 fn live_rust_submit_gtc_min_size_rejection() {
-    let Some(cfg) = build_live_dispatch_config() else {
+    let Some(mut cfg) = build_live_dispatch_config() else {
         eprintln!("skipping live GTC test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
         return;
     };
     let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
-    let mut rt = DispatchRuntime::new(cfg, None);
-    let request = OrderRequestData {
-        token_id,
-        side: "buy_yes".to_string(),
-        amount_usdc: 1.0,
-        limit_price: 0.5,
-        time_in_force: "GTC".to_string(),
-        client_order_id: format!("rust_live_gtc_{}", now_unix_s()),
-        size_shares: 2.0,
-        expiration_ts: None,
-    };
-
+    cfg.amount_usdc = 1.0;
+    cfg.limit_price = 0.5;
+    cfg.size_shares = 2.0;
+    cfg.time_in_force = OrderTimeInForce::GTC;
+    let mut rt = DispatchRuntime::new(cfg);
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");
     let err = tokio_rt
-        .block_on(rt.submit_with_policy_async(&request))
+        .block_on(rt.dispatch_order(token_id.as_str()))
         .expect_err("GTC with size < 5 shares should be rejected by exchange");
     assert!(
         contains_min_size_rejection(err.as_str()),
@@ -423,36 +289,3 @@ fn live_rust_submit_gtc_min_size_rejection() {
     );
 }
 
-#[test]
-fn live_rust_submit_gtd_min_size_rejection() {
-    let Some(cfg) = build_live_dispatch_config() else {
-        eprintln!("skipping live GTD test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
-        return;
-    };
-    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
-    let mut rt = DispatchRuntime::new(cfg, None);
-    let exp_ts = now_unix_s() + 300;
-    let request = OrderRequestData {
-        token_id,
-        side: "buy_yes".to_string(),
-        amount_usdc: 1.0,
-        limit_price: 0.5,
-        time_in_force: "GTD".to_string(),
-        client_order_id: format!("rust_live_gtd_{}", now_unix_s()),
-        size_shares: 2.0,
-        expiration_ts: Some(exp_ts),
-    };
-
-    let tokio_rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime");
-    let err = tokio_rt
-        .block_on(rt.submit_with_policy_async(&request))
-        .expect_err("GTD with size < 5 shares should be rejected by exchange");
-    assert!(
-        contains_min_size_rejection(err.as_str()),
-        "unexpected GTD live rejection: {}",
-        err
-    );
-}

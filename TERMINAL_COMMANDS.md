@@ -5,7 +5,18 @@ This is a copy-paste command guide for day-to-day `polybot2` work.
 ## 1) One-Time Setup
 
 ```bash
-pip install -e /Users/reda/polymarket_bot/polybot2
+pip install -e "/Users/reda/polymarket_bot/polybot2[dev]"
+```
+
+Build the Rust native module (required for hotpath):
+
+```bash
+# macOS (conda + system Python conflict):
+env -u CONDA_PREFIX maturin build --release --manifest-path native/polybot2_native/Cargo.toml --interpreter python3
+pip install --force-reinstall native/polybot2_native/target/wheels/polybot2_native-*.whl
+
+# Linux / clean virtualenv:
+maturin develop --manifest-path native/polybot2_native/Cargo.toml
 ```
 
 Load environment variables: 
@@ -31,11 +42,13 @@ alias pb='PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src python -m polybot2'
 
 ```bash
 export POLYBOT2_DB_PATH=/Users/reda/polymarket_bot/polybot2/data/prediction_markets.db
+export POLYBOT2_LOG_DIR=/Users/reda/polymarket_bot/polybot2/logs
 export KALSTROP_CLIENT_ID='YOUR_CLIENT_ID'
 export KALSTROP_SHARED_SECRET_RAW='YOUR_SHARED_SECRET'
 ```
 
 - `POLYBOT2_DB_PATH`: default DB path for all commands.
+- `POLYBOT2_LOG_DIR`: directory for hotpath JSONL log files (default: current directory).
 - Default provider is Kalstrop via policy (`config/live_trading.py`).
 - Kalstrop creds are required unless you explicitly override `--provider boltodds`.
 
@@ -149,6 +162,43 @@ export POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS='2f8d1e1462ce,36354015caf6'
 polybot2 hotpath run --league mlb --link-run-id 123
 ```
 
+### Live observer (in-place terminal scoreboard)
+
+In a separate terminal while the hotpath is running:
+
+```bash
+# Auto-discover latest log file:
+polybot2 hotpath observe --run-id 123 --link-run-id 123 --league mlb
+
+# Or specify the log file directly:
+polybot2 hotpath observe --log-file logs/hotpath_123_20260426T183200Z.jsonl
+
+# With team name resolution (requires --link-run-id + --db):
+polybot2 hotpath observe --log-file logs/hotpath_123_*.jsonl --link-run-id 123 --league mlb
+```
+
+What it does:
+- Reads the JSONL log file with tail -f semantics.
+- Renders a fixed-position terminal scoreboard that redraws in place (no scrolling).
+- Shows game scores, innings, bet outcomes, and order history.
+- Team abbreviations use Polymarket codes (LAA, BOS, etc.).
+
+### Inspect log files with jq
+
+```bash
+# All order events:
+jq 'select(.ev == "order")' logs/hotpath_123_*.jsonl
+
+# Failed orders only:
+jq 'select(.ev == "order" and .ok == false)' logs/hotpath_123_*.jsonl
+
+# Score progression for one game:
+jq 'select(.ev == "tick" and .gid == "85c66fa4-...")' logs/hotpath_123_*.jsonl
+
+# Tail live:
+tail -f logs/hotpath_123_*.jsonl | jq --unbuffered 'select(.ev == "order")'
+```
+
 ## 6) One-Game Websocket Capture
 
 ```bash
@@ -220,7 +270,13 @@ VACUUM;
 ```
 ## 8) Test Commands
 
-Run full suite:
+Rust tests:
+
+```bash
+cargo test --manifest-path native/polybot2_native/Cargo.toml
+```
+
+Python full suite:
 
 ```bash
 PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src pytest -q polybot2/tests

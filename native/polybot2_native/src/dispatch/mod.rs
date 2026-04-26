@@ -1,5 +1,4 @@
 use super::*;
-use crate::telemetry::TelemetryEmitter;
 use polymarket_client_sdk::auth::state::Authenticated as SdkAuthenticatedState;
 use polymarket_client_sdk::auth::Normal as SdkAuthNormal;
 use polymarket_client_sdk::auth::{
@@ -14,7 +13,6 @@ use polymarket_client_sdk::clob::{Client as SdkClient, Config as SdkConfig};
 use polymarket_client_sdk::types::{Address as SdkAddress, Decimal as SdkDecimal, U256 as SdkU256};
 use std::str::FromStr;
 
-mod events;
 mod flow;
 mod presign_pool;
 mod sdk_exec;
@@ -22,15 +20,29 @@ mod types;
 
 pub(crate) use types::{DispatchRuntime, PresignTemplateData};
 pub(super) use types::{
-    ActiveOrderRef, OrderRequestData, OrderStateData, PolymarketSdkRuntime, PreSignKey,
+    OrderRequestData, OrderStateData, PolymarketSdkRuntime, PreSignKey,
     PreSignedOrderData,
 };
 
 static NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-pub(crate) fn build_dispatch_config_with_gtd(
+pub(crate) fn normalize_status(status: &str) -> String {
+    let lowered = status.trim().to_lowercase();
+    if lowered.is_empty() {
+        return "submitted".to_string();
+    }
+    if lowered == "live" {
+        return "open".to_string();
+    }
+    lowered
+}
+
+pub(crate) fn build_dispatch_config(
     exec_cfg: ExecStartConfig,
-    gtd_expiration_seconds: i64,
+    amount_usdc: f64,
+    size_shares: f64,
+    limit_price: f64,
+    time_in_force: String,
 ) -> Result<DispatchConfig, String> {
     let mode_text = exec_cfg
         .dispatch_mode
@@ -53,11 +65,6 @@ pub(crate) fn build_dispatch_config_with_gtd(
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or_else(|| if funder.trim().is_empty() { 0 } else { 1 })
     });
-    let _address_hint = exec_cfg
-        .address
-        .clone()
-        .unwrap_or_else(|| std::env::var("POLY_EXEC_ADDRESS").unwrap_or_default());
-
     Ok(DispatchConfig {
         mode,
         clob_host: exec_cfg
@@ -81,11 +88,10 @@ pub(crate) fn build_dispatch_config_with_gtd(
             .presign_startup_warm_timeout_seconds
             .unwrap_or(5.0)
             .max(0.1),
-        active_order_refresh_interval_seconds: exec_cfg
-            .active_order_refresh_interval_seconds
-            .unwrap_or(0.25)
-            .max(0.0),
-        gtd_expiration_seconds: gtd_expiration_seconds.max(0),
+        amount_usdc,
+        size_shares,
+        limit_price,
+        time_in_force: parse_time_in_force(time_in_force.as_str())?,
     })
 }
 
@@ -129,12 +135,14 @@ pub(super) fn normalize_side(side: &str) -> String {
     }
 }
 
-pub(super) fn normalize_tif(tif: &str) -> String {
+pub(super) fn parse_time_in_force(tif: &str) -> Result<OrderTimeInForce, String> {
     let raw = tif.trim().to_uppercase();
-    if raw.is_empty() {
-        "FAK".to_string()
-    } else {
-        raw
+    let raw = if raw.is_empty() { "FAK".to_string() } else { raw };
+    match raw.as_str() {
+        "FAK" => Ok(OrderTimeInForce::FAK),
+        "FOK" => Ok(OrderTimeInForce::FOK),
+        "GTC" => Ok(OrderTimeInForce::GTC),
+        other => Err(format!("unsupported_time_in_force:{}", other)),
     }
 }
 
@@ -147,18 +155,12 @@ pub(super) fn map_sdk_signature_type(signature_type: i64) -> Result<SdkSignature
     }
 }
 
-pub(crate) fn map_sdk_order_type(tif: &str) -> Result<SdkOrderType, String> {
-    match normalize_tif(tif).as_str() {
-        "FAK" => Ok(SdkOrderType::FAK),
-        "FOK" => Ok(SdkOrderType::FOK),
-        "GTC" => Ok(SdkOrderType::GTC),
-        "GTD" => Ok(SdkOrderType::GTD),
-        other => Err(format!("unsupported_order_type:{}", other)),
+pub(crate) fn map_sdk_order_type(tif: OrderTimeInForce) -> SdkOrderType {
+    match tif {
+        OrderTimeInForce::FAK => SdkOrderType::FAK,
+        OrderTimeInForce::FOK => SdkOrderType::FOK,
+        OrderTimeInForce::GTC => SdkOrderType::GTC,
     }
-}
-
-pub(crate) fn is_market_order_type(tif: &str) -> bool {
-    matches!(normalize_tif(tif).as_str(), "FAK" | "FOK")
 }
 
 pub(super) fn parse_decimal_from_f64(

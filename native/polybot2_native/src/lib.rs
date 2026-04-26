@@ -1,11 +1,11 @@
-mod decode;
 mod dispatch;
 mod engine;
 mod eval;
+mod kalstrop_types;
+mod log_writer;
 mod parse;
 mod replay;
 mod runtime;
-mod telemetry;
 mod ws;
 
 use std::collections::{HashMap, HashSet};
@@ -25,59 +25,25 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::runtime::Builder as TokioBuilder;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::time::sleep as tokio_sleep;
-use tokio_tungstenite::connect_async;
+
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::decode::{parse_json_bytes, parse_json_text};
-
 #[derive(Clone)]
-struct TotalsTarget {
-    line: f64,
+struct TargetEntry {
     token_id: String,
-    condition_id: String,
-    strategy_key: String,
-}
-
-#[derive(Clone)]
-struct NrfiTarget {
-    token_id: String,
-    condition_id: String,
-    strategy_key: String,
-}
-
-#[derive(Clone)]
-struct FinalTarget {
-    token_id: String,
-    condition_id: String,
-    strategy_key: String,
-}
-
-#[derive(Clone)]
-struct SpreadTarget {
-    line: f64,
-    token_id: String,
-    condition_id: String,
-    strategy_key: String,
 }
 
 #[derive(Clone, Default)]
 struct Tick {
     universal_id: String,
-    action: String,
+    action: &'static str,
     recv_monotonic_ns: i64,
     goals_home: Option<i64>,
     goals_away: Option<i64>,
     inning_number: Option<i64>,
-    inning_half: String,
-    outs: Option<i64>,
-    balls: Option<i64>,
-    strikes: Option<i64>,
-    runner_on_first: Option<bool>,
-    runner_on_second: Option<bool>,
-    runner_on_third: Option<bool>,
+    inning_half: &'static str,
     match_completed: Option<bool>,
-    period: String,
-    game_state: String,
+    game_state: &'static str,
 }
 
 #[derive(Clone, Default)]
@@ -92,88 +58,47 @@ struct DeltaEvent {
 #[derive(Clone, Default)]
 struct StateRow {
     seen_monotonic_ns: i64,
-    action: String,
+    action: &'static str,
     goals_home: Option<i64>,
     goals_away: Option<i64>,
     inning_number: Option<i64>,
-    inning_half: String,
-    outs: Option<i64>,
-    balls: Option<i64>,
-    strikes: Option<i64>,
-    runner_on_first: Option<bool>,
-    runner_on_second: Option<bool>,
-    runner_on_third: Option<bool>,
+    inning_half: &'static str,
     match_completed: Option<bool>,
-    period: String,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 struct GameState {
     home: Option<i64>,
     away: Option<i64>,
     total: Option<i64>,
     prev_total: Option<i64>,
     inning_number: Option<i64>,
-    inning_half: String,
-    outs: Option<i64>,
-    balls: Option<i64>,
-    strikes: Option<i64>,
-    runner_on_first: Option<bool>,
-    runner_on_second: Option<bool>,
-    runner_on_third: Option<bool>,
+    inning_half: &'static str,
     match_completed: Option<bool>,
-    game_state: String,
+    game_state: &'static str,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 struct DecisionSig {
     token_id: String,
-    side: String,
-    time_in_force: String,
 }
 
 #[derive(Clone)]
 struct Intent {
     strategy_key: String,
     token_id: String,
-    side: String,
-    amount_usdc: f64,
-    size_shares: f64,
-    limit_price: f64,
-    time_in_force: String,
-    condition_id: String,
-    source_universal_id: String,
-    chain_id: String,
-    reason: String,
-    market_type: String,
-    outcome_semantic: String,
 }
 
-#[derive(Clone, Default)]
-struct ObserveSignal {
-    event_type: String,
+struct TickResult {
     game_id: String,
-    payload: Value,
-}
-
-#[derive(Default)]
-struct ProcessResult {
-    decision: String,
-    reason: String,
+    state: GameState,
     intents: Vec<Intent>,
-    observe_signals: Vec<ObserveSignal>,
-    drops_cooldown: i64,
-    drops_debounce: i64,
-    drops_one_shot: i64,
-    decision_non_material: i64,
-    decision_no_action: i64,
+    material: bool,
 }
 
 #[derive(Default, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct RuntimeStartConfig {
-    provider: Option<String>,
-    league: Option<String>,
     dedup_ttl_seconds: Option<f64>,
     decision_cooldown_seconds: Option<f64>,
     decision_debounce_seconds: Option<f64>,
@@ -183,12 +108,13 @@ struct RuntimeStartConfig {
     size_shares: Option<f64>,
     limit_price: Option<f64>,
     time_in_force: Option<String>,
-    gtd_expiration_seconds: Option<i64>,
     live_enabled: Option<bool>,
     reconnect_sleep_seconds: Option<f64>,
     kalstrop_ws_url: Option<String>,
     kalstrop_client_id: Option<String>,
     kalstrop_shared_secret_raw: Option<String>,
+    log_dir: Option<String>,
+    run_id: Option<i64>,
 }
 
 #[derive(Default, Deserialize, Clone)]
@@ -201,13 +127,11 @@ struct ExecStartConfig {
     api_passphrase: Option<String>,
     funder: Option<String>,
     signature_type: Option<i64>,
-    address: Option<String>,
     chain_id: Option<i64>,
     presign_enabled: Option<bool>,
     presign_private_key: Option<String>,
     presign_pool_target_per_key: Option<i64>,
     presign_startup_warm_timeout_seconds: Option<f64>,
-    active_order_refresh_interval_seconds: Option<f64>,
 }
 
 #[derive(Default)]
@@ -221,6 +145,19 @@ struct RuntimeHealth {
 enum DispatchMode {
     Noop,
     Http,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OrderTimeInForce {
+    FAK,
+    FOK,
+    GTC,
+}
+
+impl OrderTimeInForce {
+    fn is_market_order(self) -> bool {
+        matches!(self, Self::FAK | Self::FOK)
+    }
 }
 
 #[derive(Clone)]
@@ -237,8 +174,10 @@ struct DispatchConfig {
     presign_private_key: String,
     presign_pool_target_per_key: i64,
     presign_startup_warm_timeout_seconds: f64,
-    active_order_refresh_interval_seconds: f64,
-    gtd_expiration_seconds: i64,
+    amount_usdc: f64,
+    size_shares: f64,
+    limit_price: f64,
+    time_in_force: OrderTimeInForce,
 }
 
 impl Default for DispatchConfig {
@@ -256,8 +195,10 @@ impl Default for DispatchConfig {
             presign_private_key: String::new(),
             presign_pool_target_per_key: 1,
             presign_startup_warm_timeout_seconds: 5.0,
-            active_order_refresh_interval_seconds: 0.25,
-            gtd_expiration_seconds: 300,
+            amount_usdc: 5.0,
+            size_shares: 5.0,
+            limit_price: 0.52,
+            time_in_force: OrderTimeInForce::FAK,
         }
     }
 }
@@ -267,7 +208,6 @@ struct LiveWorkerHandle {
     join: Option<JoinHandle<()>>,
     subscriptions: Arc<RwLock<Vec<String>>>,
     health: Arc<Mutex<RuntimeHealth>>,
-    telemetry_worker: Option<crate::telemetry::TelemetryWorkerHandle>,
 }
 
 #[derive(Clone)]
@@ -282,19 +222,14 @@ struct NativeMlbEngine {
     dedup_ttl_ns: i64,
     decision_cooldown_ns: i64,
     decision_debounce_ns: i64,
-    amount_usdc: f64,
-    size_shares: f64,
-    limit_price: f64,
-    time_in_force: String,
-    over_targets_by_game: HashMap<String, Vec<TotalsTarget>>,
-    under_targets_by_game: HashMap<String, Vec<TotalsTarget>>,
-    nrfi_targets_by_game: HashMap<String, HashMap<String, NrfiTarget>>,
-    moneyline_by_game: HashMap<String, HashMap<String, FinalTarget>>,
-    spreads_by_game: HashMap<String, HashMap<String, Vec<SpreadTarget>>>,
-    unknown_by_game: HashMap<String, i64>,
+    targets: HashMap<String, TargetEntry>,
+    games_with_totals: HashSet<String>,
+    games_with_nrfi: HashSet<String>,
+    games_with_final: HashSet<String>,
+    under_lines_by_game: HashMap<String, Vec<f64>>,
+    spread_lines_by_game: HashMap<String, Vec<(&'static str, f64)>>,
+    strategy_keys_by_game: HashMap<String, Vec<String>>,
     kickoff_ts_by_game: HashMap<String, i64>,
-    home_team_by_game: HashMap<String, String>,
-    away_team_by_game: HashMap<String, String>,
     token_ids_by_game: HashMap<String, Vec<String>>,
     totals_final_under_emitted: HashSet<String>,
     nrfi_resolved_games: HashSet<String>,

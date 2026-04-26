@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## What This Is
 
@@ -131,13 +131,11 @@ Python `NativeHotPathService` calls Rust `NativeHotPathRuntime` via PyO3:
 
 ### Order Types
 
-The dispatch layer supports three order types, configured via `time_in_force` in `HOTPATH_EXECUTION_POLICY` (parsed into `OrderTimeInForce` enum at startup):
+The dispatch layer supports four order types, configured via `time_in_force` in `HOTPATH_EXECUTION_POLICY`:
 - **FAK/FOK** (market orders) → `client.market_order().amount(SdkAmount::usdc(...))` — uses `amount_usdc` from config
-- **GTC** (limit orders) → `client.limit_order().size(...).price(...)` — uses `size_shares` from config
+- **GTC/GTD** (limit orders) → `client.limit_order().size(...).price(...)` — uses `size_shares` from config. GTD also computes `expiration_ts = now + gtd_expiration_seconds` at submission time.
 
-GTD is not supported (presigned GTD orders cannot carry runtime-computed expiration). Price decimals for limit orders must be normalized (`.normalize()`) to strip trailing zeros, or the SDK rejects them for exceeding the token's tick-size precision.
-
-In presign mode, dispatch takes a fast path: pop presigned order by token_id → HTTP POST → return exchange_order_id. No `OrderRequestData` construction, no metadata building.
+Price decimals for limit orders must be normalized (`.normalize()`) to strip trailing zeros, or the SDK rejects them for exceeding the token's tick-size precision.
 
 ## Critical Invariants
 
@@ -166,8 +164,6 @@ polybot2 link build --provider kalstrop --league mlb --db path.sqlite
 polybot2 link review session --provider kalstrop --league mlb --link-run-id N --db path.sqlite
 polybot2 hotpath run --provider kalstrop --league mlb --link-run-id N --execution-mode paper
 polybot2 hotpath run --provider kalstrop --league mlb --link-run-id N
-polybot2 hotpath observe --log-file path/to/hotpath_42_*.jsonl   # live terminal scoreboard
-polybot2 hotpath observe --run-id 42 --link-run-id N --db path.sqlite  # auto-discover log, resolve team names
 polybot2 hotpath replay --provider kalstrop --league mlb --link-run-id N --capture-manifest path.json
 polybot2 mapping validate
 ```
@@ -191,4 +187,4 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). The hotp
 - `polymarket-client-sdk` 0.4.4 pins `alloy` at 1.6.3 — do not add a different alloy version or traits will mismatch.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
 - The field name is `amount_usdc` everywhere (not `notional_usdc` — that was the legacy name, fully removed).
-- The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`) written after the critical path. The `polybot2 hotpath observe` command reads the JSONL log file and renders an in-place terminal scoreboard (no scrolling). Team abbreviations use Polymarket codes from `config/mappings.py`.
+- The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`) written after the critical path. The `polybot2 hotpath observe` command does not currently work — use `jq` or `tail -f` on the log file instead.

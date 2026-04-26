@@ -1,6 +1,6 @@
 use super::*;
 use crate::dispatch::DispatchRuntime;
-use crate::telemetry::build_telemetry;
+use crate::log_writer::LogWriter;
 use std::thread;
 
 fn install_rustls_provider_once() {
@@ -37,26 +37,27 @@ impl NativeHotPathRuntime {
             .map_err(|e| PyValueError::new_err(format!("invalid_exec_config_json:{}", e)))?;
         let worker_cfg = cfg.clone();
         self.runtime_cfg = cfg.clone();
-        let gtd_exp_s = cfg.gtd_expiration_seconds.unwrap_or(300).max(0);
-        let dispatch_cfg =
-            crate::dispatch::build_dispatch_config_with_gtd(exec_cfg, gtd_exp_s)
-                .map_err(PyValueError::new_err)?;
-        self.dispatch_cfg = dispatch_cfg.clone();
+        let runtime_amount = cfg.amount_usdc.unwrap_or(5.0);
+        let runtime_size = cfg.size_shares.unwrap_or(5.0);
+        let runtime_price = cfg.limit_price.unwrap_or(0.52);
         let runtime_tif = cfg
             .time_in_force
             .clone()
             .unwrap_or_else(|| "FAK".to_string());
-        crate::dispatch::map_sdk_order_type(runtime_tif.trim())
-            .map_err(|e| PyValueError::new_err(format!("runtime_time_in_force_invalid:{}", e)))?;
+        let dispatch_cfg = crate::dispatch::build_dispatch_config(
+            exec_cfg,
+            runtime_amount,
+            runtime_size,
+            runtime_price,
+            runtime_tif.clone(),
+        )
+        .map_err(PyValueError::new_err)?;
+        self.dispatch_cfg = dispatch_cfg.clone();
 
         let mut engine = NativeMlbEngine::new(
             cfg.dedup_ttl_seconds.unwrap_or(2.0),
             cfg.decision_cooldown_seconds.unwrap_or(0.5),
             cfg.decision_debounce_seconds.unwrap_or(0.1),
-            cfg.amount_usdc.unwrap_or(5.0),
-            cfg.size_shares.unwrap_or(5.0),
-            cfg.limit_price.unwrap_or(0.52),
-            runtime_tif,
         );
         let json_mod = py.import_bound("json")?;
         let plan_any = json_mod.call_method1("loads", (compiled_plan_json,))?;
@@ -89,15 +90,7 @@ impl NativeHotPathRuntime {
                 last_error: String::new(),
             }));
             let (command_tx, command_rx) = tokio_mpsc::unbounded_channel::<LiveWorkerCommand>();
-            let provider = cfg
-                .provider
-                .clone()
-                .unwrap_or_else(|| "kalstrop".to_string());
-            let league = cfg.league.clone().unwrap_or_else(|| "mlb".to_string());
-            let (telemetry_emitter, telemetry_worker) =
-                build_telemetry(provider.as_str(), league.as_str());
-            let mut dispatch_runtime =
-                DispatchRuntime::new(dispatch_cfg.clone(), telemetry_emitter.clone());
+            let mut dispatch_runtime = DispatchRuntime::new(dispatch_cfg.clone());
             dispatch_runtime.set_presign_templates(self.presign_templates.as_slice());
             dispatch_runtime
                 .activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
@@ -124,18 +117,37 @@ impl NativeHotPathRuntime {
             let worker_dispatch_runtime = dispatch_runtime;
             let subs_clone = Arc::clone(&subs);
             let health_clone = Arc::clone(&health);
+
+            // Create structured log file
+            let run_id = cfg.run_id.unwrap_or(0);
+            let log_dir = cfg
+                .log_dir
+                .clone()
+                .unwrap_or_else(|| ".".to_string());
+            let log_ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+            let log_path = format!("{}/hotpath_{}_{}.jsonl", log_dir, run_id, log_ts);
+            let mut log = LogWriter::open(&log_path)
+                .map_err(|e| PyValueError::new_err(format!("log_writer_open_failed:{}", e)))?;
+            let dispatch_mode_label = worker_dispatch_runtime.mode_label();
+            log.log_startup(
+                run_id,
+                worker_engine.token_ids_by_game.len(),
+                all_plan_tokens.len(),
+                dispatch_mode_label,
+            );
+
             let join = thread::spawn(move || {
                 if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build() {
                     runtime.block_on(crate::ws::run_live_worker_async(
                         &mut worker_engine,
                         worker_cfg,
                         worker_dispatch_runtime,
-                        telemetry_emitter,
                         subs_clone,
                         health_clone,
                         initial_candidates,
                         initial_active_subscriptions,
                         command_rx,
+                        log,
                     ));
                 } else {
                     crate::ws::with_health(&health_clone, |h| {
@@ -150,7 +162,6 @@ impl NativeHotPathRuntime {
                 join: Some(join),
                 subscriptions: subs,
                 health,
-                telemetry_worker,
             });
         }
 
@@ -164,9 +175,6 @@ impl NativeHotPathRuntime {
             let _ = worker.command_tx.send(LiveWorkerCommand::Stop);
             if let Some(join) = worker.join.take() {
                 let _ = join.join();
-            }
-            if let Some(t) = worker.telemetry_worker.as_mut() {
-                t.shutdown();
             }
         }
         self.live_worker = None;
@@ -202,8 +210,6 @@ impl NativeHotPathRuntime {
         let mut reconnects = 0i64;
         let mut last_error = String::new();
         let mut subscriptions = self.subscriptions.clone();
-        let mut telemetry_emitted = 0u64;
-        let mut telemetry_dropped = 0u64;
         if let Some(worker) = self.live_worker.as_ref() {
             if let Ok(health) = worker.health.lock() {
                 running = health.running;
@@ -213,18 +219,12 @@ impl NativeHotPathRuntime {
             if let Ok(subs) = worker.subscriptions.read() {
                 subscriptions = subs.clone();
             }
-            if let Some(t) = worker.telemetry_worker.as_ref() {
-                telemetry_emitted = t.emitted();
-                telemetry_dropped = t.dropped();
-            }
         }
         let payload = json!({
             "running": running,
             "subscriptions": subscriptions,
             "reconnects": reconnects,
             "last_error": last_error,
-            "telemetry_emitted": telemetry_emitted as i64,
-            "telemetry_dropped": telemetry_dropped as i64,
         });
         crate::engine::serde_value_to_py(py, &payload)
     }
