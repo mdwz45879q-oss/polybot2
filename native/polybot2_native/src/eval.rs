@@ -200,10 +200,12 @@ pub(crate) fn has_first_inning_ended(state: &GameState) -> bool {
         return false;
     }
     let inning_num = inning.unwrap_or(0);
+    // The first inning has two halves (top + bottom). It ends when:
+    // - We've moved to inning 2+ (any half), OR
+    // - The game completed during inning 1
+    // A "break" at inning 1 is the mid-inning break between top and bottom —
+    // the bottom of the 1st hasn't been played yet, so the first inning is NOT over.
     if inning_num > 1 {
-        return true;
-    }
-    if inning_num == 1 && state.inning_half == "break" {
         return true;
     }
     inning_num == 1 && state.match_completed.unwrap_or(false)
