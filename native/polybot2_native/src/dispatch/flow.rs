@@ -16,9 +16,7 @@ impl DispatchRuntime {
             amount_usdc: self.cfg.amount_usdc.max(0.0),
             limit_price: self.cfg.limit_price.max(0.0),
             time_in_force: self.cfg.time_in_force,
-            client_order_id: new_client_order_id(),
             size_shares: self.cfg.size_shares.max(0.0),
-            expiration_ts: None,
         }
     }
 
@@ -56,8 +54,7 @@ impl DispatchRuntime {
     /// Non-presign path: build request, sign, submit.
     async fn dispatch_sign_and_submit_async(&mut self, token_id: &str) -> Result<String, String> {
         let request = self.build_order_request(token_id);
-        let state = self.submit_order_async(&request).await?;
-        Ok(state.exchange_order_id)
+        self.submit_order_async(&request).await
     }
 
     /// Dispatch an order for the given token. Returns the exchange order ID on

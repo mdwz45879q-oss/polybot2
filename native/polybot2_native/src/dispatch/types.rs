@@ -13,23 +13,7 @@ pub(crate) struct OrderRequestData {
     pub(super) amount_usdc: f64,
     pub(super) limit_price: f64,
     pub(super) time_in_force: OrderTimeInForce,
-    pub(super) client_order_id: String,
     pub(super) size_shares: f64,
-    pub(super) expiration_ts: Option<i64>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct OrderStateData {
-    pub(super) client_order_id: String,
-    pub(super) exchange_order_id: String,
-    pub(super) side: String,
-    pub(super) requested_amount_usdc: f64,
-    pub(super) filled_amount_usdc: f64,
-    pub(super) limit_price: f64,
-    pub(super) time_in_force: String,
-    pub(super) status: String,
-    pub(super) reason: String,
-    pub(super) error_code: String,
 }
 
 pub(crate) struct PreSignedOrderData {

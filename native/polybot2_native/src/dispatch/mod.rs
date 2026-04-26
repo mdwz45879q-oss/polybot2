@@ -20,22 +20,9 @@ mod types;
 
 pub(crate) use types::{DispatchRuntime, PresignTemplateData};
 pub(super) use types::{
-    OrderRequestData, OrderStateData, PolymarketSdkRuntime, PreSignKey,
+    OrderRequestData, PolymarketSdkRuntime, PreSignKey,
     PreSignedOrderData,
 };
-
-static NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-pub(crate) fn normalize_status(status: &str) -> String {
-    let lowered = status.trim().to_lowercase();
-    if lowered.is_empty() {
-        return "submitted".to_string();
-    }
-    if lowered == "live" {
-        return "open".to_string();
-    }
-    lowered
-}
 
 pub(crate) fn build_dispatch_config(
     exec_cfg: ExecStartConfig,
@@ -107,21 +94,6 @@ pub(crate) fn now_unix_s() -> i64 {
         Ok(d) => d.as_secs() as i64,
         Err(_) => 0,
     }
-}
-
-pub(super) fn next_suffix() -> u64 {
-    let now = now_unix_ns().max(1) as u64;
-    let cur = NONCE_COUNTER.fetch_add(1, Ordering::SeqCst);
-    if cur >= now {
-        cur.saturating_add(1)
-    } else {
-        NONCE_COUNTER.store(now.saturating_add(1), Ordering::SeqCst);
-        now
-    }
-}
-
-pub(super) fn new_client_order_id() -> String {
-    format!("hp_native_{}_{}", now_unix_s(), next_suffix())
 }
 
 pub(super) fn normalize_side(side: &str) -> String {

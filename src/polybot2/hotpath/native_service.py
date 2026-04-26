@@ -184,7 +184,6 @@ class NativeHotPathService:
             "size_shares": float(self._native_order_policy.size_shares),
             "limit_price": float(self._native_order_policy.limit_price),
             "time_in_force": str(self._native_order_policy.time_in_force),
-            "gtd_expiration_seconds": int(self._native_order_policy.gtd_expiration_seconds),
             "live_enabled": True,
             "reconnect_sleep_seconds": float(self._config.reconnect_base_sleep_seconds),
             "kalstrop_ws_url": str(getattr(provider_cfg, "ws_url", "") or ""),

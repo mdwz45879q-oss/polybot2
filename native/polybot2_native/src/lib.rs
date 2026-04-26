@@ -21,7 +21,7 @@ use pyo3::types::{PyAny, PyDict, PyList};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::sync::atomic::{AtomicU64, Ordering};
+
 use tokio::runtime::Builder as TokioBuilder;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::time::sleep as tokio_sleep;

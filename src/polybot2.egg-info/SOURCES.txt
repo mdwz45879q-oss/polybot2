@@ -40,6 +40,7 @@ src/polybot2/execution/token_resolver.py
 src/polybot2/hotpath/__init__.py
 src/polybot2/hotpath/compiler.py
 src/polybot2/hotpath/contracts.py
+src/polybot2/hotpath/live_observer.py
 src/polybot2/hotpath/native_engine.py
 src/polybot2/hotpath/native_service.py
 src/polybot2/hotpath/observe.py

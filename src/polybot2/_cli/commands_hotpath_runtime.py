@@ -388,16 +388,20 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
                 db_path = str(getattr(args, "db", "") or "").strip()
                 if not db_path:
                     db_path = os.environ.get("POLYBOT2_DB_PATH", "")
-                if db_path and os.path.isfile(db_path):
-                    from polybot2.hotpath.compiler import compile_plan
-                    compiled_plan = compile_plan(
-                        db_path=db_path,
-                        provider="kalstrop",
-                        league=league_key,
-                        link_run_id=int(link_run_id),
-                    )
-        except Exception:
-            pass  # observer works without plan, just shows game IDs instead of team codes
+                if True:
+                    from polybot2.hotpath.compiler import compile_hotpath_plan
+                    runtime = _runtime_from_args(args)
+                    with open_database(runtime) as db:
+                        compiled_plan = compile_hotpath_plan(
+                            db=db,
+                            provider="kalstrop",
+                            league=league_key,
+                            run_id=int(link_run_id),
+                            require_all_approved=False,
+                        )
+                    logger.info("loaded plan: %d games", len(compiled_plan.games))
+        except Exception as exc:
+            logger.debug("could not load compiled plan: %s", exc)
 
         observer = LiveObserver(log_path=log_file, compiled_plan=compiled_plan)
         observer.run()

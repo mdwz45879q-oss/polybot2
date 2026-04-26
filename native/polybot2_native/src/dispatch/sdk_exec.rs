@@ -1,5 +1,4 @@
 use super::*;
-use super::normalize_status;
 
 impl DispatchRuntime {
     pub(crate) fn new(dispatch_cfg: DispatchConfig) -> Self {
@@ -136,11 +135,11 @@ impl DispatchRuntime {
             .map_err(|e| format!("submit_failed:{}", e))
     }
 
+    /// Post a signed order and return the exchange order ID.
     pub(super) async fn post_signed_order_async(
         &mut self,
         signed: SdkSignedOrder,
-        request: &OrderRequestData,
-    ) -> Result<OrderStateData, String> {
+    ) -> Result<String, String> {
         self.ensure_sdk_runtime().await?;
         let sdk = self
             .sdk_runtime
@@ -157,28 +156,16 @@ impl DispatchRuntime {
                 resp.error_msg.unwrap_or_else(|| "unknown".to_string())
             ));
         }
-
-        Ok(OrderStateData {
-            client_order_id: request.client_order_id.clone(),
-            exchange_order_id: resp.order_id,
-            side: request.side.clone(),
-            requested_amount_usdc: request.amount_usdc.max(0.0),
-            filled_amount_usdc: 0.0,
-            limit_price: request.limit_price.max(0.0),
-            time_in_force: format!("{:?}", request.time_in_force),
-            status: normalize_status(format!("{}", resp.status).as_str()),
-            reason: resp.error_msg.unwrap_or_default(),
-            error_code: String::new(),
-
-        })
+        Ok(resp.order_id)
     }
 
+    /// Build, sign, and submit an order. Returns the exchange order ID.
     pub(super) async fn submit_order_async(
         &mut self,
         request: &OrderRequestData,
-    ) -> Result<OrderStateData, String> {
+    ) -> Result<String, String> {
         let signed = self.build_signed_order_async(request).await?;
-        self.post_signed_order_async(signed, request).await
+        self.post_signed_order_async(signed).await
     }
 
     pub(super) fn sdk_client_ref(

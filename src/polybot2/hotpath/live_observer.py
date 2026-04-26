@@ -52,10 +52,11 @@ def _build_matchup_map(plan: CompiledPlan | None) -> dict[str, str]:
     if plan is None:
         return {}
     try:
-        from polybot2.config.mappings import TEAM_MAP
-    except ImportError:
+        from polybot2.linking.mapping_loader import load_mapping
+        mapping = load_mapping()
+        team_map = mapping.team_map.get(plan.league, {})
+    except Exception:
         return {}
-    team_map = TEAM_MAP.get(plan.league, {})
     code_by_name: dict[str, str] = {}
     for canonical_name, info in team_map.items():
         code = info.get("polymarket_code", "")

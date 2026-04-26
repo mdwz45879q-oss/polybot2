@@ -29,35 +29,11 @@ fn contains_min_notional_rejection(err: &str) -> bool {
 
 #[test]
 fn presign_key_is_token_only() {
-    let cfg = DispatchConfig {
-        presign_enabled: true,
-        presign_pool_target_per_key: 2,
-        ..DispatchConfig::default()
-    };
-    let rt = DispatchRuntime::new(cfg);
-    let req_a = OrderRequestData {
-        token_id: "t".to_string(),
-        side: "buy_yes".to_string(),
-        amount_usdc: 6.2,
-        limit_price: 0.531,
-        time_in_force: OrderTimeInForce::FAK,
-        client_order_id: "x1".to_string(),
-        size_shares: 6.2 / 0.531,
-        expiration_ts: None,
-    };
-    let req_b = OrderRequestData {
-        token_id: "t".to_string(),
-        side: "buy_no".to_string(),
-        amount_usdc: 50.0,
-        limit_price: 0.11,
-        time_in_force: OrderTimeInForce::FOK,
-        client_order_id: "x2".to_string(),
-        size_shares: 50.0 / 0.11,
-        expiration_ts: None,
-    };
-    let key_a = rt.build_presign_key(&req_a);
-    let key_b = rt.build_presign_key(&req_b);
+    let key_a = PreSignKey { token_id: "t".to_string() };
+    let key_b = PreSignKey { token_id: "t".to_string() };
     assert_eq!(key_a, key_b);
+    let key_c = PreSignKey { token_id: "other".to_string() };
+    assert_ne!(key_a, key_c);
 }
 
 #[test]
@@ -69,16 +45,6 @@ fn submit_presigned_miss_is_fail_closed() {
         ..DispatchConfig::default()
     };
     let mut rt = DispatchRuntime::new(cfg);
-    let req = OrderRequestData {
-        token_id: "t".to_string(),
-        side: "buy_yes".to_string(),
-        amount_usdc: 5.0,
-        limit_price: 0.5,
-        time_in_force: OrderTimeInForce::FAK,
-        client_order_id: "cid".to_string(),
-        size_shares: 10.0,
-        expiration_ts: None,
-    };
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

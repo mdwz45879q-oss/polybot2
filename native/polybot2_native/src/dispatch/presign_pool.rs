@@ -1,12 +1,6 @@
 use super::*;
 
 impl DispatchRuntime {
-    pub(super) fn build_presign_key(&self, request: &OrderRequestData) -> PreSignKey {
-        PreSignKey {
-            token_id: request.token_id.trim().to_string(),
-        }
-    }
-
     fn presign_key_for_token(token_id: &str) -> PreSignKey {
         PreSignKey {
             token_id: token_id.trim().to_string(),
@@ -39,9 +33,7 @@ impl DispatchRuntime {
             limit_price,
             time_in_force: parse_time_in_force(template.time_in_force.as_deref().unwrap_or("FAK"))
                 .unwrap_or(OrderTimeInForce::FAK),
-            client_order_id: "hp_template".to_string(),
             size_shares: template.size_shares.filter(|v| *v > 0.0).unwrap_or(amount_usdc / price),
-            expiration_ts: None,
         })
     }
 
