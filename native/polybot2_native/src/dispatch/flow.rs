@@ -1,6 +1,8 @@
 use super::*;
+use crate::log_writer::LogWriter;
+use std::sync::{Arc, Mutex};
 
-impl DispatchRuntime {
+impl DispatchHandle {
     pub(crate) fn mode_label(&self) -> &'static str {
         if matches!(self.cfg.mode, DispatchMode::Http) {
             "http"
@@ -9,149 +11,82 @@ impl DispatchRuntime {
         }
     }
 
-    fn build_order_request(&self, token_id: &str) -> OrderRequestData {
-        OrderRequestData {
-            token_id: token_id.to_string(),
-            side: "buy_yes".to_string(),
-            amount_usdc: self.cfg.amount_usdc.max(0.0),
-            limit_price: self.cfg.limit_price.max(0.0),
-            time_in_force: self.cfg.time_in_force,
-            size_shares: self.cfg.size_shares.max(0.0),
-        }
-    }
-
-    /// Presign fast path: pop presigned order by token, POST it, return exchange_order_id.
-    /// No OrderRequestData construction, no metadata building.
-    async fn dispatch_presigned_async(&mut self, token_id: &str) -> Result<String, String> {
-        let key = PreSignKey {
-            token_id: token_id.trim().to_string(),
+    /// Resolve `(strategy_key, token_id)` strings from the registry. Used for
+    /// inline log lines (noop, fail-closed errors). Returns `("_", "_")` if
+    /// the `target_idx` is out of bounds (should never happen).
+    pub(crate) fn resolve_strings(&self, target_idx: crate::TargetIdx) -> (&str, &str) {
+        let Some(target) = self.registry.targets.get(target_idx.0 as usize) else {
+            return ("_", "_");
         };
-        let presigned = self.pop_presigned_order(&key).ok_or_else(|| {
-            format!(
-                "submit_presigned_miss:token_id={}",
-                redact_token_id(key.token_id.as_str())
-            )
-        })?;
-        self.ensure_sdk_runtime().await?;
-        let sdk = self
-            .sdk_runtime
-            .as_ref()
-            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
-        let resp = sdk
-            .client
-            .post_order(presigned.signed_order)
-            .await
-            .map_err(|e| format!("submit_failed:{}", e))?;
-        if !resp.success {
-            return Err(format!(
-                "submit_failed:errorMsg:{}",
-                resp.error_msg.unwrap_or_else(|| "unknown".to_string())
-            ));
-        }
-        Ok(resp.order_id)
+        let Some(token) = self.registry.tokens.get(target.token_idx.0 as usize) else {
+            return (target.strategy_key.as_str(), "_");
+        };
+        (target.strategy_key.as_str(), token.token_id.as_str())
     }
 
-    /// Non-presign path: build request, sign, submit.
-    async fn dispatch_sign_and_submit_async(&mut self, token_id: &str) -> Result<String, String> {
-        let request = self.build_order_request(token_id);
-        self.submit_order_async(&request).await
-    }
-
-    /// Dispatch an order for the given token. Returns the exchange order ID on
-    /// success, or "noop" for paper mode.
-    pub(crate) async fn dispatch_order(&mut self, token_id: &str) -> Result<String, String> {
-        if matches!(self.cfg.mode, DispatchMode::Noop) {
-            return Ok("noop".to_string());
-        }
-        if self.cfg.presign_enabled && self.cfg.presign_pool_target_per_key > 0 {
-            return self.dispatch_presigned_async(token_id).await;
-        }
-        self.dispatch_sign_and_submit_async(token_id).await
-    }
-
-    pub(crate) async fn dispatch_orders_batch(
+    /// Pop a presigned order for the given target from the per-token pool.
+    /// Returns the signed order on success, or an error string for the caller
+    /// to log. Synchronous; runs on the WS thread.
+    pub(crate) fn pop_for_target(
         &mut self,
-        token_ids: &[&str],
-    ) -> Vec<Result<String, String>> {
-        let count = token_ids.len();
-        if count == 0 {
-            return Vec::new();
+        target_idx: crate::TargetIdx,
+    ) -> Result<SdkSignedOrder, String> {
+        let target = self
+            .registry
+            .targets
+            .get(target_idx.0 as usize)
+            .ok_or_else(|| "dispatch_invalid_target_idx".to_string())?;
+        let token_idx = target.token_idx.0 as usize;
+        let slot = self
+            .presign_pool
+            .get_mut(token_idx)
+            .ok_or_else(|| "dispatch_invalid_token_idx".to_string())?;
+        match slot.take() {
+            Some(p) => Ok(p.signed_order),
+            None => {
+                let token_id = self
+                    .registry
+                    .tokens
+                    .get(token_idx)
+                    .map(|t| t.token_id.as_str())
+                    .unwrap_or("_");
+                Err(format!(
+                    "submit_presigned_miss:token_id={}",
+                    redact_token_id(token_id)
+                ))
+            }
         }
+    }
 
-        if matches!(self.cfg.mode, DispatchMode::Noop) {
-            return vec![Ok("noop".to_string()); count];
+    /// Send a frame-batch to the submitter. On failure (no channel installed
+    /// or receiver dropped), logs an error per item via the registry.
+    pub(crate) fn send_batch(
+        &self,
+        batch: SubmitBatch,
+        log: &Arc<Mutex<LogWriter>>,
+    ) {
+        if batch.is_empty() {
+            return;
         }
-
-        let use_presign = self.cfg.presign_enabled && self.cfg.presign_pool_target_per_key > 0;
-
-        let mut signed_orders: Vec<Option<SdkSignedOrder>> = Vec::with_capacity(count);
-        let mut early_errors: Vec<Option<String>> = vec![None; count];
-
-        for (i, &token_id) in token_ids.iter().enumerate() {
-            if use_presign {
-                let key = PreSignKey {
-                    token_id: token_id.trim().to_string(),
-                };
-                match self.pop_presigned_order(&key) {
-                    Some(presigned) => signed_orders.push(Some(presigned.signed_order)),
-                    None => {
-                        early_errors[i] = Some(format!(
-                            "submit_presigned_miss:token_id={}",
-                            redact_token_id(key.token_id.as_str())
-                        ));
-                        signed_orders.push(None);
-                    }
+        let Some(tx) = self.submit_tx.as_ref() else {
+            for (target_idx, _) in &batch {
+                let (sk, tok) = self.resolve_strings(*target_idx);
+                if let Ok(mut g) = log.lock() {
+                    g.log_order_err(sk, tok, "submit_channel_uninitialized");
                 }
-            } else {
-                let request = self.build_order_request(token_id);
-                match self.build_signed_order_async(&request).await {
-                    Ok(signed) => signed_orders.push(Some(signed)),
-                    Err(e) => {
-                        early_errors[i] = Some(e);
-                        signed_orders.push(None);
-                    }
+            }
+            return;
+        };
+        // Send first — zero allocation on the success path. On failure,
+        // recover the batch from SendError for diagnostics.
+        if let Err(tokio_mpsc::error::SendError(work)) = tx.send(SubmitWork::Batch(batch)) {
+            let SubmitWork::Batch(returned) = work else { return };
+            for (target_idx, _) in returned {
+                let (sk, tok) = self.resolve_strings(target_idx);
+                if let Ok(mut g) = log.lock() {
+                    g.log_order_err(sk, tok, "submit_channel_closed");
                 }
             }
         }
-
-        let mut batch_indices: Vec<usize> = Vec::new();
-        let mut batch_orders: Vec<SdkSignedOrder> = Vec::new();
-        for (i, maybe_signed) in signed_orders.into_iter().enumerate() {
-            if let Some(signed) = maybe_signed {
-                batch_indices.push(i);
-                batch_orders.push(signed);
-            }
-        }
-
-        let mut results: Vec<Result<String, String>> = early_errors
-            .into_iter()
-            .map(|e| match e {
-                Some(err) => Err(err),
-                None => Ok(String::new()),
-            })
-            .collect();
-
-        const MAX_BATCH_SIZE: usize = 15;
-        let mut batch_offset = 0;
-        while !batch_orders.is_empty() {
-            let chunk_len = batch_orders.len().min(MAX_BATCH_SIZE);
-            let chunk: Vec<SdkSignedOrder> = batch_orders.drain(..chunk_len).collect();
-            let chunk_count = chunk.len();
-            match self.post_signed_orders_batch_async(chunk).await {
-                Ok(chunk_results) => {
-                    for (j, result) in chunk_results.into_iter().enumerate() {
-                        results[batch_indices[batch_offset + j]] = result;
-                    }
-                }
-                Err(transport_err) => {
-                    for j in 0..chunk_count {
-                        results[batch_indices[batch_offset + j]] = Err(transport_err.clone());
-                    }
-                }
-            }
-            batch_offset += chunk_count;
-        }
-
-        results
     }
 }

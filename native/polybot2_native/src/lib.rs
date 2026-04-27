@@ -28,9 +28,91 @@ use tokio::time::sleep as tokio_sleep;
 
 use tokio_tungstenite::tungstenite::Message;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+struct GameIdx(u16);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+struct TargetIdx(pub(crate) u16);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+struct TokenIdx(pub(crate) u16);
+
 #[derive(Clone)]
-struct TargetEntry {
+struct TokenSlot {
     token_id: String,
+}
+
+/// Read-only mapping of `TargetIdx → TargetSlot` and `TokenIdx → TokenSlot`,
+/// shared via `Arc` between the WS-thread `DispatchHandle` and the submitter
+/// thread. Built once in `engine.load_plan` and cloned to both halves at
+/// runtime startup.
+struct TargetRegistry {
+    tokens: Vec<TokenSlot>,
+    targets: Vec<TargetSlot>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SpreadSide {
+    Home,
+    Away,
+}
+
+#[derive(Clone, Copy)]
+struct OverLine {
+    half_int: u16,
+    target_idx: TargetIdx,
+}
+
+#[derive(Clone, Default)]
+struct GameTargets {
+    over_lines: Vec<OverLine>,
+    under_lines: Vec<OverLine>,
+    nrfi_yes: Option<TargetIdx>,
+    nrfi_no: Option<TargetIdx>,
+    moneyline_home: Option<TargetIdx>,
+    moneyline_away: Option<TargetIdx>,
+    spreads: Vec<(SpreadSide, f64, TargetIdx)>,
+}
+
+impl GameTargets {
+    #[allow(dead_code)]
+    fn all_target_indices(&self) -> Vec<TargetIdx> {
+        let mut out = Vec::with_capacity(
+            self.over_lines.len() + self.under_lines.len() + 4 + self.spreads.len(),
+        );
+        for ol in &self.over_lines {
+            out.push(ol.target_idx);
+        }
+        for ol in &self.under_lines {
+            out.push(ol.target_idx);
+        }
+        if let Some(t) = self.nrfi_yes {
+            out.push(t);
+        }
+        if let Some(t) = self.nrfi_no {
+            out.push(t);
+        }
+        if let Some(t) = self.moneyline_home {
+            out.push(t);
+        }
+        if let Some(t) = self.moneyline_away {
+            out.push(t);
+        }
+        for &(_, _, t) in &self.spreads {
+            out.push(t);
+        }
+        out
+    }
+}
+
+#[derive(Clone)]
+struct TargetSlot {
+    token_idx: TokenIdx,
+    strategy_key: String,
+}
+
+struct RawIntent {
+    target_idx: TargetIdx,
 }
 
 #[derive(Clone, Default)]
@@ -46,9 +128,8 @@ struct Tick {
     game_state: &'static str,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 struct DeltaEvent {
-    universal_id: String,
     recv_monotonic_ns: i64,
     material_change: bool,
     goal_delta_home: i64,
@@ -78,15 +159,14 @@ struct GameState {
     game_state: &'static str,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 struct DecisionSig {
-    token_id: String,
+    token_idx: TokenIdx,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct Intent {
-    strategy_key: String,
-    token_id: String,
+    target_idx: TargetIdx,
 }
 
 struct TickResult {
@@ -130,6 +210,7 @@ struct ExecStartConfig {
     chain_id: Option<i64>,
     presign_enabled: Option<bool>,
     presign_private_key: Option<String>,
+    #[allow(dead_code)]
     presign_pool_target_per_key: Option<i64>,
     presign_startup_warm_timeout_seconds: Option<f64>,
 }
@@ -139,6 +220,14 @@ struct RuntimeHealth {
     running: bool,
     reconnects: i64,
     last_error: String,
+}
+
+#[derive(Default)]
+pub(crate) struct SubmitterHealth {
+    pub(crate) running: bool,
+    pub(crate) last_error: String,
+    pub(crate) posted_ok: i64,
+    pub(crate) posted_err: i64,
 }
 
 #[derive(Clone)]
@@ -172,11 +261,16 @@ struct DispatchConfig {
     chain_id: i64,
     presign_enabled: bool,
     presign_private_key: String,
-    presign_pool_target_per_key: i64,
     presign_startup_warm_timeout_seconds: f64,
+    // Order parameters carried for the no-presign sign-and-submit path used
+    // only by live tests; the WS hot path always uses presigned orders.
+    #[allow(dead_code)]
     amount_usdc: f64,
+    #[allow(dead_code)]
     size_shares: f64,
+    #[allow(dead_code)]
     limit_price: f64,
+    #[allow(dead_code)]
     time_in_force: OrderTimeInForce,
 }
 
@@ -193,7 +287,6 @@ impl Default for DispatchConfig {
             chain_id: 137,
             presign_enabled: false,
             presign_private_key: String::new(),
-            presign_pool_target_per_key: 1,
             presign_startup_warm_timeout_seconds: 5.0,
             amount_usdc: 5.0,
             size_shares: 5.0,
@@ -210,6 +303,12 @@ struct LiveWorkerHandle {
     health: Arc<Mutex<RuntimeHealth>>,
 }
 
+struct SubmitterHandle {
+    submit_tx: tokio_mpsc::UnboundedSender<crate::dispatch::SubmitWork>,
+    join: Option<JoinHandle<()>>,
+    health: Arc<Mutex<SubmitterHealth>>,
+}
+
 #[derive(Clone)]
 enum LiveWorkerCommand {
     Stop,
@@ -222,24 +321,34 @@ struct NativeMlbEngine {
     dedup_ttl_ns: i64,
     decision_cooldown_ns: i64,
     decision_debounce_ns: i64,
-    targets: HashMap<String, TargetEntry>,
-    games_with_totals: HashSet<String>,
-    games_with_nrfi: HashSet<String>,
-    games_with_final: HashSet<String>,
-    under_lines_by_game: HashMap<String, Vec<f64>>,
-    spread_lines_by_game: HashMap<String, Vec<(&'static str, f64)>>,
-    strategy_keys_by_game: HashMap<String, Vec<String>>,
-    kickoff_ts_by_game: HashMap<String, i64>,
-    token_ids_by_game: HashMap<String, Vec<String>>,
-    totals_final_under_emitted: HashSet<String>,
-    nrfi_resolved_games: HashSet<String>,
-    nrfi_first_inning_observed: HashSet<String>,
-    final_resolved_games: HashSet<String>,
-    rows: HashMap<String, StateRow>,
-    game_states: HashMap<String, GameState>,
-    last_emit_ns: HashMap<String, i64>,
-    last_signature: HashMap<String, DecisionSig>,
-    attempted_strategy_keys: HashSet<String>,
+
+    game_id_to_idx: HashMap<String, GameIdx>,
+    game_ids: Vec<String>,
+    game_targets: Vec<GameTargets>,
+    target_slots: Vec<TargetSlot>,
+    tokens: Vec<TokenSlot>,
+    token_id_to_idx: HashMap<String, TokenIdx>,
+    /// Built once at the end of `load_plan`. Cloned via `clone_registry()`
+    /// for cross-thread sharing with `DispatchHandle` and `OrderSubmitter`.
+    registry: Option<Arc<TargetRegistry>>,
+    kickoff_ts: Vec<Option<i64>>,
+    token_ids_by_game: Vec<Vec<String>>,
+
+    has_totals: Vec<bool>,
+    has_nrfi: Vec<bool>,
+    has_final: Vec<bool>,
+
+    rows: Vec<Option<StateRow>>,
+    game_states: Vec<GameState>,
+
+    totals_final_under_emitted: Vec<bool>,
+    nrfi_resolved_games: Vec<bool>,
+    nrfi_first_inning_observed: Vec<bool>,
+    final_resolved_games: Vec<bool>,
+
+    attempted: Vec<bool>,
+    last_emit_ns: Vec<i64>,
+    last_signature: Vec<Option<DecisionSig>>,
 }
 
 #[pyclass]
@@ -251,6 +360,7 @@ struct NativeHotPathRuntime {
     dispatch_cfg: DispatchConfig,
     presign_templates: Vec<crate::dispatch::PresignTemplateData>,
     live_worker: Option<LiveWorkerHandle>,
+    submitter: Option<SubmitterHandle>,
 }
 
 #[pymodule]

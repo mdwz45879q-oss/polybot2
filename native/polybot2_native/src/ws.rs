@@ -1,5 +1,5 @@
 use super::*;
-use crate::dispatch::DispatchRuntime;
+use crate::dispatch::DispatchHandle;
 use crate::log_writer::LogWriter;
 use tokio_tungstenite::connect_async_tls_with_config;
 
@@ -184,18 +184,24 @@ where
 pub(crate) async fn run_live_worker_async(
     engine: &mut NativeMlbEngine,
     cfg: RuntimeStartConfig,
-    mut dispatch_runtime: DispatchRuntime,
+    mut dispatch_handle: DispatchHandle,
     subscriptions: Arc<RwLock<Vec<String>>>,
     health: Arc<Mutex<RuntimeHealth>>,
     initial_candidate_subs: Vec<String>,
     initial_active_subs: Vec<String>,
     mut command_rx: tokio_mpsc::UnboundedReceiver<LiveWorkerCommand>,
-    mut log: LogWriter,
+    log: Arc<Mutex<LogWriter>>,
 ) {
     let reconnect_sleep_s = cfg.reconnect_sleep_seconds.unwrap_or(0.2).max(0.01);
     let subscription_refresh_interval =
         Duration::from_secs_f64(cfg.subscription_refresh_seconds.unwrap_or(120.0).max(1.0));
     let mut next_subscription_refresh = Instant::now();
+    // Monotonic worker clock for dedup/cooldown deltas. Wall-clock (`now_unix_ns`)
+    // can jump backward under chrony/NTP slewing; the engine's TTL/cooldown math
+    // would go negative. The replay path (`process_score_event`) keeps using the
+    // Python-supplied wall timestamp — replay is offline, so monotonicity isn't
+    // required there.
+    let worker_clock_origin = Instant::now();
     let mut candidate_subs = normalize_subscriptions(initial_candidate_subs);
     let mut active_subs = normalize_subscriptions(initial_active_subs);
     if let Ok(mut lock) = subscriptions.write() {
@@ -317,7 +323,9 @@ pub(crate) async fn run_live_worker_async(
             h.running = true;
             h.last_error.clear();
         });
-        log.log_ws_connect(&active_subs);
+        if let Ok(mut g) = log.lock() {
+            g.log_ws_connect(&active_subs);
+        }
 
         let mut reconn_reason = String::new();
         'event_loop: loop {
@@ -408,7 +416,7 @@ pub(crate) async fn run_live_worker_async(
                 };
                 first_read = false;
 
-                let source_recv_ns = crate::dispatch::now_unix_ns();
+                let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                 let frame_text: &str = match &msg {
                     Message::Text(text) => text.as_ref(),
                     Message::Binary(bytes) => match std::str::from_utf8(bytes.as_ref()) {
@@ -426,19 +434,22 @@ pub(crate) async fn run_live_worker_async(
                     _ => continue,
                 };
 
-                crate::replay::process_decoded_frame_async(
+                crate::replay::process_decoded_frame_sync(
                     engine,
                     frame_text,
                     source_recv_ns,
-                    &mut dispatch_runtime,
-                    &mut log,
-                )
-                .await;
+                    &mut dispatch_handle,
+                    &log,
+                );
             }
-            log.flush();
+            if let Ok(mut g) = log.lock() {
+                g.flush();
+            }
         }
         let reconnects = if let Ok(h) = health.lock() { h.reconnects } else { 0 };
-        log.log_ws_disconnect(&reconn_reason, reconnects);
+        if let Ok(mut g) = log.lock() {
+            g.log_ws_disconnect(&reconn_reason, reconnects);
+        }
     }
 }
 
@@ -471,23 +482,36 @@ mod tests {
         assert_eq!(candidates, vec!["a".to_string(), "z".to_string()]);
     }
 
+    fn register_game(engine: &mut NativeMlbEngine, id: &str, kickoff: Option<i64>) {
+        let gidx = GameIdx(engine.game_ids.len() as u16);
+        engine.game_id_to_idx.insert(id.to_string(), gidx);
+        engine.game_ids.push(id.to_string());
+        engine.game_targets.push(GameTargets::default());
+        engine.kickoff_ts.push(kickoff);
+        engine.token_ids_by_game.push(vec![]);
+        engine.has_totals.push(false);
+        engine.has_nrfi.push(false);
+        engine.has_final.push(false);
+        engine.rows.push(None);
+        engine.game_states.push(GameState::default());
+        engine.totals_final_under_emitted.push(false);
+        engine.nrfi_resolved_games.push(false);
+        engine.nrfi_first_inning_observed.push(false);
+        engine.final_resolved_games.push(false);
+    }
+
     #[test]
     fn scheduler_activation_respects_lead_and_completion() {
         let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1);
         let now = crate::dispatch::now_unix_s();
-        engine
-            .kickoff_ts_by_game
-            .insert("g_past".to_string(), now - 30);
-        engine
-            .kickoff_ts_by_game
-            .insert("g_future".to_string(), now + 600);
-        engine.game_states.insert(
-            "g_done".to_string(),
-            GameState {
-                match_completed: Some(true),
-                ..Default::default()
-            },
-        );
+        register_game(&mut engine, "g_past", Some(now - 30));
+        register_game(&mut engine, "g_future", Some(now + 600));
+        register_game(&mut engine, "g_done", None);
+        let gi_done = engine.game_id_to_idx["g_done"].0 as usize;
+        engine.game_states[gi_done] = GameState {
+            match_completed: Some(true),
+            ..Default::default()
+        };
 
         let out = engine.active_subscriptions_for_candidates(
             &[
@@ -506,11 +530,9 @@ mod tests {
     fn refresh_active_subscriptions_changes_only_on_transition() {
         let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1);
         let now = crate::dispatch::now_unix_s();
-        engine.kickoff_ts_by_game.insert("g1".to_string(), now - 60);
-        engine.token_ids_by_game.insert(
-            "g1".to_string(),
-            vec!["tok_1".to_string(), "tok_1".to_string()],
-        );
+        register_game(&mut engine, "g1", Some(now - 60));
+        let gi = engine.game_id_to_idx["g1"].0 as usize;
+        engine.token_ids_by_game[gi] = vec!["tok_1".to_string(), "tok_1".to_string()];
         let cfg = RuntimeStartConfig {
             subscribe_lead_minutes: Some(5),
             ..RuntimeStartConfig::default()

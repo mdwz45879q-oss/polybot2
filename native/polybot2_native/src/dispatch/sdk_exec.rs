@@ -1,18 +1,55 @@
 use super::*;
+use crate::log_writer::LogWriter;
+use std::sync::{Arc, Mutex};
 
-impl DispatchRuntime {
-    pub(crate) fn new(dispatch_cfg: DispatchConfig) -> Self {
+// Chunking constant retained for live tests that call submit_signed_chunked_async.
+#[allow(dead_code)]
+const MAX_BATCH_SIZE: usize = 15;
+
+/// Map a CLOB response triple to a Result. Treats `success: true` with an
+/// empty `order_id` as a failure — the CLOB has been observed to return that
+/// shape for silently rejected orders, and counting them as successes leads
+/// to phantom-fill bookkeeping. The `prefix` distinguishes single vs batch
+/// in the error string for log triage.
+pub(crate) fn map_post_response(
+    success: bool,
+    order_id: String,
+    error_msg: Option<String>,
+    prefix: &str,
+) -> Result<String, String> {
+    if !success {
+        return Err(format!(
+            "{}:errorMsg:{}",
+            prefix,
+            error_msg.unwrap_or_else(|| "unknown".to_string())
+        ));
+    }
+    if order_id.is_empty() {
+        return Err(format!("{}:empty_order_id_with_success", prefix));
+    }
+    Ok(order_id)
+}
+
+impl OrderSubmitter {
+    pub(crate) fn new(
+        cfg: DispatchConfig,
+        log: Arc<Mutex<LogWriter>>,
+        submit_rx: tokio_mpsc::UnboundedReceiver<SubmitWork>,
+        health: Arc<Mutex<crate::SubmitterHealth>>,
+        registry: Arc<crate::TargetRegistry>,
+    ) -> Self {
         Self {
-            cfg: dispatch_cfg,
+            cfg,
+            registry,
             sdk_runtime: None,
             cached_signer: None,
-            presign_template_catalog: HashMap::new(),
-            presign_templates: HashMap::new(),
-            presign_pool: HashMap::new(),
+            submit_rx,
+            log,
+            health,
         }
     }
 
-    pub(super) async fn ensure_sdk_runtime(&mut self) -> Result<(), String> {
+    pub(crate) async fn ensure_sdk_runtime_async(&mut self) -> Result<(), String> {
         if self.sdk_runtime.is_some() {
             return Ok(());
         }
@@ -76,11 +113,13 @@ impl DispatchRuntime {
         Ok(())
     }
 
-    pub(super) async fn build_signed_order_async(
+    /// Used by live tests and presign-warmup helper paths.
+    #[allow(dead_code)]
+    pub(crate) async fn build_signed_order_async(
         &mut self,
         request: &OrderRequestData,
     ) -> Result<SdkSignedOrder, String> {
-        self.ensure_sdk_runtime().await?;
+        self.ensure_sdk_runtime_async().await?;
         let sdk = self
             .sdk_runtime
             .as_ref()
@@ -136,11 +175,11 @@ impl DispatchRuntime {
     }
 
     /// Post a signed order and return the exchange order ID.
-    pub(super) async fn post_signed_order_async(
+    pub(crate) async fn post_signed_order_async(
         &mut self,
         signed: SdkSignedOrder,
     ) -> Result<String, String> {
-        self.ensure_sdk_runtime().await?;
+        self.ensure_sdk_runtime_async().await?;
         let sdk = self
             .sdk_runtime
             .as_ref()
@@ -150,17 +189,13 @@ impl DispatchRuntime {
             .post_order(signed)
             .await
             .map_err(|e| format!("submit_failed:{}", e))?;
-        if !resp.success {
-            return Err(format!(
-                "submit_failed:errorMsg:{}",
-                resp.error_msg.unwrap_or_else(|| "unknown".to_string())
-            ));
-        }
-        Ok(resp.order_id)
+        map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
     }
 
-    /// Build, sign, and submit an order. Returns the exchange order ID.
-    pub(super) async fn submit_order_async(
+    /// Build, sign, and submit an order. Used by live tests; the WS hot path
+    /// uses presigned orders and never goes through this method.
+    #[allow(dead_code)]
+    pub(crate) async fn submit_order_async(
         &mut self,
         request: &OrderRequestData,
     ) -> Result<String, String> {
@@ -168,7 +203,7 @@ impl DispatchRuntime {
         self.post_signed_order_async(signed).await
     }
 
-    pub(super) fn sdk_client_ref(
+    pub(crate) fn sdk_client_ref(
         &self,
     ) -> Result<&SdkClient<SdkAuthenticatedState<SdkAuthNormal>>, String> {
         self.sdk_runtime
@@ -177,20 +212,21 @@ impl DispatchRuntime {
             .ok_or_else(|| "sdk_runtime_missing".to_string())
     }
 
-    pub(super) fn signer_ref(&self) -> Result<&super::CachedSigner, String> {
+    pub(crate) fn signer_ref(&self) -> Result<&super::CachedSigner, String> {
         self.cached_signer
             .as_ref()
             .ok_or_else(|| "cached_signer_missing".to_string())
     }
 
-    pub(super) async fn post_signed_orders_batch_async(
+    #[allow(dead_code)]
+    async fn post_signed_orders_batch_async(
         &mut self,
         signed_orders: Vec<SdkSignedOrder>,
     ) -> Result<Vec<Result<String, String>>, String> {
         if signed_orders.is_empty() {
             return Ok(Vec::new());
         }
-        self.ensure_sdk_runtime().await?;
+        self.ensure_sdk_runtime_async().await?;
         let sdk = self
             .sdk_runtime
             .as_ref()
@@ -211,16 +247,42 @@ impl DispatchRuntime {
         Ok(responses
             .into_iter()
             .map(|resp| {
-                if resp.success {
-                    Ok(resp.order_id)
-                } else {
-                    Err(format!(
-                        "submit_failed:errorMsg:{}",
-                        resp.error_msg.unwrap_or_else(|| "unknown".to_string())
-                    ))
-                }
+                map_post_response(
+                    resp.success,
+                    resp.order_id,
+                    resp.error_msg,
+                    "batch_submit_failed",
+                )
             })
             .collect())
+    }
+
+    /// Submit a vector of signed orders, chunking into batches of MAX_BATCH_SIZE.
+    /// Returns one Result per input, in order. Used by live tests.
+    #[allow(dead_code)]
+    pub(crate) async fn submit_signed_chunked_async(
+        &mut self,
+        mut signed: Vec<SdkSignedOrder>,
+    ) -> Vec<Result<String, String>> {
+        let total = signed.len();
+        if total == 0 {
+            return Vec::new();
+        }
+        let mut out: Vec<Result<String, String>> = Vec::with_capacity(total);
+        while !signed.is_empty() {
+            let chunk_len = signed.len().min(MAX_BATCH_SIZE);
+            let chunk: Vec<SdkSignedOrder> = signed.drain(..chunk_len).collect();
+            let chunk_count = chunk.len();
+            match self.post_signed_orders_batch_async(chunk).await {
+                Ok(results) => out.extend(results),
+                Err(transport_err) => {
+                    for _ in 0..chunk_count {
+                        out.push(Err(transport_err.clone()));
+                    }
+                }
+            }
+        }
+        out
     }
 }
 

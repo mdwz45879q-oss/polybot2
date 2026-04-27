@@ -1,5 +1,7 @@
 use super::*;
-use crate::dispatch::DispatchRuntime;
+use crate::dispatch::{
+    run_submitter_async, warm_presign_startup_into, DispatchHandle, OrderSubmitter,
+};
 use crate::log_writer::LogWriter;
 use std::thread;
 
@@ -19,6 +21,7 @@ impl NativeHotPathRuntime {
             dispatch_cfg: DispatchConfig::default(),
             presign_templates: Vec::new(),
             live_worker: None,
+            submitter: None,
         }
     }
 
@@ -90,64 +93,138 @@ impl NativeHotPathRuntime {
                 last_error: String::new(),
             }));
             let (command_tx, command_rx) = tokio_mpsc::unbounded_channel::<LiveWorkerCommand>();
-            let mut dispatch_runtime = DispatchRuntime::new(dispatch_cfg.clone());
-            dispatch_runtime.set_presign_templates(self.presign_templates.as_slice());
-            dispatch_runtime
-                .activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
-            if dispatch_cfg.presign_enabled && !all_plan_tokens.is_empty() {
-                let warm_result = py.allow_threads(|| {
-                    match TokioBuilder::new_current_thread().enable_all().build() {
-                        Ok(rt) => rt.block_on(dispatch_runtime.warm_presign_startup_async()),
-                        Err(e) => Err(format!("tokio_runtime_create_failed:{}", e)),
+
+            // Extract registry from engine. Both DispatchHandle and OrderSubmitter
+            // share an Arc clone for read-only target/token resolution.
+            let registry = self
+                .engine
+                .as_ref()
+                .ok_or_else(|| PyValueError::new_err("engine unavailable"))?
+                .clone_registry()
+                .ok_or_else(|| {
+                    PyValueError::new_err("registry_not_built_after_load_plan")
+                })?;
+
+            // Build the WS-thread half: presign pool, no submit_tx yet.
+            let mut dispatch_handle =
+                DispatchHandle::new(dispatch_cfg.clone(), Arc::clone(&registry));
+            dispatch_handle.set_presign_templates(self.presign_templates.as_slice());
+            dispatch_handle.activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
+
+            // Create the structured log file and wrap it for cross-thread sharing.
+            let run_id = cfg.run_id.unwrap_or(0);
+            let log_dir = cfg.log_dir.clone().unwrap_or_else(|| ".".to_string());
+            let log_ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+            let log_path = format!("{}/hotpath_{}_{}.jsonl", log_dir, run_id, log_ts);
+            let log_writer = LogWriter::open(&log_path)
+                .map_err(|e| PyValueError::new_err(format!("log_writer_open_failed:{}", e)))?;
+            let log_arc = Arc::new(Mutex::new(log_writer));
+            let dispatch_mode_label = dispatch_handle.mode_label();
+            let games_count = self
+                .engine
+                .as_ref()
+                .map(|e| e.token_ids_by_game.len())
+                .unwrap_or(0);
+            if let Ok(mut g) = log_arc.lock() {
+                g.log_startup(
+                    run_id,
+                    games_count,
+                    all_plan_tokens.len(),
+                    dispatch_mode_label,
+                );
+            }
+
+            // Build the submitter-thread half. In Http mode, initialize the SDK
+            // runtime and run presign warmup using its client/signer references.
+            let (submit_tx, submit_rx) =
+                tokio_mpsc::unbounded_channel::<crate::dispatch::SubmitWork>();
+            let submitter_log_arc = Arc::clone(&log_arc);
+            let submitter_health = Arc::new(Mutex::new(SubmitterHealth::default()));
+            let mut submitter = OrderSubmitter::new(
+                dispatch_cfg.clone(),
+                submitter_log_arc,
+                submit_rx,
+                Arc::clone(&submitter_health),
+                Arc::clone(&registry),
+            );
+
+            let submitter_handle: Option<SubmitterHandle> = if matches!(
+                dispatch_cfg.mode,
+                DispatchMode::Http
+            ) {
+                if dispatch_cfg.presign_enabled && !all_plan_tokens.is_empty() {
+                    let warm_result = py.allow_threads(|| {
+                        match TokioBuilder::new_current_thread().enable_all().build() {
+                            Ok(rt) => rt.block_on(async {
+                                submitter.ensure_sdk_runtime_async().await?;
+                                let client = submitter.sdk_client_ref()?.clone();
+                                let signer = submitter.signer_ref()?.clone();
+                                let (templates, pool) = dispatch_handle.templates_and_pool_mut();
+                                warm_presign_startup_into(
+                                    &dispatch_cfg,
+                                    &client,
+                                    &signer,
+                                    templates,
+                                    pool,
+                                )
+                                .await
+                            }),
+                            Err(e) => Err(format!("tokio_runtime_create_failed:{}", e)),
+                        }
+                    });
+                    if let Err(err) = warm_result {
+                        return Err(PyValueError::new_err(format!(
+                            "presign_startup_warm_failed:{}",
+                            err
+                        )));
+                    }
+                }
+
+                dispatch_handle.install_submit_tx(submit_tx.clone());
+
+                let submit_join = thread::spawn(move || {
+                    if let Ok(rt) = TokioBuilder::new_current_thread().enable_all().build() {
+                        rt.block_on(run_submitter_async(submitter));
                     }
                 });
-                if let Err(err) = warm_result {
-                    return Err(PyValueError::new_err(format!(
-                        "presign_startup_warm_failed:{}",
-                        err
-                    )));
-                }
-            }
+
+                Some(SubmitterHandle {
+                    submit_tx,
+                    join: Some(submit_join),
+                    health: submitter_health,
+                })
+            } else {
+                // Noop mode: no submitter spawned. The send-channel sender is
+                // dropped; DispatchHandle::dispatch_intent short-circuits to
+                // log "noop" inline and never reaches the channel.
+                drop(submitter);
+                drop(submit_tx);
+                drop(submitter_health);
+                None
+            };
 
             let mut worker_engine = self
                 .engine
                 .as_ref()
                 .ok_or_else(|| PyValueError::new_err("engine unavailable"))?
                 .clone();
-            let worker_dispatch_runtime = dispatch_runtime;
+            let worker_dispatch_handle = dispatch_handle;
             let subs_clone = Arc::clone(&subs);
             let health_clone = Arc::clone(&health);
-
-            // Create structured log file
-            let run_id = cfg.run_id.unwrap_or(0);
-            let log_dir = cfg
-                .log_dir
-                .clone()
-                .unwrap_or_else(|| ".".to_string());
-            let log_ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-            let log_path = format!("{}/hotpath_{}_{}.jsonl", log_dir, run_id, log_ts);
-            let mut log = LogWriter::open(&log_path)
-                .map_err(|e| PyValueError::new_err(format!("log_writer_open_failed:{}", e)))?;
-            let dispatch_mode_label = worker_dispatch_runtime.mode_label();
-            log.log_startup(
-                run_id,
-                worker_engine.token_ids_by_game.len(),
-                all_plan_tokens.len(),
-                dispatch_mode_label,
-            );
+            let worker_log_arc = Arc::clone(&log_arc);
 
             let join = thread::spawn(move || {
                 if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build() {
                     runtime.block_on(crate::ws::run_live_worker_async(
                         &mut worker_engine,
                         worker_cfg,
-                        worker_dispatch_runtime,
+                        worker_dispatch_handle,
                         subs_clone,
                         health_clone,
                         initial_candidates,
                         initial_active_subscriptions,
                         command_rx,
-                        log,
+                        worker_log_arc,
                     ));
                 } else {
                     crate::ws::with_health(&health_clone, |h| {
@@ -163,6 +240,7 @@ impl NativeHotPathRuntime {
                 subscriptions: subs,
                 health,
             });
+            self.submitter = submitter_handle;
         }
 
         self.running = true;
@@ -178,6 +256,13 @@ impl NativeHotPathRuntime {
             }
         }
         self.live_worker = None;
+        if let Some(sub) = self.submitter.as_mut() {
+            let _ = sub.submit_tx.send(crate::dispatch::SubmitWork::Stop);
+            if let Some(join) = sub.join.take() {
+                let _ = join.join();
+            }
+        }
+        self.submitter = None;
     }
 
     fn set_subscriptions(&mut self, subscriptions: Vec<String>) {
@@ -220,11 +305,32 @@ impl NativeHotPathRuntime {
                 subscriptions = subs.clone();
             }
         }
+        let mut submitter_present = false;
+        let mut submitter_running = false;
+        let mut submitter_last_error = String::new();
+        let mut posted_ok = 0i64;
+        let mut posted_err = 0i64;
+        if let Some(sub) = self.submitter.as_ref() {
+            submitter_present = true;
+            if let Ok(h) = sub.health.lock() {
+                submitter_running = h.running;
+                submitter_last_error = h.last_error.clone();
+                posted_ok = h.posted_ok;
+                posted_err = h.posted_err;
+            }
+        }
         let payload = json!({
             "running": running,
             "subscriptions": subscriptions,
             "reconnects": reconnects,
             "last_error": last_error,
+            "submitter": {
+                "present": submitter_present,
+                "running": submitter_running,
+                "last_error": submitter_last_error,
+                "posted_ok": posted_ok,
+                "posted_err": posted_err,
+            },
         });
         crate::engine::serde_value_to_py(py, &payload)
     }

@@ -16,12 +16,14 @@ use std::str::FromStr;
 mod flow;
 mod presign_pool;
 mod sdk_exec;
+mod submitter;
 mod types;
 
-pub(crate) use types::{DispatchRuntime, PresignTemplateData};
+pub(crate) use presign_pool::warm_presign_startup_into;
+pub(crate) use submitter::run_submitter_async;
+pub(crate) use types::{DispatchHandle, OrderSubmitter, PresignTemplateData, SubmitBatch, SubmitWork};
 pub(super) use types::{
-    OrderRequestData, PolymarketSdkRuntime, PreSignKey,
-    PreSignedOrderData,
+    OrderRequestData, PolymarketSdkRuntime, PreSignedOrderData,
 };
 
 pub(crate) fn build_dispatch_config(
@@ -36,10 +38,10 @@ pub(crate) fn build_dispatch_config(
         .unwrap_or_else(|| "noop".to_string())
         .trim()
         .to_lowercase();
-    let mode = if mode_text == "http" {
-        DispatchMode::Http
-    } else {
-        DispatchMode::Noop
+    let mode = match mode_text.as_str() {
+        "http" => DispatchMode::Http,
+        "noop" | "" => DispatchMode::Noop,
+        other => return Err(format!("unsupported_dispatch_mode:{}", other)),
     };
 
     let funder = exec_cfg
@@ -65,12 +67,12 @@ pub(crate) fn build_dispatch_config(
         chain_id: exec_cfg.chain_id.unwrap_or(137),
         presign_enabled: exec_cfg.presign_enabled.unwrap_or(false),
         presign_private_key: exec_cfg.presign_private_key.unwrap_or_else(|| {
-            std::env::var("POLY_EXEC_PRIVATE_KEY")
+            std::env::var("POLY_EXEC_PRESIGN_PRIVATE_KEY")
                 .ok()
+                .or_else(|| std::env::var("POLY_EXEC_PRIVATE_KEY").ok())
                 .or_else(|| std::env::var("PRIVATE_KEY").ok())
                 .unwrap_or_default()
         }),
-        presign_pool_target_per_key: exec_cfg.presign_pool_target_per_key.unwrap_or(1).max(0),
         presign_startup_warm_timeout_seconds: exec_cfg
             .presign_startup_warm_timeout_seconds
             .unwrap_or(5.0)
@@ -82,6 +84,10 @@ pub(crate) fn build_dispatch_config(
     })
 }
 
+/// Wall-clock nanoseconds since UNIX epoch. Retained for future L2 auth header
+/// timestamps and ad-hoc diagnostics; not used on the live path (the WS worker
+/// uses an `Instant`-based monotonic clock for dedup/cooldown deltas).
+#[allow(dead_code)]
 pub(crate) fn now_unix_ns() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => d.as_nanos() as i64,

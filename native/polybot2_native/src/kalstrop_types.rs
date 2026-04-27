@@ -96,5 +96,5 @@ where
         }
     }
 
-    deserializer.deserialize_seq(FirstFreeTextVisitor)
+    deserializer.deserialize_any(FirstFreeTextVisitor)
 }

@@ -203,7 +203,7 @@ tail -f logs/hotpath_123_*.jsonl | jq --unbuffered 'select(.ev == "order")'
 
 ```bash
 polybot2 provider capture \
-  --universal-id 36354015caf6 \
+  --universal-id "f325c377-f1cb-44db-b615-dad9961d2317" \
   --league mlb \
   --out /Users/reda/polymarket_bot/captures \
   --tail-seconds 120 \

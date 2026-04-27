@@ -1,18 +1,29 @@
 use super::*;
 
-impl DispatchRuntime {
-    fn presign_key_for_token(token_id: &str) -> PreSignKey {
-        PreSignKey {
-            token_id: token_id.trim().to_string(),
+impl DispatchHandle {
+    pub(crate) fn new(cfg: DispatchConfig, registry: Arc<crate::TargetRegistry>) -> Self {
+        let n = registry.tokens.len();
+        Self {
+            cfg,
+            registry,
+            presign_template_catalog: HashMap::new(),
+            presign_templates: vec![None; n],
+            presign_pool: (0..n).map(|_| None).collect(),
+            submit_tx: None,
         }
     }
 
-    fn presign_target_depth(&self) -> usize {
-        self.cfg.presign_pool_target_per_key.max(0) as usize
+    pub(crate) fn install_submit_tx(&mut self, tx: tokio_mpsc::UnboundedSender<SubmitWork>) {
+        self.submit_tx = Some(tx);
     }
 
-    fn presign_depth(&self, key: &PreSignKey) -> usize {
-        self.presign_pool.get(key).map(|q| q.len()).unwrap_or(0)
+    pub(crate) fn templates_and_pool_mut(
+        &mut self,
+    ) -> (
+        &[Option<OrderRequestData>],
+        &mut [Option<PreSignedOrderData>],
+    ) {
+        (self.presign_templates.as_slice(), self.presign_pool.as_mut_slice())
     }
 
     fn parse_template_request(template: &PresignTemplateData) -> Option<OrderRequestData> {
@@ -39,139 +50,144 @@ impl DispatchRuntime {
 
     pub(crate) fn set_presign_templates(&mut self, templates: &[PresignTemplateData]) {
         self.presign_template_catalog.clear();
-        self.presign_templates.clear();
-        self.presign_pool.clear();
+        for slot in self.presign_templates.iter_mut() {
+            *slot = None;
+        }
+        for slot in self.presign_pool.iter_mut() {
+            *slot = None;
+        }
         for template in templates {
             let Some(request) = Self::parse_template_request(template) else {
                 continue;
             };
-            let key = Self::presign_key_for_token(request.token_id.as_str());
-            self.presign_template_catalog.insert(key, request);
+            self.presign_template_catalog
+                .insert(request.token_id.clone(), request);
         }
     }
 
-    pub(crate) fn activate_presign_templates_for_tokens(&mut self, token_ids: &[String]) -> usize {
-        let mut next_active: HashMap<PreSignKey, OrderRequestData> = HashMap::new();
-        for token_id in token_ids {
-            let key = Self::presign_key_for_token(token_id.as_str());
-            if let Some(request) = self.presign_template_catalog.get(&key) {
-                next_active.insert(key, request.clone());
+    pub(crate) fn activate_presign_templates_for_tokens(
+        &mut self,
+        _token_ids: &[String],
+    ) -> usize {
+        let mut active = 0usize;
+        for (idx, slot) in self.registry.tokens.iter().enumerate() {
+            let trimmed = slot.token_id.trim();
+            if let Some(template) = self.presign_template_catalog.get(trimmed) {
+                self.presign_templates[idx] = Some(template.clone());
+                active += 1;
+            } else {
+                self.presign_templates[idx] = None;
+                self.presign_pool[idx] = None;
             }
         }
-        self.presign_templates = next_active;
-        self.presign_pool
-            .retain(|k, _| self.presign_templates.contains_key(k));
-        self.presign_templates.len()
+        active
+    }
+}
+
+/// Signs one order per token at startup and stores them in the pool. Pool
+/// depth is always 1 (one-shot intents fire each token at most once).
+pub(crate) async fn warm_presign_startup_into(
+    cfg: &DispatchConfig,
+    client: &SdkClient<SdkAuthenticatedState<SdkAuthNormal>>,
+    signer: &super::CachedSigner,
+    templates: &[Option<OrderRequestData>],
+    pool: &mut [Option<PreSignedOrderData>],
+) -> Result<(), String> {
+    if !cfg.presign_enabled {
+        return Ok(());
+    }
+    if templates.is_empty() || templates.iter().all(|t| t.is_none()) {
+        return Err("presign_startup_warm_no_templates".to_string());
+    }
+    if templates.len() != pool.len() {
+        return Err(format!(
+            "presign_startup_warm_size_mismatch:templates={},pool={}",
+            templates.len(),
+            pool.len()
+        ));
     }
 
-    pub(crate) async fn warm_presign_startup_async(&mut self) -> Result<(), String> {
-        if !self.cfg.presign_enabled || self.presign_target_depth() == 0 {
-            return Ok(());
+    let mut key_work: Vec<(usize, OrderRequestData)> = Vec::new();
+    for (idx, template_slot) in templates.iter().enumerate() {
+        let Some(template) = template_slot.as_ref() else {
+            continue;
+        };
+        if pool[idx].is_some() {
+            continue;
         }
-        let keys = self.presign_templates.keys().cloned().collect::<Vec<_>>();
-        if keys.is_empty() {
-            return Err("presign_startup_warm_no_templates".to_string());
-        }
-        let target = self.presign_target_depth();
+        key_work.push((idx, template.clone()));
+    }
+    if key_work.is_empty() {
+        return Ok(());
+    }
 
-        self.ensure_sdk_runtime().await?;
-        let client = self.sdk_client_ref()?.clone();
-        let signer = self.signer_ref()?.clone();
+    let per_key_s = 1.0_f64;
+    let base_s = cfg.presign_startup_warm_timeout_seconds.max(0.1);
+    let total_timeout_s = base_s + per_key_s * key_work.len() as f64;
+    let timeout = Duration::from_secs_f64(total_timeout_s);
 
-        let mut key_work: Vec<(PreSignKey, OrderRequestData, usize)> = Vec::new();
-        for key in &keys {
-            let current = self.presign_depth(key);
-            let want = target.saturating_sub(current);
-            if want == 0 {
-                continue;
-            }
-            let template = self
-                .presign_templates
-                .get(key)
-                .ok_or_else(|| {
-                    format!(
-                        "presign_template_missing:{}",
-                        redact_token_id(key.token_id.as_str())
-                    )
-                })?
-                .clone();
-            key_work.push((key.clone(), template, want));
-        }
-        if key_work.is_empty() {
-            return Ok(());
-        }
-
-        let per_key_s = 1.0_f64;
-        let base_s = self.cfg.presign_startup_warm_timeout_seconds.max(0.1);
-        let total_timeout_s = base_s + per_key_s * key_work.len() as f64;
-        let timeout = Duration::from_secs_f64(total_timeout_s);
-
-        let handles: Vec<_> = key_work
-            .into_iter()
-            .map(|(key, template, want)| {
-                let c = client.clone();
-                let s = signer.clone();
-                tokio::spawn(async move {
-                    let result =
-                        super::sdk_exec::sign_order_batch(&c, &s, &template, want).await;
-                    (key, result)
-                })
+    let handles: Vec<_> = key_work
+        .into_iter()
+        .map(|(idx, template)| {
+            let c = client.clone();
+            let s = signer.clone();
+            tokio::spawn(async move {
+                let result =
+                    super::sdk_exec::sign_order_batch(&c, &s, &template, 1).await;
+                (idx, template.token_id, result)
             })
-            .collect();
+        })
+        .collect();
 
-        let results = tokio::time::timeout(timeout, futures_util::future::join_all(handles))
-            .await
-            .map_err(|_| {
-                let detail = keys
-                    .iter()
-                    .map(|k| {
+    let results = tokio::time::timeout(timeout, futures_util::future::join_all(handles))
+        .await
+        .map_err(|_| {
+            let detail = templates
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, t)| {
+                    t.as_ref().map(|tpl| {
                         format!(
                             "{}:{}",
-                            redact_token_id(k.token_id.as_str()),
-                            self.presign_depth(k)
+                            redact_token_id(&tpl.token_id),
+                            if pool[idx].is_some() { 1 } else { 0 }
                         )
                     })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                format!(
-                    "presign_startup_warm_timeout:target_depth={} timeout_s={:.3} keys={} detail={}",
-                    target, total_timeout_s, keys.len(), detail
-                )
-            })?;
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "presign_startup_warm_timeout:timeout_s={:.3} detail={}",
+                total_timeout_s, detail
+            )
+        })?;
 
-        for result in results {
-            let (key, batch_result) =
-                result.map_err(|e| format!("presign_task_panicked:{}", e))?;
-            let signed_orders = batch_result?;
-            let q = self.presign_pool.entry(key.clone()).or_default();
-            for signed in signed_orders {
-                q.push_back(PreSignedOrderData {
-                    signed_order: signed,
-                });
-            }
+    for result in results {
+        let (idx, token_id, batch_result) =
+            result.map_err(|e| format!("presign_task_panicked:{}", e))?;
+        let signed_orders = batch_result.map_err(|e| {
+            format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
+        })?;
+        if let Some(signed) = signed_orders.into_iter().next() {
+            pool[idx] = Some(PreSignedOrderData { signed_order: signed });
         }
-
-        for key in &keys {
-            if self.presign_depth(key) < target {
-                return Err(format!(
-                    "presign_startup_warm_incomplete:{}:depth={}/{}",
-                    redact_token_id(key.token_id.as_str()),
-                    self.presign_depth(key),
-                    target
-                ));
-            }
-        }
-
-        Ok(())
     }
 
-    pub(super) fn pop_presigned_order(&mut self, key: &PreSignKey) -> Option<PreSignedOrderData> {
-        let q = self.presign_pool.get_mut(key)?;
-        let out = q.pop_front();
-        if q.is_empty() {
-            self.presign_pool.remove(key);
+    for (idx, template_slot) in templates.iter().enumerate() {
+        if template_slot.is_none() {
+            continue;
         }
-        out
+        if pool[idx].is_none() {
+            let token_id = template_slot
+                .as_ref()
+                .map(|t| t.token_id.as_str())
+                .unwrap_or("_");
+            return Err(format!(
+                "presign_startup_warm_incomplete:{}",
+                redact_token_id(token_id),
+            ));
+        }
     }
 
+    Ok(())
 }

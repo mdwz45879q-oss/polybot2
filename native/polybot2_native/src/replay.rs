@@ -1,62 +1,77 @@
 use super::*;
-use crate::dispatch::DispatchRuntime;
+use crate::dispatch::{DispatchHandle, SubmitBatch};
 use crate::engine::process_kalstrop_frame;
 use crate::log_writer::LogWriter;
+use std::sync::{Arc, Mutex};
 
-pub(crate) async fn process_decoded_frame_async(
+/// Process a decoded WS frame: parse → evaluate → pop presigned orders for all
+/// intents in the frame → send one `SubmitWork::Batch` covering the frame →
+/// log ticks. Frame-level batching guarantees that multiple intents from the
+/// same provider frame reach the CLOB as one `POST /orders` call (modulo
+/// `MAX_BATCH_SIZE=15` chunking on the submitter side).
+pub(crate) fn process_decoded_frame_sync(
     engine: &mut NativeMlbEngine,
     frame_text: &str,
     recv_monotonic_ns: i64,
-    dispatch_runtime: &mut DispatchRuntime,
-    log: &mut LogWriter,
+    dispatch_handle: &mut DispatchHandle,
+    log: &Arc<Mutex<LogWriter>>,
 ) {
     let results = process_kalstrop_frame(engine, frame_text, recv_monotonic_ns);
 
-    let mut all_intents: Vec<(&str, &str)> = Vec::new();
-    for result in &results {
-        if !result.material {
-            continue;
+    if matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
+        // Noop mode: log a synthetic `noop` outcome for every intent inline.
+        // No presign pop, no channel send. Tick logging follows.
+        for r in &results {
+            if !r.material {
+                continue;
+            }
+            for intent in &r.intents {
+                let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
+                if let Ok(mut g) = log.lock() {
+                    g.log_order_ok(sk, tok, "noop");
+                }
+            }
         }
-        for intent in &result.intents {
-            all_intents.push((&intent.strategy_key, &intent.token_id));
-        }
-    }
-
-    let order_outcomes: Vec<(&str, &str, Result<String, String>)> = if all_intents.len() <= 1 {
-        let mut outcomes = Vec::new();
-        for &(sk, tok) in &all_intents {
-            let outcome = dispatch_runtime.dispatch_order(tok).await;
-            outcomes.push((sk, tok, outcome));
-        }
-        outcomes
     } else {
-        let token_ids: Vec<&str> = all_intents.iter().map(|&(_, tok)| tok).collect();
-        let batch_results = dispatch_runtime.dispatch_orders_batch(&token_ids).await;
-        all_intents
-            .iter()
-            .zip(batch_results)
-            .map(|(&(sk, tok), result)| (sk, tok, result))
-            .collect()
-    };
-
-    for result in &results {
-        if !result.material {
-            continue;
+        // Http mode: collect a single Batch per frame, send it once.
+        let mut batch: SubmitBatch = SubmitBatch::new();
+        for r in &results {
+            if !r.material {
+                continue;
+            }
+            for intent in &r.intents {
+                match dispatch_handle.pop_for_target(intent.target_idx) {
+                    Ok(signed) => batch.push((intent.target_idx, signed)),
+                    Err(err) => {
+                        let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
+                        if let Ok(mut g) = log.lock() {
+                            g.log_order_err(sk, tok, &err);
+                        }
+                    }
+                }
+            }
         }
-        log.log_tick(
-            &result.game_id,
-            result.state.home,
-            result.state.away,
-            result.state.inning_number,
-            result.state.inning_half,
-            result.state.game_state,
-        );
+        if !batch.is_empty() {
+            dispatch_handle.send_batch(batch, log);
+        }
     }
 
-    for (sk, tok, outcome) in &order_outcomes {
-        match outcome {
-            Ok(eid) => log.log_order_ok(sk, tok, eid),
-            Err(err) => log.log_order_err(sk, tok, err),
+    // Tick logging after dispatch handoff. One lock acquisition for the whole
+    // result set.
+    if !results.is_empty() {
+        if let Ok(mut g) = log.lock() {
+            for r in &results {
+                if r.material {
+                    g.log_tick(
+                        &r.game_id,
+                        r.state.home,
+                        r.state.away,
+                        r.state.inning_number,
+                        r.state.inning_half,
+                        r.state.game_state,
+                    );
+                }
+            }
         }
     }
 }
