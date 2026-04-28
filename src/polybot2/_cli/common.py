@@ -88,6 +88,7 @@ def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tu
     return (
         MlbOrderPolicy(
             amount_usdc=float(cfg.get("amount_usdc", 5.0)),
+            size_shares=float(cfg.get("size_shares", 5.0)),
             limit_price=float(cfg.get("limit_price", 0.52)),
             time_in_force=str(cfg.get("time_in_force", "FAK") or "FAK"),
         ),
