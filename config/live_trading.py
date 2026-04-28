@@ -18,7 +18,7 @@ LIVE_BETTING_MARKET_TYPES = {
 HOTPATH_EXECUTION_POLICY = {
     "mlb": {
         "amount_usdc": 1.01,
-        "size_shares": 12.0,
+        "size_shares": 15.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
