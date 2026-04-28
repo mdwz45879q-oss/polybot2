@@ -42,19 +42,19 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     provider_sync = provider_sub.add_parser("sync", help="Sync provider games")
     provider_sync.add_argument("--db", type=str, default="", help="Override SQLite DB path")
     provider_sync.add_argument("--provider", type=str, choices=["boltodds", "kalstrop"], default="")
-    provider_capture = provider_sub.add_parser("capture", help="Capture one or more games stream traffic to disk")
-    provider_capture.add_argument("--provider", type=str, choices=["boltodds", "kalstrop"], default="")
-    capture_sel = provider_capture.add_mutually_exclusive_group(required=True)
-    capture_sel.add_argument("--universal-id", type=str, action="append", dest="universal_ids")
-    capture_sel.add_argument("--ids-file", type=str, default="")
-    capture_sel.add_argument("--today", action="store_true", default=False)
-    provider_capture.add_argument("--ids-var", type=str, default="UNIVERSAL_IDS")
-    provider_capture.add_argument("--date-et", type=str, default="")
+    provider_capture = provider_sub.add_parser("capture", help="Record raw score frames to disk")
+    provider_capture.add_argument("--provider", type=str, choices=["kalstrop"], default="kalstrop")
     provider_capture.add_argument("--league", type=str, required=True)
-    provider_capture.add_argument("--out", type=str, required=True)
-    provider_capture.add_argument("--tail-seconds", type=float, default=120.0)
-    provider_capture.add_argument("--max-duration-seconds", type=float, default=21600.0)
-    provider_capture.add_argument("--read-timeout-seconds", type=float, default=1.0)
+    provider_capture.add_argument("--out", type=str, required=True, help="Output directory")
+    capture_sel = provider_capture.add_mutually_exclusive_group(required=True)
+    capture_sel.add_argument("--universal-id", type=str, action="append", dest="universal_ids",
+                             help="Fixture ID (repeatable)")
+    capture_sel.add_argument("--today", action="store_true", default=False,
+                             help="Capture all of today's games (Eastern Time)")
+    provider_capture.add_argument("--date-et", type=str, default="",
+                                  help="Override date for --today (YYYY-MM-DD, Eastern Time)")
+    provider_capture.add_argument("--max-duration-seconds", type=float, default=21600.0,
+                                  help="Auto-stop after N seconds (default: 6h)")
 
     mapping_p = sub.add_parser("mapping", help="Mapping validation commands")
     mapping_sub = mapping_p.add_subparsers(dest="mapping_command", required=True)

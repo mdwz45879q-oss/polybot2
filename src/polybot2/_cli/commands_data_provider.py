@@ -354,20 +354,6 @@ def run_provider_sync(args: Any, *, logger: logging.Logger) -> int:
     return 0
 
 
-def _sanitize_capture_component(value: str) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return "unknown"
-    out: list[str] = []
-    for ch in text:
-        if ch.isalnum() or ch in {"-", "_", "."}:
-            out.append(ch)
-        else:
-            out.append("_")
-    sanitized = "".join(out).strip("_")
-    return sanitized or "unknown"
-
-
 def _dedup_ids(values: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -379,40 +365,6 @@ def _dedup_ids(values: list[str]) -> list[str]:
         out.append(text)
     return out
 
-
-def _load_ids_from_file(*, path: Path, ids_var: str) -> list[str]:
-    suffix = str(path.suffix or "").strip().lower()
-    text = path.read_text(encoding="utf-8")
-    if suffix in {".txt", ".list", ".ids"}:
-        return _dedup_ids([line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")])
-    if suffix == ".json":
-        payload = json.loads(text)
-        if isinstance(payload, list):
-            return _dedup_ids([str(x).strip() for x in payload if str(x).strip()])
-        if isinstance(payload, dict):
-            vals = payload.get("universal_ids")
-            if isinstance(vals, list):
-                return _dedup_ids([str(x).strip() for x in vals if str(x).strip()])
-        raise ValueError("json_file_must_be_list_or_object_with_universal_ids")
-    if suffix == ".py":
-        mod = ast.parse(text, filename=str(path))
-        wanted = str(ids_var or "UNIVERSAL_IDS").strip() or "UNIVERSAL_IDS"
-        for node in mod.body:
-            if isinstance(node, ast.Assign):
-                targets = [t for t in node.targets if isinstance(t, ast.Name)]
-                if not any(str(t.id) == wanted for t in targets):
-                    continue
-                value = ast.literal_eval(node.value)
-                if isinstance(value, (list, tuple, set)):
-                    return _dedup_ids([str(x).strip() for x in value if str(x).strip()])
-                raise ValueError("python_ids_var_must_be_list_like")
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and str(node.target.id) == wanted:
-                value = ast.literal_eval(node.value) if node.value is not None else []
-                if isinstance(value, (list, tuple, set)):
-                    return _dedup_ids([str(x).strip() for x in value if str(x).strip()])
-                raise ValueError("python_ids_var_must_be_list_like")
-        raise ValueError("python_ids_var_not_found")
-    raise ValueError("unsupported_ids_file_extension")
 
 
 def _provider_record_game_date_et(record: Any) -> str:
@@ -435,442 +387,111 @@ def _provider_record_game_date_et(record: Any) -> str:
         return ""
 
 
-def _count_jsonl_lines(path: Path) -> int:
-    if not path.exists():
-        return 0
-    count = 0
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                count += 1
-    return count
-
-
-def _count_raw_lines_for_game(*, raw_root: Path, provider: str, universal_id: str) -> int:
-    p = raw_root / f"provider={_sanitize_capture_component(provider)}"
-    uid = _sanitize_capture_component(universal_id)
-    total = 0
-    for stream_dir in p.glob("stream=*"):
-        total += _count_jsonl_lines(stream_dir / f"game={uid}.jsonl")
-    return total
+import os
 
 
 def run_provider_capture(args: Any, *, logger: logging.Logger) -> int:
-    provider_name = _resolve_provider_name(args=args, logger=logger, context="provider capture")
-    if provider_name is None:
-        return 1
-    league = str(getattr(args, "league", "")).strip().lower()
-    if not league:
-        logger.error("--league is required")
-        return 1
-    out_arg = str(getattr(args, "out", "")).strip()
-    if not out_arg:
-        logger.error("--out is required")
+    """Record raw Kalstrop score frames to a single JSONL file."""
+    from polybot2.sports.factory import build_sports_provider as make_provider
+
+    league = str(getattr(args, "league", "") or "").strip().lower()
+    out_dir = str(getattr(args, "out", "") or "").strip()
+    if not league or not out_dir:
+        logger.error("--league and --out are required")
         return 1
 
-    today_mode = bool(getattr(args, "today", False))
-    ids_file_text = str(getattr(args, "ids_file", "") or "").strip()
-    ids_var = str(getattr(args, "ids_var", "UNIVERSAL_IDS") or "UNIVERSAL_IDS").strip() or "UNIVERSAL_IDS"
-    cli_ids = _dedup_ids([str(x).strip() for x in (getattr(args, "universal_ids", None) or []) if str(x).strip()])
+    os.makedirs(out_dir, exist_ok=True)
+    provider_name = str(getattr(args, "provider", "") or "kalstrop").strip().lower()
+    provider = make_provider(provider_name=provider_name)
 
-    selection_mode = "cli_ids"
-    requested_ids: list[str] = []
-    target_date_et = ""
-    if today_mode:
-        selection_mode = "today"
-        date_arg = str(getattr(args, "date_et", "") or "").strip()
-        if date_arg:
-            try:
-                datetime.strptime(date_arg, "%Y-%m-%d")
-            except ValueError:
-                logger.error("--date-et must be YYYY-MM-DD")
-                return 1
-            target_date_et = date_arg
-        else:
+    # --- Resolve game IDs ---
+    if getattr(args, "today", False):
+        target_date_et = str(getattr(args, "date_et", "") or "").strip()
+        if not target_date_et:
             target_date_et = datetime.now(tz=ZoneInfo("America/New_York")).date().isoformat()
-    elif ids_file_text:
-        selection_mode = "ids_file"
-        ids_file = Path(ids_file_text).expanduser().resolve()
-        if not ids_file.exists():
-            logger.error("--ids-file not found: %s", str(ids_file))
-            return 1
-        try:
-            requested_ids = _load_ids_from_file(path=ids_file, ids_var=ids_var)
-        except Exception as exc:
-            logger.error("failed to parse --ids-file %s: %s", str(ids_file), exc)
-            return 1
-    else:
-        requested_ids = list(cli_ids)
-
-    tail_raw = getattr(args, "tail_seconds", 120.0)
-    max_duration_raw = getattr(args, "max_duration_seconds", 21600.0)
-    read_timeout_raw = getattr(args, "read_timeout_seconds", 1.0)
-    tail_seconds = max(0.0, float(120.0 if tail_raw is None else tail_raw))
-    max_duration_seconds = max(1.0, float(21600.0 if max_duration_raw is None else max_duration_raw))
-    read_timeout_seconds = max(0.05, float(1.0 if read_timeout_raw is None else read_timeout_raw))
-
-    capture_tag = ""
-    if selection_mode == "today":
-        capture_tag = f"{league}_{target_date_et}"
-    elif len(requested_ids) == 1:
-        capture_tag = requested_ids[0]
-    elif requested_ids:
-        capture_tag = f"{league}_{len(requested_ids)}games"
-    else:
-        capture_tag = f"{league}_selection"
-
-    start_wall = time.time()
-    started_at = datetime.now(timezone.utc)
-    run_dir = Path(out_arg).expanduser().resolve() / (
-        f"capture_{provider_name}_{_sanitize_capture_component(capture_tag)}_{started_at.strftime('%Y%m%dT%H%M%SZ')}"
-    )
-    parsed_root = run_dir / "parsed"
-    raw_root = run_dir / "raw"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    parsed_recorder = JsonlUpdateRecorder(parsed_root)
-    raw_recorder = JsonlRawFrameRecorder(raw_root, default_universal_id="")
-    try:
-        provider = build_sports_provider(
-            provider_name=provider_name,
-            recorder=parsed_recorder,
-            raw_frame_recorder=raw_recorder,
-            logger=logger,
-        )
-    except ValueError as exc:
-        reason = str(exc)
-        if reason == "missing_BOLTODDS_API_KEY":
-            logger.error("BOLTODDS_API_KEY is required for provider capture")
-        elif reason == "missing_kalstrop_credentials":
-            logger.error("Kalstrop credentials are required for provider capture (KALSTROP_* or legacy CLIENT_ID/SHARED_SECRET_RAW)")
-        else:
-            logger.error("provider capture failed to initialize provider: %s", reason)
-        return 1
-
-    stop_reason = "unknown"
-    manual_stop = False
-    seen_any_payload = False
-    connect_grace_seconds = max(5.0, min(30.0, max_duration_seconds))
-    missing_ids: list[str] = []
-    resolved_ids: list[str] = []
-    mismatched_ids: list[str] = []
-    per_game_state: dict[str, dict[str, Any]] = {}
-    provider_records: dict[str, Any] = {}
-
-    prev_int = signal.getsignal(signal.SIGINT)
-    prev_term = signal.getsignal(signal.SIGTERM)
-
-    def _handle_stop(_sig: int, _frame: Any) -> None:
-        nonlocal manual_stop
-        manual_stop = True
-
-    signal.signal(signal.SIGINT, _handle_stop)
-    signal.signal(signal.SIGTERM, _handle_stop)
-
-    try:
+        logger.info("Loading game catalog for %s %s on %s ET...", provider_name, league, target_date_et)
         catalog = provider.load_game_catalog()
-        if selection_mode == "today":
-            requested_ids = []
-            for record in catalog:
-                rec_league = " ".join(str(getattr(record, "league_key", "") or "").strip().lower().split())
-                if not rec_league or rec_league != league:
-                    continue
-                rec_date_et = _provider_record_game_date_et(record)
-                if rec_date_et != target_date_et:
-                    continue
-                uid = str(getattr(record, "provider_game_id", "") or "").strip()
-                if uid:
-                    requested_ids.append(uid)
-            requested_ids = _dedup_ids(requested_ids)
-            if not requested_ids:
-                logger.error("no provider games found for --today provider=%s league=%s date_et=%s", provider_name, league, target_date_et)
-                stop_reason = "no_games_for_today"
-                return 1
-
-        requested_ids = _dedup_ids(requested_ids)
-        if not requested_ids:
-            logger.error("no universal ids selected for capture")
-            stop_reason = "no_selected_ids"
-            return 1
-
-        for uid in requested_ids:
-            rec = provider.get_provider_record(uid)
-            if rec is None:
-                missing_ids.append(uid)
+        game_ids: list[str] = []
+        seen_leagues: set[str] = set()
+        # Normalize the CLI league arg: lowercase, replace spaces with hyphens
+        # to match the hyphenated league_key from normalize_league_key().
+        league_norm = league.lower().replace(" ", "-")
+        for rec in catalog:
+            rec_league_key = str(getattr(rec, "league_key", "") or "").strip()
+            rec_league_raw = str(getattr(rec, "league_raw", "") or "").strip()
+            if rec_league_key:
+                seen_leagues.add(rec_league_key)
+            if rec_league_raw:
+                seen_leagues.add(rec_league_raw)
+            # Match against both league_key (normalized, hyphenated) and
+            # league_raw (original provider string). Substring match so the
+            # user doesn't need the exact string.
+            rec_key_lower = rec_league_key.lower()
+            rec_raw_lower = rec_league_raw.lower().replace(" ", "-")
+            if league_norm not in rec_key_lower and league_norm not in rec_raw_lower:
                 continue
-            rec_league = " ".join(str(getattr(rec, "league_key", "") or "").strip().lower().split())
-            if rec_league and rec_league != league:
-                mismatched_ids.append(uid)
+            rec_date = _provider_record_game_date_et(rec)
+            if rec_date != target_date_et:
                 continue
-            provider_records[uid] = rec
-            resolved_ids.append(uid)
-
-        if missing_ids:
-            logger.warning("provider capture skipping missing ids: provider=%s missing=%s", provider_name, ",".join(missing_ids))
-        if mismatched_ids:
-            logger.warning("provider capture skipping league-mismatched ids: provider=%s league=%s ids=%s", provider_name, league, ",".join(mismatched_ids))
-        if not resolved_ids:
-            logger.error("provider capture has no valid ids after resolution: provider=%s requested=%d", provider_name, len(requested_ids))
-            stop_reason = "no_resolved_ids"
-            return 1
-
-        for uid in resolved_ids:
-            rec = provider_records.get(uid)
-            kickoff_ts_utc: int | None = None
-            kickoff_raw = None if rec is None else getattr(rec, "start_ts_utc", None)
-            try:
-                kickoff_ts_utc = None if kickoff_raw is None else int(kickoff_raw)
-            except (TypeError, ValueError):
-                kickoff_ts_utc = None
-            anchor_ts = float(start_wall)
-            if kickoff_ts_utc is not None and kickoff_ts_utc > 0:
-                anchor_ts = max(float(start_wall), float(kickoff_ts_utc))
-            per_game_state[uid] = {
-                "completed_seen_at": None,
-                "done": False,
-                "stop_reason": "",
-                "seen_payload": False,
-                "parsed_count": 0,
-                "kickoff_ts_utc": kickoff_ts_utc,
-                "duration_anchor_ts": float(anchor_ts),
-                "duration_deadline_ts": float(anchor_ts + max_duration_seconds),
-            }
-
-        stream_profile = capture_stream_profile(provider_name)
-        run_scores = bool(stream_profile.get("scores"))
-        run_odds = bool(stream_profile.get("odds"))
-        run_playbyplay = bool(stream_profile.get("playbyplay"))
-        provider.start()
-        if run_scores:
-            provider.subscribe_scores(resolved_ids)
-        if run_odds:
-            provider.subscribe_odds(resolved_ids)
-        if run_playbyplay:
-            provider.subscribe_playbyplay(resolved_ids)
-        logger.info(
-            "provider capture started: provider=%s mode=%s n_games=%d league=%s out=%s streams=scores:%s,odds:%s,playbyplay:%s tail_seconds=%.1f max_duration_seconds=%.1f",
-            provider_name,
-            selection_mode,
-            len(resolved_ids),
-            league,
-            str(run_dir),
-            run_scores,
-            run_odds,
-            run_playbyplay,
-            tail_seconds,
-            max_duration_seconds,
-        )
-
-        while True:
-            if manual_stop:
-                stop_reason = "manual_interrupt"
-                break
-
-            scores_envs: list[Any] = []
-            odds_envs: list[Any] = []
-            pbp_envs: list[Any] = []
-            try:
-                if run_scores:
-                    scores_envs = provider.stream_scores(read_timeout_seconds=read_timeout_seconds)
-                if run_odds:
-                    odds_envs = provider.stream_odds(read_timeout_seconds=read_timeout_seconds)
-                if run_playbyplay:
-                    pbp_envs = provider.stream_playbyplay(read_timeout_seconds=read_timeout_seconds)
-            except Exception as exc:
-                logger.warning("provider capture stream read failed (recoverable): %s: %s", type(exc).__name__, exc)
-                time.sleep(0.2)
-
-            env_groups = (scores_envs, odds_envs, pbp_envs)
-            if any(env_groups):
-                seen_any_payload = True
-            for envs in env_groups:
-                for env in envs:
-                    uid = str(getattr(env, "universal_id", "") or "").strip()
-                    if uid in per_game_state:
-                        per_game_state[uid]["seen_payload"] = True
-                        per_game_state[uid]["parsed_count"] = int(per_game_state[uid]["parsed_count"]) + 1
-
-            connect_metrics = provider.get_stream_metrics()
-            scores_connected_now = (not run_scores) or int((connect_metrics.get("scores") or {}).get("connect_successes") or 0) > 0
-            odds_connected_now = (not run_odds) or int((connect_metrics.get("odds") or {}).get("connect_successes") or 0) > 0
-            pbp_connected_now = (not run_playbyplay) or int((connect_metrics.get("playbyplay") or {}).get("connect_successes") or 0) > 0
-            if (time.time() - start_wall) >= connect_grace_seconds and not (
-                scores_connected_now and odds_connected_now and pbp_connected_now
-            ):
-                stop_reason = "connection_not_established"
-                logger.error(
-                    "provider capture failed to establish required streams within %.1fs: scores_connected=%s odds_connected=%s playbyplay_connected=%s",
-                    connect_grace_seconds,
-                    scores_connected_now,
-                    odds_connected_now,
-                    pbp_connected_now,
-                )
-                break
-
-            for env in scores_envs:
-                uid = str(getattr(env, "universal_id", "") or "").strip()
-                if uid not in per_game_state:
-                    continue
-                event = env.event
-                if hasattr(event, "match_completed") and bool(getattr(event, "match_completed")):
-                    if per_game_state[uid]["completed_seen_at"] is None:
-                        per_game_state[uid]["completed_seen_at"] = time.time()
-                        logger.info("game completion signal detected: universal_id=%s tail_seconds=%.1f", uid, tail_seconds)
-
-            all_done = True
-            now2 = time.time()
-            for uid, state in per_game_state.items():
-                if bool(state["done"]):
-                    continue
-                completed_seen_at = state.get("completed_seen_at")
-                if completed_seen_at is not None and (now2 - float(completed_seen_at)) >= tail_seconds:
-                    state["done"] = True
-                    state["stop_reason"] = "game_completed_tail"
-                    continue
-                deadline_ts = float(state.get("duration_deadline_ts") or 0.0)
-                if deadline_ts > 0 and now2 >= deadline_ts:
-                    state["done"] = True
-                    state["stop_reason"] = "max_duration"
-                    continue
-                all_done = False
-            if all_done:
-                reasons = [str((per_game_state.get(uid) or {}).get("stop_reason") or "") for uid in resolved_ids]
-                if len(resolved_ids) == 1:
-                    stop_reason = reasons[0] or "stopped"
-                elif reasons and all(r == "game_completed_tail" for r in reasons):
-                    stop_reason = "all_games_completed_tail"
-                elif reasons and all(r == "max_duration" for r in reasons):
-                    stop_reason = "all_games_max_duration"
-                else:
-                    stop_reason = "all_games_terminal"
-                break
-    finally:
-        try:
-            provider.close()
-        except Exception:
-            pass
-        signal.signal(signal.SIGINT, prev_int)
-        signal.signal(signal.SIGTERM, prev_term)
-
-    ended_at = datetime.now(timezone.utc)
-    stream_metrics = provider.get_stream_metrics()
-    parsed_stats = parsed_recorder.stats()
-    raw_stats = raw_recorder.stats()
-
-    for uid, state in per_game_state.items():
-        if bool(state.get("done")):
-            continue
-        if stop_reason in {"manual_interrupt", "max_duration", "connection_not_established"}:
-            state["stop_reason"] = stop_reason
-        elif not str(state.get("stop_reason") or ""):
-            state["stop_reason"] = "stopped"
-
-    per_game_summary: list[dict[str, Any]] = []
-    for uid in resolved_ids:
-        record = provider_records.get(uid)
-        state = per_game_state.get(uid, {})
-        per_game_summary.append(
-            {
-                "universal_id": uid,
-                "game_label": "" if record is None else str(getattr(record, "game_label", "") or ""),
-                "provider_league_key": "" if record is None else str(getattr(record, "league_key", "") or ""),
-                "game_date_et": ("" if record is None else _provider_record_game_date_et(record)),
-                "seen_payload": bool(state.get("seen_payload")),
-                "parsed_count": int(state.get("parsed_count") or 0),
-                "raw_count": int(_count_raw_lines_for_game(raw_root=raw_root, provider=provider_name, universal_id=uid)),
-                "stop_reason": str(state.get("stop_reason") or ""),
-                "completed_seen": state.get("completed_seen_at") is not None,
-                "kickoff_ts_utc": state.get("kickoff_ts_utc"),
-                "duration_anchor_ts": state.get("duration_anchor_ts"),
-                "duration_deadline_ts": state.get("duration_deadline_ts"),
-            }
-        )
-
-    n_games_completed = sum(1 for row in per_game_summary if bool(row.get("completed_seen")))
-    incomplete_ids = [str(row.get("universal_id") or "") for row in per_game_summary if not bool(row.get("completed_seen"))]
-
-    manifest = {
-        "provider": provider_name,
-        "league": league,
-        "selection_mode": selection_mode,
-        "date_et": target_date_et if selection_mode == "today" else "",
-        "requested_ids": requested_ids,
-        "resolved_ids": resolved_ids,
-        "missing_ids": missing_ids,
-        "mismatched_ids": mismatched_ids,
-        "universal_id": (resolved_ids[0] if len(resolved_ids) == 1 else ""),
-        "game_label": (
-            ""
-            if len(resolved_ids) != 1
-            else str(getattr(provider_records.get(resolved_ids[0]), "game_label", "") or "")
-        ),
-        "provider_league_key": (
-            ""
-            if len(resolved_ids) != 1
-            else str(getattr(provider_records.get(resolved_ids[0]), "league_key", "") or "")
-        ),
-        "out_dir": str(run_dir),
-        "parsed_dir": str(parsed_root),
-        "raw_dir": str(raw_root),
-        "started_at_utc": started_at.isoformat(),
-        "ended_at_utc": ended_at.isoformat(),
-        "duration_seconds": round(max(0.0, time.time() - start_wall), 3),
-        "stop_reason": stop_reason,
-        "options": {
-            "tail_seconds": tail_seconds,
-            "max_duration_seconds": max_duration_seconds,
-            "read_timeout_seconds": read_timeout_seconds,
-            "max_duration_mode": "per_game_from_max(command_start,kickoff_ts_utc)",
-        },
-        "counts": {
-            "parsed": parsed_stats,
-            "raw": raw_stats,
-        },
-        "stream_metrics": stream_metrics,
-        "seen_any_payload": bool(seen_any_payload),
-        "catalog_size": len(catalog) if "catalog" in locals() else None,
-        "n_games_completed": int(n_games_completed),
-        "n_games_incomplete": int(max(0, len(resolved_ids) - n_games_completed)),
-        "incomplete_ids": incomplete_ids,
-        "per_game": per_game_summary,
-    }
-    manifest_path = run_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str), encoding="utf-8")
-
-    stream_profile = capture_stream_profile(provider_name)
-    scores_connected = (not bool(stream_profile.get("scores"))) or int((stream_metrics.get("scores") or {}).get("connect_successes") or 0) > 0
-    odds_connected = (not bool(stream_profile.get("odds"))) or int((stream_metrics.get("odds") or {}).get("connect_successes") or 0) > 0
-    pbp_connected = (not bool(stream_profile.get("playbyplay"))) or int((stream_metrics.get("playbyplay") or {}).get("connect_successes") or 0) > 0
-    if not (scores_connected and odds_connected and pbp_connected):
-        logger.error(
-            "provider capture failed to establish required streams: scores_connected=%s odds_connected=%s playbyplay_connected=%s manifest=%s",
-            scores_connected,
-            odds_connected,
-            pbp_connected,
-            str(manifest_path),
-        )
-        return 1
-    if stop_reason in {"no_games_for_today", "no_selected_ids", "no_resolved_ids"}:
-        logger.error("provider capture failed: reason=%s manifest=%s", stop_reason, str(manifest_path))
-        return 1
-    if int(n_games_completed) == int(len(resolved_ids)):
-        logger.info(
-            "provider capture complete: n_games=%d stop_reason=%s parsed_total=%s raw_total=%s manifest=%s",
-            len(resolved_ids),
-            stop_reason,
-            int(parsed_stats.get("total", 0)),
-            int(raw_stats.get("total", 0)),
-            str(manifest_path),
-        )
+            uid = str(getattr(rec, "provider_game_id", "") or getattr(rec, "uid", "") or "").strip()
+            if uid:
+                game_ids.append(uid)
+        game_ids = sorted(set(game_ids))
+        logger.info("Found %d games for %s on %s ET", len(game_ids), league, target_date_et)
+        if not game_ids and seen_leagues:
+            logger.info("Available leagues in catalog:")
+            for lk in sorted(seen_leagues):
+                logger.info("  %s", lk)
     else:
-        logger.warning(
-            "provider capture stopped with incomplete games: completed=%d/%d stop_reason=%s parsed_total=%s raw_total=%s manifest=%s",
-            int(n_games_completed),
-            len(resolved_ids),
-            stop_reason,
-            int(parsed_stats.get("total", 0)),
-            int(raw_stats.get("total", 0)),
-            str(manifest_path),
-        )
+        raw_ids = getattr(args, "universal_ids", None) or []
+        game_ids = sorted(set(str(uid).strip() for uid in raw_ids if str(uid).strip()))
+
+    if not game_ids:
+        logger.error("No game IDs resolved")
+        return 1
+
+    for gid in game_ids:
+        logger.info("  %s", gid)
+
+    # --- Output file ---
+    ts_label = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    out_path = os.path.join(out_dir, f"capture_{league}_{ts_label}.jsonl")
+    logger.info("Writing to %s", out_path)
+
+    # --- Connect and subscribe ---
+    provider.start()
+    provider.subscribe_scores(game_ids)
+
+    # --- Recording loop ---
+    frame_count = 0
+    max_dur = float(getattr(args, "max_duration_seconds", 0) or 21600.0)
+    started = time.time()
+    stop_reason = "max_duration"
+
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            while (time.time() - started) < max_dur:
+                raw = provider.recv_raw_score_frame(timeout=1.0)
+                if raw is None:
+                    continue
+                ts = time.time()
+                try:
+                    frame = json.loads(raw)
+                except Exception:
+                    frame = raw
+                f.write(json.dumps({"ts": ts, "frame": frame}) + "\n")
+                frame_count += 1
+                if frame_count % 100 == 0:
+                    f.flush()
+    except KeyboardInterrupt:
+        stop_reason = "keyboard_interrupt"
+
+    elapsed = time.time() - started
+    mins, secs = divmod(int(elapsed), 60)
+    logger.info(
+        "capture: %d games, %d frames, %dm%02ds, stopped by %s",
+        len(game_ids), frame_count, mins, secs, stop_reason,
+    )
     return 0
 
 
@@ -881,10 +502,6 @@ __all__ = [
     "run_provider_capture",
     "MarketSync",
     "build_sports_provider",
-    "_sanitize_capture_component",
     "_dedup_ids",
-    "_load_ids_from_file",
     "_provider_record_game_date_et",
-    "_count_jsonl_lines",
-    "_count_raw_lines_for_game",
 ]

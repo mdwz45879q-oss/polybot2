@@ -82,7 +82,6 @@ tests/test_polybot2_mapping.py
 tests/test_polybot2_market_sync_benchmark.py
 tests/test_polybot2_market_sync_cursor.py
 tests/test_polybot2_native_service_contracts.py
-tests/test_polybot2_provider_capture.py
 tests/test_polybot2_provider_sync.py
 tests/test_polybot2_resolver.py
 tests/test_polybot2_schema_v3.py

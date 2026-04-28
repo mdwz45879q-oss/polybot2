@@ -336,7 +336,7 @@ fn empty_send_batch_is_noop() {
 
 #[test]
 fn send_batch_emits_one_submitwork_per_call() {
-    use polymarket_client_sdk::clob::types::SignedOrder as SdkSignedOrder;
+    use polymarket_client_sdk_v2::clob::types::SignedOrder as SdkSignedOrder;
     // We can't easily fabricate an SdkSignedOrder for unit testing without
     // going live, so this test verifies the channel-send path indirectly: an
     // empty batch is a noop, and a non-empty batch consumes a SignedOrder

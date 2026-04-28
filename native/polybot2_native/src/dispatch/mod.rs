@@ -1,16 +1,16 @@
 use super::*;
-use polymarket_client_sdk::auth::state::Authenticated as SdkAuthenticatedState;
-use polymarket_client_sdk::auth::Normal as SdkAuthNormal;
-use polymarket_client_sdk::auth::{
+use polymarket_client_sdk_v2::auth::state::Authenticated as SdkAuthenticatedState;
+use polymarket_client_sdk_v2::auth::Normal as SdkAuthNormal;
+use polymarket_client_sdk_v2::auth::{
     Credentials as SdkCredentials, LocalSigner as SdkLocalSigner, Signer as _, Uuid,
 };
 pub(super) type CachedSigner = alloy::signers::local::PrivateKeySigner;
-use polymarket_client_sdk::clob::types::{
+use polymarket_client_sdk_v2::clob::types::{
     Amount as SdkAmount, OrderType as SdkOrderType, Side as SdkSide,
     SignatureType as SdkSignatureType, SignedOrder as SdkSignedOrder,
 };
-use polymarket_client_sdk::clob::{Client as SdkClient, Config as SdkConfig};
-use polymarket_client_sdk::types::{Address as SdkAddress, Decimal as SdkDecimal, U256 as SdkU256};
+use polymarket_client_sdk_v2::clob::{Client as SdkClient, Config as SdkConfig};
+use polymarket_client_sdk_v2::types::{Address as SdkAddress, Decimal as SdkDecimal, U256 as SdkU256};
 use std::str::FromStr;
 
 mod flow;

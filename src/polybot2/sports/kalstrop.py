@@ -1035,6 +1035,31 @@ class KalstropProvider(SportsDataProviderBase):
                     variables={"fixtureIds": sorted(resolved)},
                 )
 
+    def recv_raw_score_frame(self, timeout: float = 1.0) -> str | None:
+        """Read one raw text frame from the scores WebSocket.
+
+        Returns the raw JSON string exactly as Kalstrop sent it, or None on
+        timeout. No parsing, no dedup, no envelope — used by the capture
+        command to record raw provider data to disk.
+        """
+        ws = self._try_ensure_stream_ws(stream="scores", ensure=self._ensure_scores_ws)
+        if ws is None:
+            return None
+        try:
+            ws.settimeout(max(0.01, float(timeout)))
+        except Exception:
+            pass
+        try:
+            data = ws.recv()
+            if isinstance(data, bytes):
+                data = data.decode("utf-8", errors="replace")
+            return data
+        except Exception as exc:
+            if self._is_timeout_exc(exc):
+                return None
+            self._close_scores_ws()
+            return None
+
     def subscribe_odds(self, universal_ids: Sequence[str]) -> None:
         resolved = self.resolve_universal_ids(universal_ids=universal_ids)
         self._subscribed_odds_uids = set(resolved)
