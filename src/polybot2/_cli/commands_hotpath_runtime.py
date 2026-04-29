@@ -659,7 +659,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
 
             # --- 2. Sync provider catalog ---
             try:
-                cmd = ["polybot2", "provider", "sync", "--provider", provider_name, "--league", league_key] + db_args
+                cmd = ["polybot2", "provider", "sync", "--provider", provider_name] + db_args
                 logger.info("running: %s", " ".join(cmd))
                 subprocess.run(cmd, check=True, timeout=120)
             except Exception as exc:
@@ -670,7 +670,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
 
             # --- 3. Rebuild linking ---
             try:
-                cmd = ["polybot2", "link", "build", "--provider", provider_name, "--league", league_key] + db_args
+                cmd = ["polybot2", "link", "build", "--provider", provider_name, "--league-scope", "live"] + db_args
                 logger.info("running: %s", " ".join(cmd))
                 subprocess.run(cmd, check=True, timeout=60)
             except Exception as exc:
