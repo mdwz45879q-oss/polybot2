@@ -518,18 +518,44 @@ def run_hotpath_replay(args: Any, *, logger: logging.Logger) -> int:
     return 0
 
 
-def _auto_approve_pending_games(*, db: Any, run_id: int, provider: str, league: str, logger: logging.Logger) -> int:
-    """Approve all pending games in the link run scope. Returns count approved."""
-    scope = evaluate_hotpath_scope(
-        db=db, provider=provider, league=league, run_id=run_id,
-        now_ts_utc=int(time.time()),
-    )
+def _auto_approve_pending_games(*, db: Any, run_id: int, provider: str, logger: logging.Logger) -> int:
+    """Approve all pending games in the link run, matching what
+    ``link review session --run-id N`` would show.  No league or
+    open-target filtering — approve everything, let compile sort it out."""
+    rows = db.execute(
+        """
+        WITH latest_decisions AS (
+            SELECT d.*
+            FROM link_review_decisions d
+            INNER JOIN (
+                SELECT run_id, provider, provider_game_id, MAX(decision_id) AS max_decision_id
+                FROM link_review_decisions
+                WHERE run_id = ? AND provider = ?
+                GROUP BY run_id, provider, provider_game_id
+            ) x
+              ON x.max_decision_id = d.decision_id
+        )
+        SELECT
+            pg.provider_game_id,
+            COALESCE(ld.decision, '') AS decision
+        FROM link_run_provider_games pg
+        LEFT JOIN latest_decisions ld
+          ON ld.run_id = pg.run_id
+         AND ld.provider = pg.provider
+         AND ld.provider_game_id = pg.provider_game_id
+        WHERE pg.run_id = ?
+          AND pg.provider = ?
+          AND pg.parse_status = 'ok'
+        """,
+        (run_id, provider, run_id, provider),
+    ).fetchall()
     approved = 0
-    for row in scope.scope_rows:
-        decision = str(getattr(row, "decision", "") or "").strip().lower()
+    now_ts = int(time.time())
+    for row in rows:
+        decision = str(row["decision"] or "").strip().lower()
         if decision in {"approve", "reject", "skip"}:
             continue
-        gid = str(getattr(row, "provider_game_id", "") or "").strip()
+        gid = str(row["provider_game_id"] or "").strip()
         if not gid:
             continue
         db.linking.insert_review_decision(
@@ -539,7 +565,7 @@ def _auto_approve_pending_games(*, db: Any, run_id: int, provider: str, league: 
             decision="approve",
             note="auto-approved by hotpath live orchestrator",
             actor="orchestrator",
-            decided_at=int(time.time()),
+            decided_at=now_ts,
             commit=False,
         )
         approved += 1
@@ -657,7 +683,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
 
                 _auto_approve_pending_games(
                     db=db, run_id=current_run_id, provider=provider_name,
-                    league=league_key, logger=logger,
+                    logger=logger,
                 )
 
                 compiled_plan = compile_hotpath_plan(

@@ -49,7 +49,7 @@ class KalstropProviderConfig(SportsProviderConfig):
         catalog_sport_codes: Sequence[str] = ("baseball", "soccer"),
         catalog_types: Sequence[str] = ("live", "popular"),
         catalog_first: int = 6,
-        catalog_fixture_first: int = 3,
+        catalog_fixture_first: int = 50,
         catalog_max_outer_pages: int = 20,
         catalog_max_inner_pages: int = 20,
     ):
