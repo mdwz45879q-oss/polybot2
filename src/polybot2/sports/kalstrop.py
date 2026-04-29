@@ -77,7 +77,7 @@ class KalstropProviderConfig(SportsProviderConfig):
                 {
                     str(x or "").strip().lower()
                     for x in (catalog_types or ())
-                    if str(x or "").strip().lower() in {"live", "upcoming"}
+                    if str(x or "").strip().lower() in {"live", "upcoming", "popular"}
                 }
             )
         )

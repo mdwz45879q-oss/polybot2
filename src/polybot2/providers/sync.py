@@ -139,9 +139,9 @@ def sync_provider_games(
                 http_base=http_base,
                 ws_url=ws_url,
                 catalog_sport_codes=sport_codes,
-                catalog_types=("live", "upcoming"),
+                catalog_types=("live", "popular"),
                 catalog_first=6,
-                catalog_fixture_first=3,
+                catalog_fixture_first=50,
             )
         )
     try:
