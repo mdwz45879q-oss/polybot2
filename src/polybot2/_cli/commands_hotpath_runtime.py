@@ -764,7 +764,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             return
 
         try:
-            cmd = ["polybot2", "provider", "sync", "--provider", provider_name] + db_args
+            cmd = ["polybot2", "provider", "sync"] + db_args
             logger.info("running: %s", " ".join(cmd))
             subprocess.run(cmd, check=True, timeout=120)
         except Exception as exc:
