@@ -137,6 +137,15 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_run.add_argument("--force-launch", action="store_true", default=False)
     hotpath_run.add_argument("--with-observe", action="store_true", default=False)
 
+    hotpath_live = hotpath_sub.add_parser("live", help="Run hotpath with periodic plan refresh")
+    hotpath_live.add_argument("--provider", type=str, default="kalstrop")
+    hotpath_live.add_argument("--league", type=str, required=True)
+    hotpath_live.add_argument("--link-run-id", type=int, required=True)
+    hotpath_live.add_argument("--execution-mode", type=str, choices=["live", "paper"], required=True)
+    hotpath_live.add_argument("--refresh-interval", type=int, default=300,
+                              help="Seconds between plan refreshes (default: 300)")
+    hotpath_live.add_argument("--db", type=str, default="")
+
     hotpath_replay = hotpath_sub.add_parser("replay", help="Replay captured score stream through hotpath triggers")
     hotpath_replay.add_argument("--db", type=str, default="", help="Override SQLite DB path")
     hotpath_replay.add_argument("--provider", type=str, choices=["boltodds", "kalstrop"], default="")

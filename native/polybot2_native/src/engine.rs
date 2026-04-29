@@ -41,7 +41,6 @@ impl NativeMlbEngine {
             nrfi_resolved_games: Vec::new(),
             nrfi_first_inning_observed: Vec::new(),
             final_resolved_games: Vec::new(),
-            attempted: Vec::new(),
             last_emit_ns: Vec::new(),
             last_signature: Vec::new(),
         }
@@ -56,7 +55,6 @@ impl NativeMlbEngine {
         self.nrfi_resolved_games.fill(false);
         self.nrfi_first_inning_observed.fill(false);
         self.final_resolved_games.fill(false);
-        self.attempted.fill(false);
         self.last_emit_ns.fill(0);
         self.last_signature.fill(None);
     }
@@ -214,7 +212,6 @@ impl NativeMlbEngine {
         self.nrfi_resolved_games = vec![false; num_games];
         self.nrfi_first_inning_observed = vec![false; num_games];
         self.final_resolved_games = vec![false; num_games];
-        self.attempted = vec![false; num_targets];
         self.last_emit_ns = vec![0i64; num_targets];
         self.last_signature = vec![None; num_targets];
 
@@ -318,8 +315,9 @@ impl NativeMlbEngine {
         self.game_states[gi] = GameState::default();
         self.nrfi_first_inning_observed[gi] = false;
         // totals_final_under_emitted, nrfi_resolved_games, final_resolved_games,
-        // attempted, last_emit_ns, last_signature are intentionally preserved as
-        // tombstones — a repeated final frame must not re-emit intents.
+        // last_emit_ns, last_signature are intentionally preserved as tombstones
+        // — a repeated final frame must not re-emit intents. One-shot gating is
+        // enforced by the presign pool (depth=1, no refill), not by the engine.
     }
 
     #[allow(dead_code)]
@@ -394,10 +392,6 @@ impl NativeMlbEngine {
         for raw in raw_intents {
             let ti = raw.target_idx.0 as usize;
 
-            if self.attempted[ti] {
-                continue;
-            }
-
             let last_emit = self.last_emit_ns[ti];
             if self.decision_cooldown_ns > 0
                 && last_emit > 0
@@ -419,13 +413,12 @@ impl NativeMlbEngine {
                 }
             }
 
-            self.attempted[ti] = true;
             self.last_emit_ns[ti] = recv_ns;
             self.last_signature[ti] = Some(sig);
 
-            // Intent carries only TargetIdx — string fields are reconstructed
-            // from the registry at the dispatch handle (for fail-closed errors)
-            // and the submitter (for log output).
+            // One-shot gating is enforced by the presign pool: depth=1, no
+            // refill. Once pop_for_target() takes the signed order, the pool
+            // slot is None and any repeat intent fails closed at dispatch time.
             emitted.push(Intent { target_idx: raw.target_idx });
         }
 
@@ -763,7 +756,6 @@ mod tests {
     /// once after all `add_game` calls.
     fn sync_target_vecs(engine: &mut NativeMlbEngine) {
         let n = engine.target_slots.len();
-        engine.attempted.resize(n, false);
         engine.last_emit_ns.resize(n, 0);
         engine.last_signature.resize(n, None);
         engine.registry = Some(Arc::new(TargetRegistry {
@@ -781,7 +773,7 @@ mod tests {
             goals_away: Some(away),
             inning_number: Some(3),
             inning_half: "top",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         }
     }
@@ -811,13 +803,13 @@ mod tests {
         add_game(&mut engine, "g1", |_| {});
         sync_target_vecs(&mut engine);
 
-        let frame1 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"eventState":"live","homeScore":"0","awayScore":"0","matchStatusDisplay":[{"freeText":"1st inning top"}]}}}}}"#;
+        let frame1 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"homeScore":"0","awayScore":"0","matchStatusDisplay":[{"freeText":"1st inning top"}]}}}}}"#;
         let results1 = process_kalstrop_frame(&mut engine, frame1, 1000);
         assert_eq!(results1.len(), 1);
         assert!(results1[0].material);
         assert_eq!(results1[0].game_id, "g1");
 
-        let frame2 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"eventState":"live","homeScore":"1","awayScore":"0","matchStatusDisplay":[{"freeText":"1st inning top"}]}}}}}"#;
+        let frame2 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"homeScore":"1","awayScore":"0","matchStatusDisplay":[{"freeText":"1st inning top"}]}}}}}"#;
         let results2 = process_kalstrop_frame(&mut engine, frame2, 2000);
         assert_eq!(results2.len(), 1);
         assert!(results2[0].material);
@@ -831,12 +823,12 @@ mod tests {
         add_game(&mut engine, "g2", |_| {});
         sync_target_vecs(&mut engine);
 
-        let setup1 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"eventState":"live","homeScore":"0","awayScore":"0"}}}}}"#;
-        let setup2 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g2","matchSummary":{"eventState":"live","homeScore":"0","awayScore":"0"}}}}}"#;
+        let setup1 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"homeScore":"0","awayScore":"0","matchStatusDisplay":[{"freeText":"1st inning top"}]}}}}}"#;
+        let setup2 = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g2","matchSummary":{"homeScore":"0","awayScore":"0","matchStatusDisplay":[{"freeText":"1st inning top"}]}}}}}"#;
         process_kalstrop_frame(&mut engine, setup1, 1000);
         process_kalstrop_frame(&mut engine, setup2, 1000);
 
-        let batch_frame = r#"[{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"eventState":"live","homeScore":"1","awayScore":"0"}}}}},{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g2","matchSummary":{"eventState":"live","homeScore":"0","awayScore":"2"}}}}}]"#;
+        let batch_frame = r#"[{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g1","matchSummary":{"homeScore":"1","awayScore":"0","matchStatusDisplay":[{"freeText":"2nd inning top"}]}}}}},{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"g2","matchSummary":{"homeScore":"0","awayScore":"2","matchStatusDisplay":[{"freeText":"3rd inning bottom"}]}}}}}]"#;
         let results = process_kalstrop_frame(&mut engine, batch_frame, 3000);
         assert_eq!(results.len(), 2);
         assert!(results[0].material);
@@ -860,7 +852,7 @@ mod tests {
             goals_away: Some(0),
             inning_number: Some(1),
             inning_half: "top",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let _ = engine.process_tick(tick1);
@@ -873,7 +865,7 @@ mod tests {
             goals_away: Some(0),
             inning_number: Some(1),
             inning_half: "top",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let out = engine.process_tick(tick2);
@@ -898,7 +890,7 @@ mod tests {
             goals_away: Some(1),
             inning_number: Some(9),
             inning_half: "bottom",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let _ = engine.process_tick(tick1);
@@ -936,7 +928,7 @@ mod tests {
             goals_away: Some(0),
             inning_number: Some(2),
             inning_half: "top",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let out = engine.process_tick(tick);
@@ -961,7 +953,7 @@ mod tests {
             goals_away: Some(0),
             inning_number: Some(1),
             inning_half: "top",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let _ = engine.process_tick(tick1);
@@ -975,7 +967,7 @@ mod tests {
             goals_away: Some(0),
             inning_number: Some(1),
             inning_half: "top",
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let out = engine.process_tick(tick2);
@@ -1022,7 +1014,7 @@ mod tests {
             recv_monotonic_ns: 1000,
             goals_home: Some(0),
             goals_away: Some(0),
-            game_state: "live",
+            game_state: "LIVE",
             ..Default::default()
         };
         let out = engine.process_tick(tick);

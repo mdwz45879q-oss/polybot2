@@ -323,6 +323,7 @@ def compile_hotpath_plan(
     include_all_scope_games: bool = False,
     now_ts_utc: int | None = None,
     plan_horizon_hours: int | None = None,
+    exclude_strategy_keys: set[str] | None = None,
 ) -> CompiledPlan:
     policy = live_policy or load_live_trading_policy()
     scope = evaluate_hotpath_scope(
@@ -518,6 +519,9 @@ def compile_hotpath_plan(
             if strategy_key in strategy_keys_seen:
                 continue
             strategy_keys_seen.add(strategy_key)
+
+        if exclude_strategy_keys and strategy_key in exclude_strategy_keys:
+            continue
 
         game_bucket = by_game.setdefault(gid, {"markets": {}, "meta": scope_meta[gid]})
         market_bucket = game_bucket["markets"].setdefault(

@@ -12,3 +12,4 @@ artifacts/
 *.db
 .env
 .env.*
+/captures/

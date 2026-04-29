@@ -47,7 +47,7 @@ class KalstropProviderConfig(SportsProviderConfig):
         reconnect_sleep_seconds: float = 0.2,
         queue_maxsize: int = 50_000,
         catalog_sport_codes: Sequence[str] = ("baseball", "soccer"),
-        catalog_types: Sequence[str] = ("live", "upcoming"),
+        catalog_types: Sequence[str] = ("live", "popular"),
         catalog_first: int = 6,
         catalog_fixture_first: int = 3,
         catalog_max_outer_pages: int = 20,
@@ -661,6 +661,7 @@ class KalstropProvider(SportsDataProviderBase):
                                     "sport code not found" in detail
                                     or "unsupported" in detail
                                     or "invalid sport" in detail
+                                    or "unknown argument" in detail
                                 )
                             )
                         )
@@ -1186,18 +1187,11 @@ class KalstropProvider(SportsDataProviderBase):
             return None
 
     @staticmethod
-    def _score_completed(event_state: str) -> bool:
-        state = str(event_state or "").strip().upper()
-        if not state:
-            return False
-        return state in {
-            "FINISHED",
-            "ENDED",
-            "MATCH_COMPLETED",
-            "CLOSED",
-            "FINAL",
-            "FT",
-        }
+    def _score_completed_from_free_text(free_text: str) -> bool:
+        """Detect game completion from matchStatusDisplay freeText.
+        Kalstrop sends 'Ended' when a game finishes."""
+        s = str(free_text or "").strip().lower()
+        return s in {"ended", "final", "game over", "finished", "ft"}
 
     @staticmethod
     def _extract_free_text(match_summary: dict[str, Any]) -> str:
@@ -1354,10 +1348,9 @@ class KalstropProvider(SportsDataProviderBase):
                 continue
             rec = self._get_provider_record(uid)
             match_summary = row.get("matchSummary") if isinstance(row.get("matchSummary"), dict) else {}
-            event_state = str(match_summary.get("eventState") or "")
             elapsed_ms = self._to_int_or_none(match_summary.get("timeElapsed"))
-            period_text = self._extract_free_text(match_summary) or event_state
-            match_completed = self._score_completed(event_state)
+            period_text = self._extract_free_text(match_summary)
+            match_completed = self._score_completed_from_free_text(period_text)
             row_payload = dict(row)
             row_payload["_hotpath_baseball"] = self._hotpath_baseball_fields(
                 match_summary=match_summary,
@@ -1375,7 +1368,7 @@ class KalstropProvider(SportsDataProviderBase):
                     away_team=str((rec.away_team_raw if rec else "") or ""),
                     period=period_text,
                     elapsed_time_seconds=(None if elapsed_ms is None else int(elapsed_ms / 1000)),
-                    pre_match=(None if not event_state else event_state.strip().upper() == "PREMATCH"),
+                    pre_match=None,  # Prematch games don't produce WS frames
                     match_completed=match_completed,
                     clock_running=(None if match_summary.get("clockRunning") is None else bool(match_summary.get("clockRunning"))),
                     home_score=self._to_int_or_none(match_summary.get("homeScore")),

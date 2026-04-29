@@ -10,16 +10,10 @@ pub(crate) fn parse_tick_from_kalstrop_update(
     recv_monotonic_ns: i64,
 ) -> Tick {
     let summary = update.match_summary.as_ref();
-    let event_state = summary.and_then(|s| s.event_state).unwrap_or("");
     let free_text = summary
         .and_then(|s| s.first_free_text)
         .unwrap_or("");
-    let period_text = if free_text.is_empty() {
-        event_state
-    } else {
-        free_text
-    };
-    let (inning_number, inning_half) = parse_period(period_text);
+    let (inning_number, inning_half) = parse_period(free_text);
 
     Tick {
         universal_id: update.fixture_id.to_owned(),
@@ -33,12 +27,12 @@ pub(crate) fn parse_tick_from_kalstrop_update(
             .and_then(|s| s.parse().ok()),
         inning_number,
         inning_half,
-        match_completed: if event_state.is_empty() {
+        match_completed: if free_text.is_empty() {
             None
         } else {
-            Some(is_completed_state(event_state))
+            Some(is_completed_free_text(free_text))
         },
-        game_state: normalize_game_state(event_state),
+        game_state: normalize_game_state_from_free_text(free_text),
     }
 }
 
@@ -68,7 +62,7 @@ pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>, recv_monotonic_ns:
         inning_number: get_i64_opt(event, "inning_number"),
         inning_half: map_inning_half(&inning_half_str),
         match_completed: get_bool_opt(event, "match_completed"),
-        game_state: normalize_game_state(&get_str(event, "game_state")),
+        game_state: normalize_game_state_from_free_text(&get_str(event, "game_state")),
     }
 }
 
@@ -83,7 +77,7 @@ fn parse_tick_from_event(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -> Ti
         inning_number: None,
         inning_half: "",
         match_completed,
-        game_state: normalize_game_state(&get_attr_str(event, "game_state")),
+        game_state: normalize_game_state_from_free_text(&get_attr_str(event, "game_state")),
     }
 }
 
@@ -177,62 +171,28 @@ fn map_inning_half(s: &str) -> &'static str {
     }
 }
 
-fn is_completed_state(event_state: &str) -> bool {
-    let s = event_state.trim();
-    s.eq_ignore_ascii_case("FINISHED")
-        || s.eq_ignore_ascii_case("ENDED")
-        || s.eq_ignore_ascii_case("MATCH_COMPLETED")
-        || s.eq_ignore_ascii_case("CLOSED")
-        || s.eq_ignore_ascii_case("FINAL")
+/// Detect game completion from `matchStatusDisplay[0].freeText`.
+/// Kalstrop sends "Ended" when a game finishes.
+fn is_completed_free_text(free_text: &str) -> bool {
+    let s = free_text.trim();
+    s.eq_ignore_ascii_case("Ended")
+        || s.eq_ignore_ascii_case("Final")
+        || s.eq_ignore_ascii_case("Game Over")
+        || s.eq_ignore_ascii_case("Finished")
         || s.eq_ignore_ascii_case("FT")
-        || s.eq_ignore_ascii_case("COMPLETE")
-        || s.eq_ignore_ascii_case("COMPLETED")
 }
 
-pub(crate) fn normalize_game_state(event_state: &str) -> &'static str {
-    let s = event_state.trim();
+/// Derive game state from freeText. Prematch games don't produce WS frames,
+/// so any non-empty freeText that isn't a completion state means the game is live.
+pub(crate) fn normalize_game_state_from_free_text(free_text: &str) -> &'static str {
+    let s = free_text.trim();
     if s.is_empty() {
         return "UNKNOWN";
     }
-    if s.eq_ignore_ascii_case("closed")
-        || s.eq_ignore_ascii_case("resolved")
-        || s.eq_ignore_ascii_case("ended")
-        || s.eq_ignore_ascii_case("finished")
-        || s.eq_ignore_ascii_case("final")
-        || s.eq_ignore_ascii_case("complete")
-        || s.eq_ignore_ascii_case("completed")
-        || s.eq_ignore_ascii_case("cancelled")
-        || s.eq_ignore_ascii_case("canceled")
-        || s.eq_ignore_ascii_case("ft")
-    {
+    if is_completed_free_text(s) {
         return "FINAL";
     }
-    if s.eq_ignore_ascii_case("live")
-        || s.eq_ignore_ascii_case("inplay")
-        || s.eq_ignore_ascii_case("in_play")
-        || s.eq_ignore_ascii_case("ongoing")
-        || s.eq_ignore_ascii_case("in_progress")
-        || s.eq_ignore_ascii_case("started")
-        || s.eq_ignore_ascii_case("halftime")
-        || s.eq_ignore_ascii_case("overtime")
-    {
-        return "LIVE";
-    }
-    if s.eq_ignore_ascii_case("scheduled")
-        || s.eq_ignore_ascii_case("upcoming")
-        || s.eq_ignore_ascii_case("not_started")
-        || s.eq_ignore_ascii_case("not started")
-        || s.eq_ignore_ascii_case("pending")
-        || s.eq_ignore_ascii_case("pre")
-        || s.eq_ignore_ascii_case("pregame")
-        || s.eq_ignore_ascii_case("pre_game")
-        || s.eq_ignore_ascii_case("pre-match")
-        || s.eq_ignore_ascii_case("pre_match")
-        || s.eq_ignore_ascii_case("prematch")
-    {
-        return "NOT STARTED";
-    }
-    "UNKNOWN"
+    "LIVE"
 }
 
 // ---------------------------------------------------------------------------

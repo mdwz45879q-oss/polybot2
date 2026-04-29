@@ -154,7 +154,7 @@ impl NativeHotPathRuntime {
             ) {
                 if dispatch_cfg.presign_enabled && !all_plan_tokens.is_empty() {
                     let warm_result = py.allow_threads(|| {
-                        match TokioBuilder::new_current_thread().enable_all().build() {
+                        match TokioBuilder::new_multi_thread().enable_all().build() {
                             Ok(rt) => rt.block_on(async {
                                 submitter.ensure_sdk_runtime_async().await?;
                                 let client = submitter.sdk_client_ref()?.clone();

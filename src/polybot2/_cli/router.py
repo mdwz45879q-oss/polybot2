@@ -11,7 +11,7 @@ from polybot2._cli.commands_data_provider import (
     run_provider_capture,
     run_provider_sync,
 )
-from polybot2._cli.commands_hotpath_runtime import run_hotpath, run_hotpath_observe, run_hotpath_replay
+from polybot2._cli.commands_hotpath_runtime import run_hotpath, run_hotpath_live, run_hotpath_observe, run_hotpath_replay
 from polybot2._cli.commands_link import run_link_build, run_link_report, run_link_review, run_mapping_validate
 
 
@@ -35,6 +35,8 @@ async def dispatch(args: Any, *, logger: logging.Logger) -> int:
         return run_link_review(args, logger=logger)
     if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "run":
         return run_hotpath(args, logger=logger)
+    if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "live":
+        return run_hotpath_live(args, logger=logger)
     if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "replay":
         return run_hotpath_replay(args, logger=logger)
     if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "observe":

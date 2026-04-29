@@ -44,11 +44,12 @@ polybot2 provider sync       → SQLite (provider games)
 polybot2 link build          → SQLite (link runs, bindings)
 polybot2 link review session → SQLite (decisions)
 polybot2 hotpath run         → Compiled plan → Rust runtime → WS → engine → DispatchHandle → channel → submitter → CLOB
+polybot2 hotpath live        → Orchestrator: periodic data sync → provider sync → link build → recompile plan → restart hotpath
 ```
 
 ### Rust Native Hotpath (`native/polybot2_native/src/`)
 
-The hot path is split across two threads. The **WS thread** parses frames, evaluates the plan, pops presigned orders for all intents in the frame, and hands them to the submitter as one `SubmitWork::Batch` — no HTTP, no string allocation on the success path. The **submitter thread** owns the SDK client, drains the channel (coalescing across frames up to 15 orders), posts to the CLOB, and logs outcomes.
+The hot path is split across two threads. The **WS thread** parses frames, evaluates the plan, pops presigned orders for all intents in the frame, and hands them to the submitter as one `SubmitWork::Batch` — no HTTP, no string allocation on the success path. The **submitter thread** owns the SDK client, spawns each batch as a concurrent task (up to 3 in-flight via Semaphore), posts to the CLOB, and logs outcomes.
 
 | Module | Role |
 |--------|------|
@@ -110,7 +111,7 @@ At plan load, `engine.load_plan` interns each `provider_game_id` → `GameIdx(u1
 - `moneyline_home`, `moneyline_away`: `Option<TargetIdx>` — direct slot access.
 - `spreads: Vec<(SpreadSide, f64, TargetIdx)>` — small, iterated at game end.
 
-Per-game state (rows, GameState, resolution flags) is stored in `Vec<...>` indexed by `GameIdx`. The one-shot filter is `attempted: Vec<bool>` indexed by `TargetIdx`. Cooldown/debounce tracking uses `last_emit_ns: Vec<i64>` and `last_signature: Vec<Option<DecisionSig>>` indexed by `TargetIdx`. `DecisionSig { token_idx: TokenIdx }` is `Copy` — comparison is integer equality, no string allocation.
+Per-game state (rows, GameState, resolution flags) is stored in `Vec<...>` indexed by `GameIdx`. Cooldown/debounce tracking uses `last_emit_ns: Vec<i64>` and `last_signature: Vec<Option<DecisionSig>>` indexed by `TargetIdx`. `DecisionSig { token_idx: TokenIdx }` is `Copy` — comparison is integer equality, no string allocation. One-shot gating is enforced by the presign pool (depth=1, `Option::take()`), not by the engine — there is no `attempted` bitset.
 
 The only string hash on the live path is `game_id_to_idx.get(fixture_id)` — one `HashMap::get` per tick. After filtering, the engine emits `Intent { target_idx: TargetIdx }` (`Copy`, no strings). String resolution happens only at the FFI boundary (`process_score_event` looks up via the engine's own `tokens`/`target_slots`) and on the submitter (via the shared `Arc<TargetRegistry>` at log time). `line_key()` is dead code on the hot path; it remains in `eval.rs` only as a test helper (gated `#[cfg(test)]`).
 
@@ -202,7 +203,7 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 4. **Totals over crossing:** For a score change from `prev` to `now`, iterate `over_lines` and fire any with `half_int in [prev, now)`. Direct array indexing — no string keys, no HashMap.
 
-5. **One-shot intents:** Each `TargetIdx` can emit at most one intent per session, tracked via `attempted: Vec<bool>` bitset. The WS thread sets `attempted[ti] = true` before emitting the intent, so a dropped/closed channel cannot cause re-emission of the same intent. Cleared on game cleanup (post-final).
+5. **One-shot intents:** Each token can fire at most once per session, enforced by the presign pool (depth=1, `Option::take()`). Once `pop_for_target` takes the signed order, the pool slot is `None` and any repeat intent fails closed at dispatch time. There is no engine-side `attempted` bitset — the pool is the sole gate.
 
 6. **Independent evaluation:** `evaluate_totals`, `evaluate_nrfi`, `evaluate_final` all run on every tick (not an if/else chain). Each takes `&mut self` only to update its own resolution flags (`Vec<bool>` writes); no string allocations.
 
@@ -227,13 +228,45 @@ polybot2 link build --provider kalstrop --league mlb --db path.sqlite
 polybot2 link review session --provider kalstrop --league mlb --link-run-id N --db path.sqlite
 polybot2 hotpath run --provider kalstrop --league mlb --link-run-id N --execution-mode paper
 polybot2 hotpath run --provider kalstrop --league mlb --link-run-id N
+polybot2 hotpath live --league mlb --link-run-id N --execution-mode live --refresh-interval 300
 polybot2 hotpath observe --log-file path/to/hotpath_42_*.jsonl   # live terminal scoreboard
 polybot2 hotpath observe --run-id 42 --link-run-id N --db path.sqlite  # auto-discover log, resolve team names
 polybot2 hotpath replay --provider kalstrop --league mlb --link-run-id N --capture-manifest path.json
+polybot2 provider capture --league mlb --today --out ./captures   # raw score frame recording
 polybot2 mapping validate
 ```
 
-The prerequisite pipeline must run in order before the hotpath: data sync → provider sync → link build → link review.
+The prerequisite pipeline must run in order before the hotpath: data sync → provider sync → link build → link review. The `hotpath live` command automates this cycle with periodic refresh.
+
+### Hotpath Live Orchestrator
+
+`polybot2 hotpath live` runs the hotpath with periodic stop/restart for plan refresh. On each cycle: data sync → provider sync → link build → auto-approve new bindings → compile plan (excluding already-fired strategy keys) → start hotpath → wait `--refresh-interval` → stop → repeat. This allows newly created Polymarket markets (e.g., new totals lines added mid-game) to enter the compiled plan without manual intervention.
+
+Key features:
+- **`.env` auto-loading** — reads `.env` from the working directory at startup; env vars propagate to subprocess calls (data sync, provider sync, link build).
+- **Dynamic `run_id`** — after each `link build`, resolves the latest `run_id` from the database. New link runs with new game bindings are picked up automatically.
+- **Fired strategy key exclusion** — reads all `hotpath_*.jsonl` log files to collect strategy keys from successfully dispatched orders (`ev=order, ok=true`). These are passed to `compile_hotpath_plan(exclude_strategy_keys=...)` so already-traded targets are excluded from the new plan.
+- **Auto-approve** — inserts `decision="approve"` for all pending game bindings in the link run scope. No manual review needed during live operation.
+
+## Kalstrop Provider (Score Data)
+
+Kalstrop has two separate APIs:
+
+**V1 (Odds API)** — `sportsapi.kalstropservice.com/odds_v1/v1`. HMAC-signed GraphQL WS + REST. Betradar-backed. This is what the Rust hotpath connects to for live score streaming. Supports baseball and soccer.
+- **WS:** `sportsMatchStateUpdatedV2` subscription by `fixtureIds` (UUIDs like `d3f41158-...`). Prematch games produce no WS frames — frames start at kickoff/first pitch.
+- **REST catalog:** `/sports/{sport}/live` and `/sports/{sport}/popular` (live + prematch). The `upcoming` endpoint was broken (returns empty); `popular` is the current replacement. Config default is `catalog_types = ("live", "popular")`.
+- **Breaking change (April 2026):** `eventState` field removed from WS `matchSummary` entirely (not renamed — absent). Game completion is now detected from `matchStatusDisplay[0].freeText` containing `"Ended"`. The Rust parser (`parse.rs`) and Python provider (`kalstrop.py`) use `is_completed_free_text()` / `_score_completed_from_free_text()` which check for "Ended", "Final", "Game Over", "Finished", "FT".
+
+**V2 (Live Stats API)** — `stats.kalstropservice.com/api/v2`. No auth required. BetGenius-backed Socket.IO. Supports football (soccer), basketball, tennis. **Does not support baseball.**
+- **REST:** `/sports` → `/sports/{slug}/competitions` → `/competitions/{cat}/{tourn}/fixtures` → `/fixtures/{event_id}/providers` to resolve BetGenius `fixture_id`.
+- **Socket.IO:** `subscribe` with `{fixtureId, activeContent: "court"}` → `genius_update` events with `scoreboardInfo` (live scores, phases, match actions).
+- **Provider resolution** can fail with 502 near kickoff; retries needed.
+
+The V1 and V2 APIs use **different ID spaces**. V1 fixture IDs are UUIDs; V2 uses numeric `event_id`s. The V2 provider resolution maps `event_id` → BetGenius `fixture_id` (also numeric). Neither maps to the other directly.
+
+For the Rust hotpath, only V1 is used (WS score streaming). V2 is used for soccer fixture discovery and Socket.IO live stats in the `soccer_full_capture.py` research tool.
+
+Documentation: `research/kalstrop_api_documentation.md` covers the V2 API flow (steps 1-5).
 
 ## Environment Variables
 
@@ -257,7 +290,7 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). The hotp
 - SDK config uses `use_server_time(false)` to avoid a `GET /time` round-trip before every order POST. Host clock must be disciplined with chrono/NTP on the deployment target.
 - Multi-intent frames batch in `process_decoded_frame_sync` (one Batch per frame). The submitter dispatcher `tokio::spawn`s each batch immediately as a concurrent task (max 3 in-flight via `Semaphore`), routing 1-item batches to `post_order` and larger batches to `post_orders` (chunked at 15). Empty `order_id` with `success: true` from the batch endpoint is treated as failure (`map_post_response`).
 - Parsing uses zero-allocation byte-level scanning (`eq_ignore_ascii_case`, byte accumulator for numbers) — no `to_lowercase()`/`to_uppercase()` heap allocations on the tick path.
-- Final-game cleanup (`cleanup_completed_game_idx`) is deferred until after intents are selected, not during `evaluate_final`. `final_resolved_games[gi] = true` blocks re-evaluation immediately; cleanup runs in `process_tick` before returning. Cleanup clears only lightweight row data (`rows`, `game_states`, `nrfi_first_inning_observed`); completion tombstones (`totals_final_under_emitted`, `nrfi_resolved_games`, `attempted`, `last_emit_ns`, `last_signature`) are preserved for the session to prevent duplicate emission from repeated final frames.
+- Final-game cleanup (`cleanup_completed_game_idx`) is deferred until after intents are selected, not during `evaluate_final`. `final_resolved_games[gi] = true` blocks re-evaluation immediately; cleanup runs in `process_tick` before returning. Cleanup clears only lightweight row data (`rows`, `game_states`, `nrfi_first_inning_observed`); completion tombstones (`totals_final_under_emitted`, `nrfi_resolved_games`, `last_emit_ns`, `last_signature`) are preserved for the session to prevent duplicate emission from repeated final frames.
 - Tests use temp-path `LogWriter`s (no actual log inspection in non-live tests). Live tests construct an `OrderSubmitter` directly and call `submit_order_async` or `submit_signed_chunked_async`, bypassing the channel.
 
 ## Latency Optimization Roadmap
@@ -284,12 +317,14 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 10. **Per-order deadline + drop-stale — resolved via concurrent submitter.** Head-of-line blocking was the root cause of stale orders; with 3 concurrent submit slots, frame 2's HTTP call starts immediately without waiting for frame 1's round-trip. The channel is still unbounded but the stale-order window is now one RTT per slot (~100-200ms × 3) rather than serial (~N × 200ms). A deadline mechanism is no longer the priority fix.
 
-11. **Deferred final-game cleanup — DONE.** `cleanup_completed_game_idx` now preserves all tombstones (`attempted`, `totals_final_under_emitted`, `nrfi_resolved_games`, `last_emit_ns`, `last_signature`) and only clears lightweight row data. The `all_target_indices()` Vec allocation is removed entirely.
+11. **Deferred final-game cleanup — DONE.** `cleanup_completed_game_idx` now preserves all tombstones (`totals_final_under_emitted`, `nrfi_resolved_games`, `last_emit_ns`, `last_signature`) and only clears lightweight row data. The `all_target_indices()` Vec allocation is removed entirely.
 
 12. **Benchmark harness — pending (Phase 4).** No `criterion` or `iai-callgrind` benchmarks exist. Required to validate Phase 2 didn't regress and to inform any future revisit of pre-serialization.
 
 13. **CLOB V2 SDK migration — DONE.** `polymarket-client-sdk 0.4.4` → `polymarket_client_sdk_v2 0.5.1`. Same alloy 1.6.3 pin, same builder/sign/post API surface. V2 order format (removes `nonce`/`taker`/`expiration`/`feeRateBps`; adds `timestamp`/`metadata`/`builder`) is handled by the SDK internally. Collateral changed from USDC.e to pUSD (transparent to order construction). Live execution tests validated against V2 CLOB post-cutover.
 
 14. **`send_batch` zero-allocation success path — DONE.** `DispatchHandle::send_batch` sends first, recovers the batch from `SendError` on failure for diagnostics. No `Vec<TargetIdx>` allocation before the channel send.
+
+15. **Presign warmup parallelized — DONE.** Warmup Tokio runtime uses `new_multi_thread()` so `tokio::spawn`ed ECDSA tasks run on real OS threads. ~135 tokens warm up in ~1-2s instead of ~5s (single-threaded cooperative scheduling).
 
 See `LATENCY_AUDIT.md` for the source-level audit and `AUDIT_RESPONSE.md` for per-finding rationale and phasing.

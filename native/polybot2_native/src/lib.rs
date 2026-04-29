@@ -346,7 +346,6 @@ struct NativeMlbEngine {
     nrfi_first_inning_observed: Vec<bool>,
     final_resolved_games: Vec<bool>,
 
-    attempted: Vec<bool>,
     last_emit_ns: Vec<i64>,
     last_signature: Vec<Option<DecisionSig>>,
 }

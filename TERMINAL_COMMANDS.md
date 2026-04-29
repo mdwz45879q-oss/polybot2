@@ -19,7 +19,7 @@ pip install --force-reinstall native/polybot2_native/target/wheels/polybot2_nati
 maturin develop --manifest-path native/polybot2_native/Cargo.toml
 ```
 
-Load environment variables: 
+Load environment variables (required for most commands; `hotpath live` auto-loads `.env`):
 
 ```bash 
 set -a; source .env; set +a
@@ -199,30 +199,48 @@ jq 'select(.ev == "tick" and .gid == "85c66fa4-...")' logs/hotpath_123_*.jsonl
 tail -f logs/hotpath_123_*.jsonl | jq --unbuffered 'select(.ev == "order")'
 ```
 
-## 6) One-Game Websocket Capture
+## 6) Raw Score Frame Capture
+
+Capture all of today's games for a league:
+
+```bash
+polybot2 provider capture --league mlb --today --out ./captures
+```
+
+Capture specific fixture(s):
 
 ```bash
 polybot2 provider capture \
   --universal-id "f325c377-f1cb-44db-b615-dad9961d2317" \
   --league mlb \
-  --out /Users/reda/polymarket_bot/captures \
-  --tail-seconds 120 \
+  --out ./captures \
   --max-duration-seconds 21600
 ```
 
 What it does:
-- Uses provider stream profile for one game:
-  - Kalstrop (default): scores + odds.
-  - BoltOdds override: scores + play-by-play.
-- Writes `raw/` and `parsed/` JSONL artifacts plus `manifest.json`.
-- Auto-stops on completion + tail window, or max duration.
+- Connects to Kalstrop V1 WS scores stream only (no odds, no parsing).
+- Writes raw WS frames to a single JSONL file: `capture_{league}_{timestamp}.jsonl`.
+- Each line: `{"ts": <epoch_float>, "frame": <raw WS JSON>}`.
+- Stops on Ctrl+C or `--max-duration-seconds`.
 
-Override provider explicitly when needed:
+Override date for `--today`:
 
 ```bash
-polybot2 provider sync --provider boltodds
-polybot2 hotpath run --provider boltodds --league mlb --link-run-id 123
+polybot2 provider capture --league mlb --today --date-et 2026-04-28 --out ./captures
 ```
+
+## 6b) Hotpath Live (Production Orchestrator)
+
+```bash
+polybot2 hotpath live --league mlb --link-run-id 123 --execution-mode live --refresh-interval 300
+```
+
+What it does:
+- Runs the hotpath with periodic stop/restart for plan refresh.
+- Each cycle: data sync → provider sync → link build → auto-approve → compile plan → start hotpath.
+- Automatically loads `.env` from the working directory.
+- Excludes already-fired strategy keys from new plans (reads prior JSONL logs).
+- Resolves the latest `run_id` after each `link build` (handles incrementing IDs).
 
 ## 7) Useful DB/Run-ID Inspection Commands
 

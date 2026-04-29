@@ -32,8 +32,6 @@ pub(crate) struct KalstropUpdate<'a> {
 
 #[derive(Deserialize)]
 pub(crate) struct KalstropMatchSummary<'a> {
-    #[serde(rename = "eventState")]
-    pub event_state: Option<&'a str>,
     #[serde(rename = "homeScore")]
     pub home_score: Option<&'a str>,
     #[serde(rename = "awayScore")]
