@@ -140,7 +140,8 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_live = hotpath_sub.add_parser("live", help="Run hotpath with periodic plan refresh")
     hotpath_live.add_argument("--provider", type=str, default="kalstrop")
     hotpath_live.add_argument("--league", type=str, required=True)
-    hotpath_live.add_argument("--link-run-id", type=int, required=True)
+    hotpath_live.add_argument("--link-run-id", type=int, default=None,
+                              help="Initial link run ID (optional — auto-resolved from latest link build)")
     hotpath_live.add_argument("--execution-mode", type=str, choices=["live", "paper"], required=True)
     hotpath_live.add_argument("--refresh-interval", type=int, default=300,
                               help="Seconds between plan refreshes (default: 300)")

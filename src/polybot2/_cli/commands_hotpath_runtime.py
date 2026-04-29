@@ -602,11 +602,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     if not league_key:
         logger.error("--league is required")
         return 1
-    initial_run_id = _int_or_none(getattr(args, "link_run_id", None))
-    if initial_run_id is None:
-        logger.error("--link-run-id is required")
-        return 1
-    current_run_id = initial_run_id
+    current_run_id: int | None = _int_or_none(getattr(args, "link_run_id", None))
     execution_mode = str(getattr(args, "execution_mode", "live") or "live").strip().lower()
     refresh_interval = int(getattr(args, "refresh_interval", 300) or 300)
 
@@ -641,176 +637,196 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     prev_term = signal.signal(signal.SIGTERM, _handle_signal)
     iteration = 0
 
+    def _compile_and_start(iteration: int) -> _NativeHotPathService | None:
+        """Compile plan from current DB state and start a new hotpath.
+        Returns the running service, or None on failure."""
+        nonlocal current_run_id
+        try:
+            with open_database(runtime) as db:
+                latest_run_id = _get_latest_link_run_id(db, provider_name, league_key)
+                if latest_run_id is None:
+                    logger.error("no link runs found for provider=%s league=%s", provider_name, league_key)
+                    return None
+                if latest_run_id != current_run_id:
+                    if current_run_id is not None:
+                        logger.info("run_id updated: %d → %d", current_run_id, latest_run_id)
+                    else:
+                        logger.info("run_id resolved: %d", latest_run_id)
+                    current_run_id = latest_run_id
+
+                _auto_approve_pending_games(
+                    db=db, run_id=current_run_id, provider=provider_name,
+                    league=league_key, logger=logger,
+                )
+
+                compiled_plan = compile_hotpath_plan(
+                    db=db,
+                    provider=provider_name,
+                    league=league_key,
+                    run_id=int(current_run_id),
+                    live_policy=live_policy,
+                    require_all_approved=True,
+                    now_ts_utc=int(time.time()),
+                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                    exclude_strategy_keys=fired_strategy_keys if fired_strategy_keys else None,
+                )
+
+                resolver = BindingResolver(db=db)
+                resolver.reload()
+
+                try:
+                    prov = build_sports_provider(provider_name=provider_name, logger=logger)
+                except ValueError as exc:
+                    logger.error("provider init failed: %s", exc)
+                    return None
+
+                _scope_provider_catalog_to_league(
+                    provider=prov, provider_name=provider_name, league_key=league_key,
+                )
+
+                exec_cfg_overrides: dict[str, Any] = {}
+                if require_presign:
+                    exec_cfg_overrides["presign_enabled"] = True
+                exec_cfg = FastExecutionConfig.from_env(exec_cfg_overrides)
+                exec_service = FastExecutionService(config=exec_cfg)
+
+                hp_cfg = HotPathConfig(
+                    run_scores=True,
+                    run_odds=False,
+                    read_timeout_seconds=0.05,
+                    native_engine_enabled=True,
+                    native_engine_required=True,
+                )
+                hotpath = NativeHotPathService(
+                    provider=prov,
+                    execution=exec_service,
+                    execution_mode=execution_mode,
+                    config=hp_cfg,
+                    binding_resolver=resolver,
+                )
+                hotpath.set_compiled_plan(compiled_plan)
+                hotpath.set_order_policy(order_policy)
+
+                plan_uids = [
+                    str(g.provider_game_id) for g in tuple(compiled_plan.games)
+                    if str(g.provider_game_id or "").strip()
+                ]
+                env_uids = [
+                    x.strip()
+                    for x in str(os.getenv("POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS") or "").split(",")
+                    if x.strip()
+                ]
+                wanted = _apply_env_uid_filter(uids=sorted(set(plan_uids)), env_uids=env_uids)
+
+                if hasattr(hotpath, "set_runtime_timing_policy"):
+                    hotpath.set_runtime_timing_policy(
+                        subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
+                        subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
+                    )
+                hotpath.set_subscriptions(wanted)
+
+                template_orders = _build_hotpath_template_orders(
+                    compiled_plan=compiled_plan, order_policy=order_policy,
+                )
+                if template_orders and hasattr(hotpath, "prewarm_presign"):
+                    hotpath.prewarm_presign(template_orders)
+
+                n_targets = sum(
+                    len(m.targets) for g in compiled_plan.games for m in g.markets
+                )
+                logger.info(
+                    "hotpath starting: cycle=%d games=%d targets=%d excluded=%d subs=%d",
+                    iteration, len(compiled_plan.games), n_targets,
+                    len(fired_strategy_keys), len(wanted),
+                )
+
+                hotpath.start()
+                return hotpath
+
+        except HotPathPlanError as exc:
+            logger.error("plan compile failed: code=%s message=%s", exc.code, exc)
+            return None
+        except Exception as exc:
+            logger.error("compile/start failed: %s: %s", type(exc).__name__, exc)
+            return None
+
+    def _sync_data_and_linking() -> None:
+        """Run data sync, provider sync, and link build. These only touch
+        the SQLite database and can run while the hotpath is live."""
+        try:
+            cmd = ["polybot2", "data", "sync", "--markets", "--open-only"] + db_args
+            logger.info("running: %s", " ".join(cmd))
+            subprocess.run(cmd, check=True, timeout=120)
+        except Exception as exc:
+            logger.warning("data sync failed (continuing): %s", exc)
+
+        if stop_requested:
+            return
+
+        try:
+            cmd = ["polybot2", "provider", "sync", "--provider", provider_name] + db_args
+            logger.info("running: %s", " ".join(cmd))
+            subprocess.run(cmd, check=True, timeout=120)
+        except Exception as exc:
+            logger.warning("provider sync failed (continuing): %s", exc)
+
+        if stop_requested:
+            return
+
+        try:
+            cmd = ["polybot2", "link", "build", "--provider", provider_name, "--league-scope", "live"] + db_args
+            logger.info("running: %s", " ".join(cmd))
+            subprocess.run(cmd, check=True, timeout=60)
+        except Exception as exc:
+            logger.warning("link build failed (continuing): %s", exc)
+
     try:
+        # --- Initial sync before first cycle ---
+        logger.info("=== initial sync ===")
+        _sync_data_and_linking()
+
+        hotpath: _NativeHotPathService | None = None
+
         while not stop_requested:
             iteration += 1
             logger.info("=== refresh cycle %d ===", iteration)
 
-            # --- 1. Sync market data (open markets only — full historical sync is too slow) ---
-            try:
-                cmd = ["polybot2", "data", "sync", "--markets", "--open-only"] + db_args
-                logger.info("running: %s", " ".join(cmd))
-                subprocess.run(cmd, check=True, timeout=120)
-            except Exception as exc:
-                logger.warning("data sync failed (continuing): %s", exc)
+            # --- Stop previous hotpath (brief: only compile + warmup is blind) ---
+            if hotpath is not None:
+                try:
+                    hotpath.stop()
+                except Exception:
+                    pass
+                hotpath = None
 
             if stop_requested:
                 break
 
-            # --- 2. Sync provider catalog ---
-            try:
-                cmd = ["polybot2", "provider", "sync", "--provider", provider_name] + db_args
-                logger.info("running: %s", " ".join(cmd))
-                subprocess.run(cmd, check=True, timeout=120)
-            except Exception as exc:
-                logger.warning("provider sync failed (continuing): %s", exc)
-
-            if stop_requested:
-                break
-
-            # --- 3. Rebuild linking ---
-            try:
-                cmd = ["polybot2", "link", "build", "--provider", provider_name, "--league-scope", "live"] + db_args
-                logger.info("running: %s", " ".join(cmd))
-                subprocess.run(cmd, check=True, timeout=60)
-            except Exception as exc:
-                logger.warning("link build failed (continuing): %s", exc)
-
-            if stop_requested:
-                break
-
-            # --- 4-7. Compile plan, build service, start hotpath ---
-            hotpath = None
-            try:
-                with open_database(runtime) as db:
-                    # Resolve latest run_id after link build (link build
-                    # creates a new run_id each time it runs).
-                    latest_run_id = _get_latest_link_run_id(db, provider_name, league_key)
-                    if latest_run_id is not None and latest_run_id != current_run_id:
-                        logger.info("run_id updated: %d → %d", current_run_id, latest_run_id)
-                        current_run_id = latest_run_id
-
-                    # 4. Auto-approve pending games
-                    _auto_approve_pending_games(
-                        db=db, run_id=current_run_id, provider=provider_name,
-                        league=league_key, logger=logger,
-                    )
-
-                    # 5. Compile plan with exclusions
-                    compiled_plan = compile_hotpath_plan(
-                        db=db,
-                        provider=provider_name,
-                        league=league_key,
-                        run_id=int(current_run_id),
-                        live_policy=live_policy,
-                        require_all_approved=True,
-                        now_ts_utc=int(time.time()),
-                        plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
-                        exclude_strategy_keys=fired_strategy_keys if fired_strategy_keys else None,
-                    )
-
-                    resolver = BindingResolver(db=db)
-                    resolver.reload()
-
-                    # 6. Build service
-                    try:
-                        provider = build_sports_provider(provider_name=provider_name, logger=logger)
-                    except ValueError as exc:
-                        logger.error("provider init failed: %s", exc)
-                        break
-
-                    _scope_provider_catalog_to_league(
-                        provider=provider, provider_name=provider_name, league_key=league_key,
-                    )
-
-                    exec_cfg_overrides: dict[str, Any] = {}
-                    if require_presign:
-                        exec_cfg_overrides["presign_enabled"] = True
-                    exec_cfg = FastExecutionConfig.from_env(exec_cfg_overrides)
-                    exec_service = FastExecutionService(config=exec_cfg)
-
-                    hp_cfg = HotPathConfig(
-                        run_scores=True,
-                        run_odds=False,
-                        read_timeout_seconds=0.05,
-                        native_engine_enabled=True,
-                        native_engine_required=True,
-                    )
-                    hotpath = NativeHotPathService(
-                        provider=provider,
-                        execution=exec_service,
-                        execution_mode=execution_mode,
-                        config=hp_cfg,
-                        binding_resolver=resolver,
-                    )
-                    hotpath.set_compiled_plan(compiled_plan)
-                    hotpath.set_order_policy(order_policy)
-
-                    plan_uids = [
-                        str(g.provider_game_id) for g in tuple(compiled_plan.games)
-                        if str(g.provider_game_id or "").strip()
-                    ]
-                    env_uids = [
-                        x.strip()
-                        for x in str(os.getenv("POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS") or "").split(",")
-                        if x.strip()
-                    ]
-                    wanted = _apply_env_uid_filter(uids=sorted(set(plan_uids)), env_uids=env_uids)
-
-                    if hasattr(hotpath, "set_runtime_timing_policy"):
-                        hotpath.set_runtime_timing_policy(
-                            subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
-                            subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
-                        )
-                    hotpath.set_subscriptions(wanted)
-
-                    template_orders = _build_hotpath_template_orders(
-                        compiled_plan=compiled_plan, order_policy=order_policy,
-                    )
-                    if template_orders and hasattr(hotpath, "prewarm_presign"):
-                        hotpath.prewarm_presign(template_orders)
-
-                    n_targets = sum(
-                        len(m.targets) for g in compiled_plan.games for m in g.markets
-                    )
-                    logger.info(
-                        "hotpath starting: cycle=%d games=%d targets=%d excluded=%d subs=%d",
-                        iteration, len(compiled_plan.games), n_targets,
-                        len(fired_strategy_keys), len(wanted),
-                    )
-
-                    # 7. Start
-                    hotpath.start()
-
-                # --- 8. Run until refresh interval or stop ---
-                cycle_start = time.time()
-                while not stop_requested and (time.time() - cycle_start) < refresh_interval:
-                    time.sleep(1.0)
-
-            except HotPathPlanError as exc:
-                logger.error("plan compile failed: code=%s message=%s", exc.code, exc)
-                # Wait before retrying
+            # --- Compile plan and start hotpath ---
+            hotpath = _compile_and_start(iteration)
+            if hotpath is None:
+                # Compile/start failed — wait before retrying
                 for _ in range(min(refresh_interval, 30)):
                     if stop_requested:
                         break
                     time.sleep(1.0)
                 continue
-            except Exception as exc:
-                logger.error("cycle %d failed: %s: %s", iteration, type(exc).__name__, exc)
-                for _ in range(min(refresh_interval, 30)):
-                    if stop_requested:
-                        break
-                    time.sleep(1.0)
-                continue
-            finally:
-                # --- 9. Stop hotpath ---
-                if hotpath is not None:
-                    try:
-                        hotpath.stop()
-                    except Exception:
-                        pass
 
-            # --- 10. Update fired strategy keys from all log files ---
+            # --- Run hotpath while preparing next cycle's data in background ---
+            cycle_start = time.time()
+            sync_done = False
+            while not stop_requested and (time.time() - cycle_start) < refresh_interval:
+                remaining = refresh_interval - (time.time() - cycle_start)
+                # Start data sync/linking 30s before the refresh interval ends,
+                # so the DB is fresh when we stop + recompile. The hotpath keeps
+                # processing frames during the sync.
+                if not sync_done and remaining <= 30:
+                    logger.info("=== background sync (hotpath still running) ===")
+                    _sync_data_and_linking()
+                    sync_done = True
+                time.sleep(1.0)
+
+            # --- Update fired strategy keys ---
             new_total: set[str] = set()
             for log_file in log_dir_path.glob("hotpath_*.jsonl"):
                 new_total |= _read_one_log(log_file)
@@ -820,6 +836,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                 logger.info("fired strategy keys: %d total (+%d new)", len(fired_strategy_keys), new_count)
 
     finally:
+        # Stop the last running hotpath
+        if hotpath is not None:
+            try:
+                hotpath.stop()
+            except Exception:
+                pass
         signal.signal(signal.SIGINT, prev_int)
         signal.signal(signal.SIGTERM, prev_term)
 
