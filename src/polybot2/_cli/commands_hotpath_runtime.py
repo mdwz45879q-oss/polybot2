@@ -574,10 +574,11 @@ def _load_dotenv(logger: logging.Logger) -> None:
 
 
 def _get_latest_link_run_id(db: Any, provider: str, league: str) -> int | None:
-    """Return the most recent run_id for the given provider/league."""
+    """Return the most recent run_id for the given provider.
+    The league_scope column stores 'live' or 'all', not the league name."""
     row = db.execute(
-        "SELECT MAX(run_id) AS rid FROM link_runs WHERE provider = ? AND league_scope = ?",
-        (provider, league),
+        "SELECT MAX(run_id) AS rid FROM link_runs WHERE provider = ?",
+        (provider,),
     ).fetchone()
     if row is None:
         return None
