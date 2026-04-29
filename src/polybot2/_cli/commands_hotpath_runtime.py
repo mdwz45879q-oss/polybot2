@@ -646,9 +646,9 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             iteration += 1
             logger.info("=== refresh cycle %d ===", iteration)
 
-            # --- 1. Sync market data ---
+            # --- 1. Sync market data (open markets only — full historical sync is too slow) ---
             try:
-                cmd = ["polybot2", "data", "sync"] + db_args
+                cmd = ["polybot2", "data", "sync", "--markets", "--open-only"] + db_args
                 logger.info("running: %s", " ".join(cmd))
                 subprocess.run(cmd, check=True, timeout=120)
             except Exception as exc:

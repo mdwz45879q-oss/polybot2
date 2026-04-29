@@ -168,7 +168,7 @@ In a separate terminal while the hotpath is running:
 
 ```bash
 # Auto-discover latest log file:
-polybot2 hotpath observe --run-id 123 --link-run-id 123 --league mlb
+polybot2 hotpath observe --run-id 1 --link-run-id 1 --league mlb 
 
 # Or specify the log file directly:
 polybot2 hotpath observe --log-file logs/hotpath_123_20260426T183200Z.jsonl
