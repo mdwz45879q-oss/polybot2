@@ -631,10 +631,11 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         return 1
     current_run_id: int | None = _int_or_none(getattr(args, "link_run_id", None))
     execution_mode = str(getattr(args, "execution_mode", "live") or "live").strip().lower()
-    refresh_interval = int(getattr(args, "refresh_interval", 300) or 300)
-
     runtime = _runtime_from_args(args)
     runtime_policy = _hotpath_runtime_policy_for_league(live_policy=live_policy, league_key=league_key)
+    cli_refresh = getattr(args, "refresh_interval", None)
+    config_refresh = int(runtime_policy.get("refresh_interval_seconds", 300))
+    refresh_interval = int(cli_refresh) if cli_refresh is not None else config_refresh
     order_policy, require_presign, _ = _hotpath_order_policy_for_league(
         live_policy=live_policy, league_key=league_key,
     )

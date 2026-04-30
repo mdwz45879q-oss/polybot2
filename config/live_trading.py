@@ -17,8 +17,8 @@ LIVE_BETTING_MARKET_TYPES = {
 # Centralized hotpath execution profile used by league runtime plugins.
 HOTPATH_EXECUTION_POLICY = {
     "mlb": {
-        "amount_usdc": 15.0,
-        "size_shares": 15.0,
+        "amount_usdc": 75.0,
+        "size_shares": 75.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
@@ -32,6 +32,7 @@ HOTPATH_RUNTIME_POLICY = {
         "subscribe_lead_minutes": 5,
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 20000,
+        "refresh_interval_seconds": 1800,
     },
     "bundesliga": {
         "plan_horizon_hours": 24,

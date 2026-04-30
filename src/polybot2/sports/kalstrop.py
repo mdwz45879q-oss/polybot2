@@ -47,7 +47,7 @@ class KalstropProviderConfig(SportsProviderConfig):
         reconnect_sleep_seconds: float = 0.2,
         queue_maxsize: int = 50_000,
         catalog_sport_codes: Sequence[str] = ("baseball", "soccer"),
-        catalog_types: Sequence[str] = ("live", "popular"),
+        catalog_types: Sequence[str] = ("live", "upcoming"),
         catalog_first: int = 6,
         catalog_fixture_first: int = 50,
         catalog_max_outer_pages: int = 20,
@@ -77,7 +77,7 @@ class KalstropProviderConfig(SportsProviderConfig):
                 {
                     str(x or "").strip().lower()
                     for x in (catalog_types or ())
-                    if str(x or "").strip().lower() in {"live", "upcoming", "popular"}
+                    if str(x or "").strip().lower() in {"live", "upcoming"}
                 }
             )
         )
