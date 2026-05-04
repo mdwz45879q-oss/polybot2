@@ -58,7 +58,7 @@ async def v1_capture(fixture_ids: list[str], out_path: Path, stop: asyncio.Event
         return
     count = 0
     backoff = 2.0
-    with out_path.open("w") as f:
+    with out_path.open("a") as f:
         while not stop.is_set():
             try:
                 qs = v1_auth_qs()

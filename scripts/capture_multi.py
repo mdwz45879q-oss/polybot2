@@ -109,9 +109,25 @@ def v1_auth_qs():
 
 # ─── V2 provider resolution ─────────────────────────────────────────────
 
+def _try_resolve_single(event_id: str) -> dict | None:
+    """Try resolving a single event_id. Returns provider dict or None."""
+    try:
+        r = requests.get(f"{V2_API}/fixtures/{event_id}/providers",
+                         params={"sport": "football"}, timeout=15)
+        if r.status_code == 200:
+            bg = r.json().get("providers", {}).get("bet_genius", {})
+            fid = bg.get("fixture_id")
+            if fid and str(fid) != str(event_id):
+                return bg
+    except Exception:
+        pass
+    return None
+
+
 def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30):
     deadline = time.time() + max(max_wait, 0)
     attempt = 0
+    eid = int(event_id) if event_id.isdigit() else None
     while True:
         attempt += 1
         try:
@@ -129,6 +145,15 @@ def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30)
         except Exception as e:
             msg = str(e)
 
+        # After several failed attempts, try adjacent event IDs (±1, ±2)
+        if attempt == 5 and eid is not None:
+            for offset in (1, -1, 2, -2):
+                alt_id = str(eid + offset)
+                result = _try_resolve_single(alt_id)
+                if result:
+                    print(f"  [v2] resolved via adjacent: event_id={event_id} → tried {alt_id} → fixture_id={result.get('fixture_id')}")
+                    return result
+
         if time.time() >= deadline:
             print(f"  [v2] gave up resolving event_id={event_id} after {attempt} attempts")
             return None
@@ -144,7 +169,7 @@ async def v1_capture(fixture_id: str, out_path: Path, stop: asyncio.Event):
         return
     count = 0
     backoff = 2.0
-    with out_path.open("w") as f:
+    with out_path.open("a") as f:
         while not stop.is_set():
             try:
                 qs = v1_auth_qs()
@@ -193,7 +218,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
     sio = socketio.Client(reconnection=True, reconnection_attempts=0,
                           logger=False, engineio_logger=False)
     count = 0
-    f = out_path.open("w")
+    f = out_path.open("a")
 
     @sio.event
     def connect():
@@ -270,7 +295,7 @@ async def boltodds_capture_multi(
     # Open all output files
     files: dict[str, Any] = {}
     for label, out_path in game_entries:
-        files[label] = out_path.open("w")
+        files[label] = out_path.open("a")
 
     # Shared output file for unrouted frames
     count = 0

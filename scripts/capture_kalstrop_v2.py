@@ -111,7 +111,7 @@ async def v1_capture(fixture_id: str, out_path: Path, stop: asyncio.Event):
         return
     count = 0
     backoff = 2.0
-    with out_path.open("w") as f:
+    with out_path.open("a") as f:
         while not stop.is_set():
             try:
                 qs = v1_auth_qs()
@@ -161,7 +161,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
     sio = socketio.Client(reconnection=True, reconnection_attempts=0,
                           logger=False, engineio_logger=False)
     count = 0
-    f = out_path.open("w")
+    f = out_path.open("a")
 
     @sio.event
     def connect():

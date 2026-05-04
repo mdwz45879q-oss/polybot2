@@ -47,9 +47,9 @@ async def main():
     label_a = args.label_a
     label_b = args.label_b
 
-    f_a = (out_dir / "entry_a.jsonl").open("w")
-    f_b = (out_dir / "entry_b.jsonl").open("w")
-    f_shared = (out_dir / "unrouted.jsonl").open("w")
+    f_a = (out_dir / "entry_a.jsonl").open("a")
+    f_b = (out_dir / "entry_b.jsonl").open("a")
+    f_shared = (out_dir / "unrouted.jsonl").open("a")
 
     stop = asyncio.Event()
 
