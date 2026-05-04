@@ -1,0 +1,103 @@
+[
+  {
+    "name": "rockies_mets", 
+    "sport": "baseball", 
+    "kickoff_et": "17:40",
+    "v1_fixture_id": "4d0789bf-75a8-4086-abc0-1a4e3ccf3ab6", 
+    "boltodds_game_label": "Colorado Rockies vs New York Mets, 2026-05-04, 05"
+},
+{
+    "name": "rays_jays", 
+    "sport": "baseball", 
+    "kickoff_et": "18:40",
+    "v1_fixture_id": "b6de7d5d-5992-4920-997e-629d83f01693", 
+    "v2_event_id": "7490626", 
+    "boltodds_game_label": "Tampa Bay Rays vs Toronto Blue Jays, 2026-05-04, 06"
+},
+ {
+    "name": "tigers_rsox", 
+    "sport": "baseball", 
+    "kickoff_et": "18:40",
+    "v1_fixture_id": "65f6ade5-7ef0-4e13-90a8-c5987597284c", 
+    "boltodds_game_label": "Detroit Tigers vs Boston Red Sox, 2026-05-04, 06"
+},
+{
+    "name": "marlins_phillies", 
+    "sport": "baseball", 
+    "kickoff_et": "18:40",
+    "v1_fixture_id": "b86019ae-a28d-491c-b837-664bbbf5a2c1", 
+    "boltodds_game_label": "Miami Marlins vs Philadelphia Phillies, 2026-05-04, 06"
+},
+{
+    "name": "yankees_orioles", 
+    "sport": "baseball", 
+    "kickoff_et": "19:05",
+    "v1_fixture_id": "afd02a70-4445-4861-b1df-012734579e6b", 
+    "boltodds_game_label": "New York Yankees vs Baltimore Orioles, 2026-05-04, 07"
+},
+{
+    "name": "cubs_reds", 
+    "sport": "baseball", 
+    "kickoff_et": "19:40",
+    "v1_fixture_id": "a4b8f77f-3a59-4131-92a6-1a9cf5cffd36", 
+    "boltodds_game_label": "Chicago Cubs vs Cincinnati Reds, 2026-05-04, 07"
+},
+{
+    "name": "royals_guardians", 
+    "sport": "baseball", 
+    "kickoff_et": "19:40",
+    "v1_fixture_id": "03b2c3b1-432c-4207-8393-29203881b904", 
+    "boltodds_game_label": "Kansas City Royals vs Cleveland Guardians, 2026-05-04, 07"
+},
+{
+    "name": "cardinals_brewers", 
+    "sport": "baseball", 
+    "kickoff_et": "19:45",
+    "v1_fixture_id": "932bf3ce-fab5-4f0e-85c4-48bf403aa172", 
+    "boltodds_game_label": "St Louis Cardinals vs Milwaukee Brewers, 2026-05-04, 07"
+},
+{
+    "name": "astros_dodgers", 
+    "sport": "baseball", 
+    "kickoff_et": "20:10",
+    "v1_fixture_id": "739e5c70-bb9e-4c3d-b617-1d2c638dc22c", 
+    "boltodds_game_label": "Houston Astros vs Los Angeles Dodgers, 2026-05-04, 08"
+},
+{
+    "name": "angels_wsox", 
+    "sport": "baseball", 
+    "kickoff_et": "21:38",
+    "v1_fixture_id": "d7f7ea32-f6f4-48c5-bc46-92f83d3f554f", 
+    "boltodds_game_label": "Los Angeles Angels vs Chicago White Sox, 2026-05-04, 09"
+},
+{
+    "name": "mariners_braves", 
+    "sport": "baseball", 
+    "kickoff_et": "21:40",
+    "v1_fixture_id": "08e5e169-5f9b-4808-bb92-63031215e1a8", 
+    "boltodds_game_label": "Seattle Mariners vs Atlanta Braves, 2026-05-04, 09"
+},
+{
+    "name": "giants_padres", 
+    "sport": "baseball", 
+    "kickoff_et": "21:45",
+    "v1_fixture_id": "79108447-a49a-4291-9f15-0668496fa129", 
+    "boltodds_game_label": "San Francisco Giants vs San Diego Padres, 2026-05-04, 09"
+},
+{
+    "name": "chelsea_nottingham", 
+    "sport": "soccer", 
+    "kickoff_et": "10:00",
+    "v1_fixture_id": "40a70063-e822-42e4-9545-09db0f24c7fa", 
+    "v2_event_id": "7490629", 
+    "boltodds_game_label": "Chelsea vs Nottingham Forest, 2026-05-04, 10"
+},
+{
+    "name": "everton_mancity", 
+    "sport": "soccer", 
+    "kickoff_et": "15:00",
+    "v1_fixture_id": "c8d1d7a2-60af-49a4-89e3-49cc5f9df4da", 
+    "v2_event_id": "7490624", 
+    "boltodds_game_label": "Everton vs Manchester City, 2026-05-04, 03"
+}
+]
