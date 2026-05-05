@@ -109,25 +109,9 @@ def v1_auth_qs():
 
 # ─── V2 provider resolution ─────────────────────────────────────────────
 
-def _try_resolve_single(event_id: str) -> dict | None:
-    """Try resolving a single event_id. Returns provider dict or None."""
-    try:
-        r = requests.get(f"{V2_API}/fixtures/{event_id}/providers",
-                         params={"sport": "football"}, timeout=15)
-        if r.status_code == 200:
-            bg = r.json().get("providers", {}).get("bet_genius", {})
-            fid = bg.get("fixture_id")
-            if fid and str(fid) != str(event_id):
-                return bg
-    except Exception:
-        pass
-    return None
-
-
 def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30):
     deadline = time.time() + max(max_wait, 0)
     attempt = 0
-    eid = int(event_id) if event_id.isdigit() else None
     while True:
         attempt += 1
         try:
@@ -144,15 +128,6 @@ def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30)
                 msg = f"HTTP {r.status_code}: {r.text[:100]}"
         except Exception as e:
             msg = str(e)
-
-        # After several failed attempts, try adjacent event IDs (±1, ±2)
-        if attempt == 5 and eid is not None:
-            for offset in (1, -1, 2, -2):
-                alt_id = str(eid + offset)
-                result = _try_resolve_single(alt_id)
-                if result:
-                    print(f"  [v2] resolved via adjacent: event_id={event_id} → tried {alt_id} → fixture_id={result.get('fixture_id')}")
-                    return result
 
         if time.time() >= deadline:
             print(f"  [v2] gave up resolving event_id={event_id} after {attempt} attempts")
@@ -284,6 +259,7 @@ async def boltodds_capture_multi(
 
     game_entries: list of (game_label, out_path) tuples.
     All games share one connection; frames are routed to per-game files.
+    System/event frames (no game field) are written to a shared _events.jsonl file.
     """
     if not BOLTODDS_API_KEY:
         print("  [boltodds] no BOLTODDS_API_KEY — skipping")
@@ -292,12 +268,15 @@ async def boltodds_capture_multi(
         return
 
     all_labels = [label for label, _ in game_entries]
-    # Open all output files
+    # Open per-game output files
     files: dict[str, Any] = {}
     for label, out_path in game_entries:
         files[label] = out_path.open("a")
 
-    # Shared output file for unrouted frames
+    # Shared events file for system messages (ack, connected, errors)
+    events_dir = game_entries[0][1].parent.parent if game_entries else Path(".")
+    events_file = (events_dir / "boltodds_events.jsonl").open("a")
+
     count = 0
     backoff = 2.0
     uri = f"{BOLTODDS_SCORES_WS}?key={BOLTODDS_API_KEY}"
@@ -315,10 +294,8 @@ async def boltodds_capture_multi(
                             frame = json.loads(ack)
                         except Exception:
                             frame = ack
-                        # Write ack to first file
-                        first_f = next(iter(files.values()))
-                        first_f.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame}) + "\n")
-                        first_f.flush()
+                        events_file.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame}) + "\n")
+                        events_file.flush()
                         count += 1
                     except asyncio.TimeoutError:
                         pass
@@ -341,17 +318,29 @@ async def boltodds_capture_multi(
                         except Exception:
                             frame = raw
 
+                        # Detect server-side disconnect message — reconnect immediately
+                        if isinstance(frame, dict) and "error" in frame and "connection closed" in str(frame.get("error", "")).lower():
+                            events_file.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame}) + "\n")
+                            events_file.flush()
+                            print(f"  [boltodds] server disconnect: {frame.get('error', '')[:60]}")
+                            break
+
                         # Route frame to the right game file based on content
                         target_f = _route_boltodds_frame(frame, game_entries, files)
                         if target_f:
                             target_f.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame}) + "\n")
                             target_f.flush()
                         else:
-                            # Write to first file as fallback
-                            first_f = next(iter(files.values()))
-                            first_f.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame}) + "\n")
-                            first_f.flush()
+                            # System/event frame — write to shared events file
+                            events_file.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame}) + "\n")
+                            events_file.flush()
                         count += 1
+
+                    # Reconnect after loop exit (server closed or disconnect detected)
+                    if not stop.is_set():
+                        print(f"  [boltodds] reconnecting in {backoff:.0f}s")
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 1.5, 15)
             except Exception as e:
                 if stop.is_set():
                     break
@@ -365,6 +354,11 @@ async def boltodds_capture_multi(
                 f.close()
             except Exception:
                 pass
+        try:
+            events_file.flush()
+            events_file.close()
+        except Exception:
+            pass
     print(f"  [boltodds] captured {count} frames total")
 
 
