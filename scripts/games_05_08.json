@@ -1,0 +1,31 @@
+[
+    {
+    "name": "dortmund_frankfurt", 
+    "sport": "soccer", 
+    "league": "bundesliga",
+    "kickoff_et": "14:30",
+    "v1_fixture_id": "900a7531-6e7e-4542-8319-36b18d25b9f5", 
+    "v2_event_id": "7537545", 
+    "v2_category_slug":"football",
+    "v2_tournament_slug":"german-bundesliga",
+    "v2_home_team":"Dortmund",
+    "v2_away_team":"Eintracht Frankfurt",
+    "v2_scheduled_date": "2026-05-08",
+    "boltodds_game_label": "Dortmund vs Eintracht Frankfurt, 2026-05-08, 02"
+},
+{
+    "name": "levante_osasuna", 
+    "sport": "soccer", 
+    "league": "laliga",
+    "kickoff_et": "15:00",
+    "v1_fixture_id": "157487e3-848a-4b9b-9df6-614d316d2761", 
+    "v2_event_id": "7537594", 
+    "v2_category_slug":"football",
+    "v2_tournament_slug":"spanish-la-liga-primera",
+    "v2_home_team":"Levante",
+    "v2_away_team":"Osasuna",
+    "v2_scheduled_date": "2026-05-08",
+    "boltodds_game_label": "Levante vs Osasuna, 2026-05-08, 03"
+}
+]
+

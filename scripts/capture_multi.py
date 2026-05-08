@@ -30,6 +30,11 @@ games.json format:
         "kickoff_et": "14:30",
         "v1_fixture_id": "6534302a-...",
         "v2_event_id": "7490622",
+        "v2_category_slug": "international-clubs",
+        "v2_tournament_slug": "uefa-champions-league",
+        "v2_home_team": "Man Utd",
+        "v2_away_team": "Liverpool",
+        "v2_scheduled_date": "2026-05-08",
         "boltodds_game_label": "Man Utd vs Liverpool"
       },
       {
@@ -49,6 +54,11 @@ games.json format:
                          V2 resolution is deferred until 10 minutes before kickoff.
       v1_fixture_id   -- Kalstrop V1 fixture UUID (optional)
       v2_event_id     -- Kalstrop V2 event ID (optional, soccer only)
+      v2_category_slug  -- V2 API category slug for re-fetching fixtures (optional)
+      v2_tournament_slug -- V2 API tournament slug (optional)
+      v2_home_team      -- V2 home team name for matching after re-fetch (optional)
+      v2_away_team      -- V2 away team name for matching (optional)
+      v2_scheduled_date -- ISO date "YYYY-MM-DD" for matching (optional)
       boltodds_game_label -- BoltOdds game label string (optional)
 
 Timestamps: all JSONL output uses "ts_ns" (integer nanoseconds from time.time_ns()).
@@ -133,6 +143,72 @@ def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30)
             print(f"  [v2] gave up resolving event_id={event_id} after {attempt} attempts")
             return None
         print(f"  [v2] {event_id}: {msg} — retry in {interval}s (attempt {attempt})")
+        time.sleep(interval)
+
+
+def resolve_v2_live_event_id(
+    category_slug: str,
+    tournament_slug: str,
+    home_team: str,
+    away_team: str,
+    scheduled_date: str,
+    original_event_id: str,
+    max_wait: int = 1800,
+    interval: int = 30,
+) -> str | None:
+    """Re-fetch tournament fixtures and find the live event_id by team match.
+
+    V2 event_ids can change when a game transitions from prematch to live.
+    This function polls the fixtures endpoint, matching by team names and date
+    to discover the current event_id.
+
+    Returns the live event_id (may differ from original_event_id), or None.
+    """
+    deadline = time.time() + max(max_wait, 0)
+    attempt = 0
+    home_norm = home_team.strip().lower()
+    away_norm = away_team.strip().lower()
+    date_norm = scheduled_date.strip()
+
+    while True:
+        attempt += 1
+        try:
+            url = f"{V2_API}/sports/football/competitions/{category_slug}/{tournament_slug}/fixtures"
+            r = requests.get(url, timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                fixtures = data.get("fixtures", []) if isinstance(data, dict) else []
+                for f in fixtures:
+                    competitors = f.get("competitors", {})
+                    if not isinstance(competitors, dict):
+                        continue
+                    home = competitors.get("home", {})
+                    away = competitors.get("away", {})
+                    f_home = str(home.get("name") or "").strip().lower()
+                    f_away = str(away.get("name") or "").strip().lower()
+                    f_date = str(f.get("scheduled_date") or "").strip()
+                    f_eid = str(f.get("event_id") or "").strip()
+
+                    if not f_eid:
+                        continue
+                    # Match by teams (case-insensitive)
+                    if f_home != home_norm or f_away != away_norm:
+                        continue
+                    # Match by date if provided
+                    if date_norm and f_date and f_date != date_norm:
+                        continue
+                    # Found it
+                    return f_eid
+                msg = f"game not found in {len(fixtures)} fixtures"
+            else:
+                msg = f"HTTP {r.status_code}"
+        except Exception as e:
+            msg = str(e)
+
+        if time.time() >= deadline:
+            print(f"  [v2] gave up finding live event_id after {attempt} attempts")
+            return None
+        print(f"  [v2] {original_event_id}: {msg} — retry in {interval}s (attempt {attempt})")
         time.sleep(interval)
 
 
@@ -402,6 +478,11 @@ def _run_single_game(
     *,
     v1_fixture_id: str,
     v2_event_id: str,
+    v2_category_slug: str = "",
+    v2_tournament_slug: str = "",
+    v2_home_team: str = "",
+    v2_away_team: str = "",
+    v2_scheduled_date: str = "",
     boltodds_game_label: str,
     out_dir: Path,
     duration: int,
@@ -415,9 +496,27 @@ def _run_single_game(
     v2_thread = None
     if v2_event_id:
         def _v2_resolve_and_capture():
-            provider = resolve_v2_provider(v2_event_id, max_wait=resolve_timeout)
+            resolve_eid = v2_event_id
+            if v2_category_slug and v2_tournament_slug and v2_home_team and v2_away_team:
+                live_eid = resolve_v2_live_event_id(
+                    category_slug=v2_category_slug,
+                    tournament_slug=v2_tournament_slug,
+                    home_team=v2_home_team,
+                    away_team=v2_away_team,
+                    scheduled_date=v2_scheduled_date,
+                    original_event_id=v2_event_id,
+                    max_wait=resolve_timeout,
+                )
+                if live_eid:
+                    if live_eid != v2_event_id:
+                        print(f"  [v2] event_id rotated: {v2_event_id} → {live_eid}")
+                    resolve_eid = live_eid
+                else:
+                    print(f"  [v2] could not find live event_id, trying original...")
+
+            provider = resolve_v2_provider(resolve_eid, max_wait=resolve_timeout)
             if not provider:
-                print(f"  [v2] resolution failed for {v2_event_id}")
+                print(f"  [v2] resolution failed for {resolve_eid}")
                 return
             if stop_flag[0]:
                 return
@@ -467,6 +566,16 @@ def main():
                     help="V2 event_id (single-game mode)")
     ap.add_argument("--boltodds-game-label", default="",
                     help="BoltOdds game label (single-game mode)")
+    ap.add_argument("--v2-category-slug", type=str, default="",
+                    help="V2 category slug for fixture re-fetch (single-game mode)")
+    ap.add_argument("--v2-tournament-slug", type=str, default="",
+                    help="V2 tournament slug for fixture re-fetch (single-game mode)")
+    ap.add_argument("--v2-home-team", type=str, default="",
+                    help="V2 home team name for matching (single-game mode)")
+    ap.add_argument("--v2-away-team", type=str, default="",
+                    help="V2 away team name for matching (single-game mode)")
+    ap.add_argument("--v2-scheduled-date", type=str, default="",
+                    help="V2 scheduled date YYYY-MM-DD for matching (single-game mode)")
     ap.add_argument("--games-file", default="",
                     help="Path to games.json for multi-game capture")
     ap.add_argument("--out", required=True, help="Output directory")
@@ -523,6 +632,11 @@ def main():
             name = game.get("name", "unknown")
             sport = game.get("sport", "soccer").strip().lower()
             v2_event_id = str(game.get("v2_event_id") or "").strip()
+            v2_category_slug = str(game.get("v2_category_slug") or "").strip()
+            v2_tournament_slug = str(game.get("v2_tournament_slug") or "").strip()
+            v2_home_team = str(game.get("v2_home_team") or "").strip()
+            v2_away_team = str(game.get("v2_away_team") or "").strip()
+            v2_scheduled_date = str(game.get("v2_scheduled_date") or "").strip()
             game_dir = out_dir / name
             game_dir.mkdir(parents=True, exist_ok=True)
 
@@ -530,7 +644,9 @@ def main():
             if v2_event_id and sport in ("soccer", "football"):
                 kickoff_ts = _parse_kickoff_ts(game)
 
-                def _v2_worker(eid=v2_event_id, gdir=game_dir, gname=name, kts=kickoff_ts):
+                def _v2_worker(eid=v2_event_id, gdir=game_dir, gname=name, kts=kickoff_ts,
+                               cat_slug=v2_category_slug, tourn_slug=v2_tournament_slug,
+                               home=v2_home_team, away=v2_away_team, sdate=v2_scheduled_date):
                     # Wait until V2_LEAD_MINUTES before kickoff
                     if kts is not None:
                         start_resolve_at = kts - (V2_LEAD_MINUTES * 60)
@@ -543,8 +659,30 @@ def main():
                             if stop_flag[0]:
                                 return
 
-                    print(f"  [v2/{gname}] resolving event_id={eid}...")
-                    provider = resolve_v2_provider(eid, max_wait=args.resolve_timeout, interval=15)
+                    # Step 1: Re-discover live event_id if metadata provided
+                    resolve_eid = eid
+                    if cat_slug and tourn_slug and home and away:
+                        print(f"  [v2/{gname}] re-fetching fixtures to find live event_id...")
+                        live_eid = resolve_v2_live_event_id(
+                            category_slug=cat_slug,
+                            tournament_slug=tourn_slug,
+                            home_team=home,
+                            away_team=away,
+                            scheduled_date=sdate,
+                            original_event_id=eid,
+                            max_wait=args.resolve_timeout,
+                            interval=15,
+                        )
+                        if live_eid:
+                            if live_eid != eid:
+                                print(f"  [v2/{gname}] event_id rotated: {eid} → {live_eid}")
+                            resolve_eid = live_eid
+                        else:
+                            print(f"  [v2/{gname}] could not find live event_id, trying original...")
+
+                    # Step 2: Resolve BetGenius fixture_id (existing logic)
+                    print(f"  [v2/{gname}] resolving event_id={resolve_eid}...")
+                    provider = resolve_v2_provider(resolve_eid, max_wait=args.resolve_timeout, interval=15)
                     if not provider:
                         print(f"  [v2/{gname}] resolution failed")
                         return
@@ -613,6 +751,11 @@ def main():
         _run_single_game(
             v1_fixture_id=args.v1_fixture_id,
             v2_event_id=args.v2_event_id,
+            v2_category_slug=args.v2_category_slug,
+            v2_tournament_slug=args.v2_tournament_slug,
+            v2_home_team=args.v2_home_team,
+            v2_away_team=args.v2_away_team,
+            v2_scheduled_date=args.v2_scheduled_date,
             boltodds_game_label=args.boltodds_game_label,
             out_dir=out_dir,
             duration=args.duration,
