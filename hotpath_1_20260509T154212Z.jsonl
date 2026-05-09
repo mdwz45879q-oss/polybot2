@@ -1,0 +1,58 @@
+{"ts":1778341332538,"ev":"startup","run_id":1,"games":4,"tokens":282,"mode":"noop"}
+{"ts":1778341332814,"ev":"ws_connect","subs":["Brighton vs Wolverhampton, 2026-05-09, 10","Fulham vs Bournemouth, 2026-05-09, 10","Manchester City vs Brentford, 2026-05-09, 12","Sunderland vs Manchester United, 2026-05-09, 10"]}
+{"ts":1778341337140,"ev":"tick","gid":"Brighton vs Wolverhampton, 2026-05-09, 10","h":2,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":8}
+{"ts":1778341337853,"ev":"tick","gid":"Sunderland vs Manchester United, 2026-05-09, 10","h":0,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":11}
+{"ts":1778341338382,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":11}
+{"ts":1778341354179,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL:OVER:2.5","tok":"77183953484677718847740683172848133862789966655342858568716946326436599063426","ok":true,"eid":"noop"}
+{"ts":1778341354181,"ev":"tick","gid":"Brighton vs Wolverhampton, 2026-05-09, 10","h":3,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":8}
+{"ts":1778341722109,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:TOTAL_CORNERS:OVER:11.5","tok":"84425813563363067882768211233170532227532764808930792375162313898932207774420","ok":true,"eid":"noop"}
+{"ts":1778341722110,"ev":"tick","gid":"Sunderland vs Manchester United, 2026-05-09, 10","h":0,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":12}
+{"ts":1778341792849,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL_CORNERS:OVER:11.5","tok":"109362326125522512873702706338736027022659897601643291925068158588488738743000","ok":true,"eid":"noop"}
+{"ts":1778341792851,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":12}
+{"ts":1778341864204,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL_CORNERS:OVER:12.5","tok":"51219042473467395191448756221249024423016525028861898017726178202271436103844","ok":true,"eid":"noop"}
+{"ts":1778341864205,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":13}
+{"ts":1778341865620,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":12}
+{"ts":1778341892637,"ev":"tick","gid":"Sunderland vs Manchester United, 2026-05-09, 10","h":0,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":13}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:TOTAL:UNDER:1.5","tok":"87531428874485716422672087838950822029351859886744789565994086823106503635223","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:TOTAL:UNDER:2.5","tok":"51071987336693369380879571943480460899943360353271045602401913625924196785438","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:TOTAL:UNDER:3.5","tok":"52179974838441902620111959379402270692393215979272060099179225460013275738354","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:TOTAL:UNDER:4.5","tok":"56819723288151705448526024288526002865094022972483554477497264701575455354358","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:MONEYLINE:DRAW_YES","tok":"20980520199726436436920547969047970029165870513851648746588565728020049490470","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:MONEYLINE:HOME_NO","tok":"87133663478250106742051862335137895669215491293799398684917030490352294929498","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:MONEYLINE:AWAY_NO","tok":"26648854241289453210926914993166119516726420835325408851639800178003438274988","ok":true,"eid":"noop"}
+{"ts":1778341946311,"ev":"order","sk":"Sunderland vs Manchester United, 2026-05-09, 10:BTTS:NO","tok":"31687138670055484761357326075387968382653917680172243940381418784379766290894","ok":true,"eid":"noop"}
+{"ts":1778341946312,"ev":"tick","gid":"Sunderland vs Manchester United, 2026-05-09, 10","h":0,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":13}
+{"ts":1778341949039,"ev":"tick","gid":"Sunderland vs Manchester United, 2026-05-09, 10","h":0,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":13}
+{"ts":1778341961538,"ev":"tick","gid":"Sunderland vs Manchester United, 2026-05-09, 10","h":0,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":13}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL:UNDER:3.5","tok":"38443717685393558621619918516591649781899855830006404586543896116638447153078","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL:UNDER:4.5","tok":"23010826357756211383426348803072320506456234670027277433245998383320453770440","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:MONEYLINE:HOME_YES","tok":"18527801457416328485695467695372584112882894050950090910890123809958673636398","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:MONEYLINE:AWAY_NO","tok":"94272298611286268124470858345598286734680906639593128007491855451656678665100","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:MONEYLINE:DRAW_NO","tok":"75335416849037955639507009432465568224943969618054652234756985452209828478054","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:SPREAD:HOME:-1.5","tok":"76158865489435726495400459832317001751716588711971496083349746850981493895044","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:SPREAD:HOME:-2.5","tok":"74581298731301315417067268391846443027750672460965509050739285396430421306125","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:BTTS:NO","tok":"57597193055741870482193984677214317498760302335608974653913699248029795228485","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL_CORNERS:UNDER:8.5","tok":"58129895134256013868168203142341188241246139314781830528876344555763904656132","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL_CORNERS:UNDER:9.5","tok":"20340044145856447677256313163865176500714722038952546179657348164024955747003","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL_CORNERS:UNDER:10.5","tok":"57764797509190573447158021266051263999458897880468429254523801241144062211763","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL_CORNERS:UNDER:11.5","tok":"84064056893253232938125372939838049353847971242524517160388857034455782412760","ok":true,"eid":"noop"}
+{"ts":1778342028375,"ev":"order","sk":"Brighton vs Wolverhampton, 2026-05-09, 10:TOTAL_CORNERS:UNDER:12.5","tok":"67383604321843788759117178905880199281476933814407169538961920145964793482242","ok":true,"eid":"noop"}
+{"ts":1778342028377,"ev":"tick","gid":"Brighton vs Wolverhampton, 2026-05-09, 10","h":3,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":8}
+{"ts":1778342030599,"ev":"tick","gid":"Brighton vs Wolverhampton, 2026-05-09, 10","h":3,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":8}
+{"ts":1778342057555,"ev":"tick","gid":"Brighton vs Wolverhampton, 2026-05-09, 10","h":3,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":8}
+{"ts":1778342264107,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL:OVER:1.5","tok":"15276466039964369095506025967696637274389154552089733957442106749018784580566","ok":true,"eid":"noop"}
+{"ts":1778342264108,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":1,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":12}
+{"ts":1778342266712,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":12}
+{"ts":1778342272949,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL_CORNERS:OVER:12.5","tok":"51219042473467395191448756221249024423016525028861898017726178202271436103844","ok":true,"eid":"noop"}
+{"ts":1778342272950,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"2nd half","gs":"LIVE","corners":13}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL:UNDER:1.5","tok":"108619568636452844075183832181797772830531434101390502172088905524565427673876","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL:UNDER:2.5","tok":"45094770260024745939528843730832406630142206390021511202388389400508306201082","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL:UNDER:3.5","tok":"44484041279241446863661036017189125991588590753370323475721657757779579587162","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:TOTAL:UNDER:4.5","tok":"66968881808741643304137705854177158432012052660009435240710426091165079487083","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:MONEYLINE:AWAY_YES","tok":"2940619250701593657220821389462842771582928891488974963236694182664658040046","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:MONEYLINE:HOME_NO","tok":"40774664680425428101532526044053713567688143213890903581311283634890148785292","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:MONEYLINE:DRAW_NO","tok":"110923464802298390756390058877250883145913498600356211095837517366449494517954","ok":true,"eid":"noop"}
+{"ts":1778342377729,"ev":"order","sk":"Fulham vs Bournemouth, 2026-05-09, 10:BTTS:NO","tok":"63963730925635039103808534236081954489879791627005585103466301754208495697460","ok":true,"eid":"noop"}
+{"ts":1778342377730,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"Ended","gs":"FINAL","corners":13}
+{"ts":1778342383155,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"Ended","gs":"FINAL","corners":13}
+{"ts":1778342394546,"ev":"tick","gid":"Fulham vs Bournemouth, 2026-05-09, 10","h":0,"a":1,"inn":null,"half":"Ended","gs":"FINAL","corners":13}

@@ -47,21 +47,33 @@ class OrderRow:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_matchup_map(plan: CompiledPlan | None) -> dict[str, str]:
-    """Build gid -> 'AWAY-HOME' label using Polymarket codes."""
+def _build_matchup_map(plan: CompiledPlan | None) -> tuple[dict[str, str], bool]:
+    """Build gid -> matchup label using Polymarket codes.
+
+    Returns (matchup_map, is_baseball). Baseball uses AWAY-HOME convention;
+    soccer and other sports use HOME-AWAY.
+    """
     if plan is None:
-        return {}
+        return {}, False
     try:
         from polybot2.linking.mapping_loader import load_mapping
         mapping = load_mapping()
         team_map = mapping.team_map.get(plan.league, {})
     except Exception:
-        return {}
+        return {}, False
     code_by_name: dict[str, str] = {}
     for canonical_name, info in team_map.items():
         code = info.get("polymarket_code", "")
         if code:
             code_by_name[canonical_name.lower()] = code.upper()
+
+    # Determine sport family from league config
+    try:
+        league_cfg = mapping.leagues.get(plan.league, {})
+        sport_family = str(league_cfg.get("sport_family", "")).strip().lower()
+    except Exception:
+        sport_family = ""
+    is_baseball = sport_family == "baseball"
 
     matchups: dict[str, str] = {}
     for game in plan.games:
@@ -73,17 +85,24 @@ def _build_matchup_map(plan: CompiledPlan | None) -> dict[str, str]:
             game.canonical_away_team.lower(),
             game.canonical_away_team[:3].upper(),
         )
-        matchups[game.provider_game_id] = f"{away_code}-{home_code}"
-    return matchups
+        if is_baseball:
+            matchups[game.provider_game_id] = f"{away_code}-{home_code}"
+        else:
+            matchups[game.provider_game_id] = f"{home_code}-{away_code}"
+    return matchups, is_baseball
 
 
 def _bet_label(sk: str) -> str:
     """Parse strategy key into human-readable bet label.
 
-    'gid:TOTAL:OVER:8.5' -> 'OVER 8.5'
-    'gid:NRFI:YES'       -> 'NRFI YES'
-    'gid:MONEYLINE:HOME' -> 'ML HOME'
-    'gid:SPREAD:HOME:-1.5' -> 'SPR HOME -1.5'
+    'gid:TOTAL:OVER:8.5'                    -> 'OVER 8.5'
+    'gid:NRFI:YES'                           -> 'NRFI YES'
+    'gid:MONEYLINE:HOME'                     -> 'ML HOME'
+    'gid:SPREAD:HOME:-1.5'                   -> 'SPR HOME -1.5'
+    'gid:SOCCER_HALFTIME_RESULT:HOME_YES'    -> 'HT HOME_YES'
+    'gid:BTTS:YES'                           -> 'BTTS YES'
+    'gid:TOTAL_CORNERS:OVER:8.5'             -> 'CRN OVER 8.5'
+    'gid:EXACT_SCORE:1_0'                    -> 'EXACT 1-0'
     """
     parts = sk.split(":")
     if len(parts) < 3:
@@ -99,14 +118,40 @@ def _bet_label(sk: str) -> str:
         return f"ML {side}"
     if market == "SPREAD":
         return f"SPR {side} {line}".strip()
+    if market == "SOCCER_HALFTIME_RESULT":
+        if side.startswith("0x"):
+            return f"HT {side[:8]}.."
+        return f"HT {side}"
+    if market == "BTTS":
+        return f"BTTS {side}"
+    if market == "TOTAL_CORNERS":
+        if side.startswith("0x"):
+            return f"CRN {side[:8]}.."
+        return f"CRN {side} {line}".strip()
+    if market == "EXACT_SCORE":
+        return f"EXACT {side.replace('_', '-')}"
+    # Fallback: truncate hex condition_id if present
+    if side.startswith("0x") and len(side) > 10:
+        return f"{market} {side[:8]}.."
     return f"{market} {side}"
 
 
 def _format_inning(inn: int | None, half: str) -> str:
-    if inn is None:
+    """Format period display. Baseball uses inning numbers; soccer uses half names."""
+    if inn is not None:
+        prefix = {"top": "T", "bottom": "B", "break": "Brk"}.get(half, "")
+        return f"{prefix}{inn}"
+    # Soccer: no inning number, use half directly
+    h = half.strip()
+    if not h:
         return "--"
-    prefix = {"top": "T", "bottom": "B", "break": "Brk"}.get(half, "")
-    return f"{prefix}{inn}"
+    half_map = {
+        "1st half": "1H",
+        "2nd half": "2H",
+        "Halftime": "HT",
+        "Ended": "FT",
+    }
+    return half_map.get(h, h[:7])
 
 
 def _now_ms() -> int:
@@ -143,7 +188,7 @@ class LiveObserver:
         self.startup_ts: int | None = None
         self.run_id: int = 0
         self.mode: str = ""
-        self.matchup_by_gid = _build_matchup_map(compiled_plan)
+        self.matchup_by_gid, self.is_baseball = _build_matchup_map(compiled_plan)
 
     def run(self) -> None:
         """Tail the log file and redraw on each new line. Blocks forever."""
@@ -224,6 +269,13 @@ class LiveObserver:
     # Rendering
     # -----------------------------------------------------------------------
 
+    def _format_score(self, g: GameRow) -> str:
+        if g.home is None and g.away is None:
+            return "--"
+        if self.is_baseball:
+            return f"{g.away or 0}-{g.home or 0}"   # baseball: away-home
+        return f"{g.home or 0}-{g.away or 0}"       # soccer: home-away
+
     def _redraw(self) -> None:
         print("\x1b[2J\x1b[H", end="")
         self._print_header()
@@ -251,7 +303,8 @@ class LiveObserver:
         print()
 
     def _print_games(self) -> None:
-        print(f" {'GAME':<15} {'INN':<7} {'SCORE':<8} BETS")
+        period_col = "INN" if self.is_baseball else "HALF"
+        print(f" {'GAME':<15} {period_col:<7} {'SCORE':<8} BETS")
         # Sort: LIVE first (by most recent update), then FINAL, then NOT STARTED
         def sort_key(item: tuple[str, GameRow]) -> tuple[int, int]:
             g = item[1]
@@ -266,12 +319,9 @@ class LiveObserver:
             inn = _format_inning(g.inning, g.half)
             if g.game_state == "FINAL":
                 inn = "FINAL"
-                score = f"{g.away or 0}-{g.home or 0}"
-            elif g.game_state in ("LIVE", ""):
-                score = f"{g.away or 0}-{g.home or 0}"
-            else:
+            elif g.game_state not in ("LIVE", ""):
                 inn = "--"
-                score = "--"
+            score = self._format_score(g) if g.game_state in ("LIVE", "FINAL", "") else "--"
 
             # Collect bets for this game
             game_bets = [
@@ -302,7 +352,7 @@ class LiveObserver:
                 status = f"ok     eid={o.exchange_id[:16]}"
             else:
                 status = f"FAIL   {o.error[:50]}"
-            print(f" {ts_str}  {matchup:<12} {label:<16} {status}")
+            print(f" {ts_str}  {matchup:<12} {label:<20} {status}")
 
 
 __all__ = ["LiveObserver", "find_latest_log"]

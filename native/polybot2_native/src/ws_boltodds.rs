@@ -265,7 +265,7 @@ pub(crate) async fn run_boltodds_worker_async(
                                 .get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str())
                                 .unwrap_or("_");
-                            g.log_tick(gid, tl.state.home, tl.state.away, None, tl.half, tl.game_state);
+                            g.log_tick(gid, tl.state.home, tl.state.away, None, tl.half, tl.game_state, tl.state.total_corners);
                         }
                     }
                 }

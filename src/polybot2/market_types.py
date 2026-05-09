@@ -7,7 +7,7 @@ from typing import Any
 
 CANONICAL_MARKET_TYPES = {
     "totals", "nrfi", "moneyline", "spread",
-    "both_teams_to_score", "soccer_halftime_result",
+    "btts", "soccer_halftime_result",
     "soccer_exact_score", "total_corners",
     "other",
 }
@@ -30,7 +30,7 @@ def normalize_sports_market_type(value: Any) -> str:
     if raw in {"moneyline", "game", "child_moneyline", "first_half_moneyline"}:
         return "moneyline"
     if raw in {"btts", "both_teams_to_score"}:
-        return "both_teams_to_score"
+        return "btts"
     if raw in {"soccer_halftime_result", "halftime_result", "ht_result"}:
         return "soccer_halftime_result"
     if raw in {"soccer_exact_score", "exact_score", "correct_score"}:

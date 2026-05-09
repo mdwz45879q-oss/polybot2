@@ -373,16 +373,37 @@ class LinkService:
         used_slug_fallback = False
         if mapped_any:
             target_set = set(resolved.canonical_team_pair)
+            # Strict home/away ordering for soccer: reject provider games whose
+            # home/away is flipped relative to the PM event. This filters out
+            # BoltOdds duplicate entries with swapped team designation.
+            # Baseball is excluded because PM uses away-first ordering and
+            # provider home/away is less reliable.
+            league_cfg = mapping.leagues.get(resolved.canonical_league, {})
+            sport_family = _norm(str(league_cfg.get("sport_family", "")))
+            enforce_order = sport_family == "soccer"
+            pm_ordering = _norm(str(mapping.pm_league_orderings.get(resolved.canonical_league, "home")))
             for ev in events:
                 ev_id = str(ev.get("event_id") or "")
                 if not ev_id:
                     continue
-                if teams_by_event.get(ev_id, set()) == target_set:
-                    matched_events.append(ev)
+                if teams_by_event.get(ev_id, set()) != target_set:
                     if ev_id in candidate_map:
-                        candidate_map[ev_id]["team_set_match"] = 1
-                elif ev_id in candidate_map:
-                    candidate_map[ev_id]["reject_reason"] = "team_set_not_found"
+                        candidate_map[ev_id]["reject_reason"] = "team_set_not_found"
+                    continue
+                if enforce_order:
+                    ev_ordered = ordered_teams_by_event.get(ev_id, [])
+                    if len(ev_ordered) >= 2:
+                        if pm_ordering == "away":
+                            pm_home, pm_away = ev_ordered[1], ev_ordered[0]
+                        else:
+                            pm_home, pm_away = ev_ordered[0], ev_ordered[1]
+                        if pm_home != resolved.canonical_home_team or pm_away != resolved.canonical_away_team:
+                            if ev_id in candidate_map:
+                                candidate_map[ev_id]["reject_reason"] = "home_away_order_mismatch"
+                            continue
+                matched_events.append(ev)
+                if ev_id in candidate_map:
+                    candidate_map[ev_id]["team_set_match"] = 1
             if not matched_events:
                 diagnostics["used_slug_fallback"] = False
                 diagnostics["failure_reason"] = "team_set_not_found"

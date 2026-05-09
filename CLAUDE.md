@@ -117,9 +117,30 @@ At plan load, `engine.load_plan` interns each `provider_game_id` → `GameIdx(u1
 
 Per-game state (rows, GameState, resolution flags) is stored in `Vec<...>` indexed by `GameIdx`. One-shot gating is enforced by the presign pool (depth=1, `Option::take()`), not by the engine — there is no `attempted` bitset. No cooldown or debounce logic exists — the presign pool is the sole gate against duplicate intents.
 
-The only string hash on the live path is `game_id_to_idx.get(fixture_id)` — one `FxHashMap::get` per tick, done once in `check_duplicate` (baseball) or `is_duplicate_boltodds` (soccer) and the resulting `GameIdx` passed through. After filtering, the engine emits `Intent { target_idx: TargetIdx }` (`Copy`, no strings). String resolution happens only at the FFI boundary and on the submitter (via the shared `Arc<TargetRegistry>` at log time). StateRow uses `InlineStr<N>` (stack-allocated, no heap) for dedup fields.
+The only string hash on the live path is `game_id_to_idx.get(fixture_id)` — one `FxHashMap::get` per tick, done once in `check_duplicate` (baseball/soccer V1) or `check_boltodds_dedup` (soccer BoltOdds) and the resulting `GameIdx` passed through. After filtering, the engine emits `Intent { target_idx: TargetIdx }` (`Copy`, no strings). String resolution happens only at the FFI boundary and on the submitter (via the shared `Arc<TargetRegistry>` at log time). StateRow uses `InlineStr<N>` (stack-allocated, no heap) for dedup fields.
 
-The Python compiler (`compiler.py`) still produces strategy keys (`"gid:TOTAL:OVER:5.5"`, etc.) and embeds them in the compiled plan JSON. Rust stores them in `TargetSlot.strategy_key` for log output but never parses or hashes them.
+The Python compiler (`compiler.py`) produces strategy keys (`"gid:TOTAL:OVER:5.5"`, etc.) and embeds them in the compiled plan JSON. Rust stores them in `TargetSlot.strategy_key` for log output but never parses or hashes them.
+
+### Three-Way Soccer Market Wiring
+
+Soccer moneyline and halftime result are three-way markets (home/away/draw). Polymarket publishes each as three separate Yes/No markets. The compiler must produce distinct semantics (`home_yes`, `away_yes`, `draw_yes`, `home_no`, `away_no`, `draw_no`) for each. **Slug-based disambiguation** is used (not question text matching):
+
+- **Moneyline:** slug ends with `-{home_polymarket_code}`, `-{away_polymarket_code}`, or `-draw`
+- **Halftime result:** slug ends with `-home`, `-away`, or `-draw`
+
+The function `_three_way_side_from_slug` in `compiler.py` parses the suffix. Polymarket codes are looked up from `TEAM_MAP_*` via the mapping.
+
+For "Yes" labels, the two-way check (`home_norm in question`) fires first for team-name matches (returns `"home"` / `"away"`). The three-way slug check only fires when the two-way check fails (draw markets, abbreviated names). Both `"home"` and `"home_yes"` are accepted by the Rust engine via `"home_yes" | "home"` match arms.
+
+For "No" labels, spreads use the two-way check. Moneyline and halftime use the slug check exclusively (returns `"home_no"` / `"draw_no"` etc.) — the two-way `"away"` would be wrong for three-way (draw is possible).
+
+Baseball moneyline is two-way — outcome labels are team names (not "Yes"/"No"), so they resolve at lines 83-90 before reaching either check. The three-way path is never entered for baseball.
+
+**Strategy keys** are self-describing for all soccer market types:
+- `{gid}:MONEYLINE:HOME_YES`, `{gid}:SOCCER_HALFTIME_RESULT:DRAW_NO`
+- `{gid}:BTTS:YES`, `{gid}:TOTAL_CORNERS:OVER:8.5`, `{gid}:EXACT_SCORE:1_0`
+
+The Rust plan loader has `eprintln!` warnings on all `_ => {}` arms — unhandled semantics are visible at startup. The `"yes"` / `"no"` fallback arms were removed from moneyline and halftime to prevent latent misrouting to the draw slot.
 
 ### Decoupled Submitter
 
@@ -217,7 +238,7 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 6. **Independent evaluation:** `evaluate_totals`, `evaluate_nrfi`, `evaluate_final` all run on every tick (not an if/else chain). Each takes `&mut self` only to update its own resolution flags (`Vec<bool>` writes); no string allocations.
 
-7. **NRFI first-inning gate:** `nrfi_first_inning_observed: Vec<bool>` indexed by `GameIdx`. Late subscriptions (inning > 1) are permanently skipped. Ticks without inning data defer evaluation. Extra innings: if `freeText` contains "extra", `inning_number` is set to `None`. Kalstrop break naming: `"Break top 1 bottom 1"` = mid-inning break (bottom of 1st not yet played, first inning NOT over); `"Break top 2 bottom 1"` = first inning fully done (NRFI NO can fire here if total=0).
+7. **NRFI first-inning gate:** `nrfi_first_inning_observed: Vec<bool>` indexed by `GameIdx`. Late subscriptions (inning > 1) are permanently skipped. Ticks without inning data defer evaluation. Extra innings use `inning_number = Some(10)` as sentinel (walkoff `>= 9` fires correctly). Kalstrop freeText patterns: `"Extra inning top"`, `"Extra inning bottom"`, `"Break top EI bottom 9"`, `"Break top EI bottom EI"` — all map to `(Some(10), half)`. Regular inning: `"Break top 1 bottom 1"` = mid-inning break (bottom of 1st not yet played, first inning NOT over); `"Break top 2 bottom 1"` = first inning fully done (NRFI NO can fire here if total=0).
 
 8. **Zero-copy parsing:** The live WS path deserializes directly into borrowed `KalstropFrame<'a>` structs and extracts fields without constructing a `Tick` or allocating any strings. The `fixture_id` is looked up as `&str` directly from the serde struct.
 
@@ -236,7 +257,8 @@ polybot2 market sync
 polybot2 market sync --all                          # include resolved/closed markets
 polybot2 provider sync                              # syncs all providers (kalstrop_v1, kalstrop_v2, boltodds)
 polybot2 provider sync --provider kalstrop_v1       # sync a single provider
-polybot2 link build                                 # build links for all live leagues (one run_id)
+polybot2 link build                                 # build links for all live leagues (one run_id), default horizon per league
+polybot2 link build --horizon-hours 6               # only link games within 6 hours
 polybot2 link build --league-scope all              # include non-live leagues too
 polybot2 link review --run-id N                     # interactive review (opt-out: reject bad matches)
 polybot2 hotpath live --league mlb --execution-mode live  # auto-discovers latest run_id
@@ -266,7 +288,7 @@ polybot2 hotpath live --league mlb --execution-mode live
 polybot2 hotpath live --league epl --execution-mode live  # separate process
 ```
 
-Review is opt-out: all linked games enter the plan unless explicitly rejected via `link review`.
+Review is opt-out: all linked games enter the plan unless explicitly rejected via `link review`. Link build applies a default `--horizon-hours` per league (MLB: 12h, EPL/UCL: 24h from `HOTPATH_RUNTIME_POLICY`) to scope to games starting soon. Soccer linking enforces strict home/away ordering against Polymarket event team order — rejects provider games with flipped designation.
 
 Refresh loop (every `refresh_interval_seconds` from `config/live_trading.py`, default 1800s):
 1. `discover_new_markets_sync()` — fetches markets from the Gamma API for known event IDs only (5–20 targeted HTTP requests, ~2s)
@@ -301,9 +323,9 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 
 **BoltOdds** — `spro.agency/api`. API key via query param. Covers MLB, EPL, and other leagues. Currently used as the EPL provider.
 - **REST catalog:** `GET /get_games?key=TOKEN` — returns all games with `universal_id`, `game`, `when` (ET timestamps), `orig_teams`, `sport`.
-- **WS streaming:** `wss://spro.agency/api?key=TOKEN` — delivers `initial_state`, `game_update`, `line_update` messages.
+- **WS streaming:** `wss://spro.agency/api/livescores?key=TOKEN` — delivers `match_update` frames with `designation: {"A":"home","B":"away"}`. The `/livescores` path is required (not `/api` alone).
 - **Team names are abbreviated** (e.g., `"ATL Braves"` for baseball, `"Chelsea"` for soccer). Provider aliases needed in mappings.
-- **Duplicate entries:** BoltOdds sometimes publishes two entries for the same game with different `universal_id`s and slightly different start times. Kickoff tolerance (`LEAGUE_MATCH_RULES`) must be calibrated to avoid linking the wrong entry.
+- **Duplicate entries:** BoltOdds sometimes publishes two entries for the same game with flipped home/away (e.g., "Sunderland vs Man Utd" and "Man Utd vs Sunderland"). The linker's strict home/away ordering check (soccer only) rejects the flipped duplicate by comparing against the Polymarket event's team ordering.
 
 Documentation: `research/kalstrop_api_documentation.md` covers the V2 API flow (steps 1-5). V1 docs: `docs/kalstrop_odds_v1.md`.
 
@@ -325,7 +347,8 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). The hotp
 - `smallvec` is a hot-path dependency (`SubmitBatch` payload). Don't replace with `Vec` without measuring — the inline `[T; 4]` capacity covers the common 1–4-intent-per-frame case without heap allocation.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
 - The field name is `amount_usdc` everywhere (not `notional_usdc` — that was the legacy name, fully removed).
-- The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`) shared via `Arc<Mutex<>>`. The `polybot2 hotpath observe` command reads the JSONL log file and renders an in-place terminal scoreboard. Team abbreviations use Polymarket codes from `config/mappings.py`.
+- The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`) shared via `Arc<Mutex<>>`. The `polybot2 hotpath observe` command reads the JSONL log file via `live_observer.py` and renders an in-place terminal scoreboard. Sport-aware: baseball shows `AWAY-HOME` with inning (`T3`, `B7`); soccer shows `HOME-AWAY` with half (`1H`, `HT`, `2H`, `FT`). Team abbreviations use Polymarket codes from `config/mappings.py`. Tick log entries include `corners` field for soccer.
+- Python canonical form for BTTS is `"btts"` (not `"both_teams_to_score"`). Must match the Rust `canonical_soccer_market_type` which also normalizes to `"btts"`.
 - SDK config uses `use_server_time(false)` to avoid a `GET /time` round-trip before every order POST. Host clock must be disciplined with chrono/NTP on the deployment target.
 - Multi-intent frames batch in `process_decoded_frame_sync` (one Batch per frame). The submitter dispatcher `tokio::spawn`s each batch immediately as a concurrent task (max 3 in-flight via `Semaphore`), routing 1-item batches to `post_order` and larger batches to `post_orders` (chunked at 15). Empty `order_id` with `success: true` from the batch endpoint is treated as failure (`map_post_response`).
 - Parsing uses zero-allocation byte-level scanning (`eq_ignore_ascii_case`, byte accumulator for numbers) — no `to_lowercase()`/`to_uppercase()` heap allocations on the tick path.
@@ -384,4 +407,5 @@ Systematic removal of dead code from the Python control plane. Guiding principle
 | 2 | CLI layer (`_cli/`) | Done — consolidated to 6 commands. Removed `--provider` from link/hotpath commands (derived from league config). Removed `--auto-approve` (review is opt-out). Provider sync defaults to all providers. |
 | 3 | Linking layer (`linking/`) | Done — `build_links_multi` processes all leagues in one `run_id`. Deleted `SnapshotBuilder`, `report()`. Added doubleheader dedup. Review is opt-out: only rejected games excluded from plan. |
 | 4 | Data layer (`data/`) | Done — deleted payload artifacts, dead DB methods, dead tables. Renamed `when_raw_et` → `when_raw`. Added `league` column to `link_runs`. Added `run_id` to `link_event_bindings`. Added `idx_pm_events_league_date` index. |
+| 5 | Hotpath orchestration (`hotpath/`) | Done — deleted replay system, dead Protocol classes, `NativeMlbEngineBridge`, dead attributes. Removed MLB-only gate. Expanded `CANONICAL_MARKET_TYPES` for soccer. Fixed incremental refresh market type normalization. |
 | 5 | Hotpath orchestration (`hotpath/`) | Done — deleted replay system, dead Protocol classes, `NativeMlbEngineBridge`, dead attributes. Removed MLB-only gate. Expanded `CANONICAL_MARKET_TYPES` for soccer. Fixed incremental refresh market type normalization. |

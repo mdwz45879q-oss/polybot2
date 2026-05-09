@@ -182,6 +182,7 @@ impl NativeSoccerEngine {
             let mut game_has_halftime = false;
             let mut game_has_exact_score = false;
             let mut token_ids: HashSet<String> = HashSet::new();
+            let game_id_ref = self.game_ids[gidx.0 as usize].as_str();
 
             for market_val in markets {
                 let sports_market_type = canonical_soccer_market_type(
@@ -239,20 +240,24 @@ impl NativeSoccerEngine {
                                 match semantic.as_str() {
                                     "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
                                     "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    _ => {}
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled totals semantic '{}' for game {}", other, game_id_ref);
+                                    }
                                 }
                             }
                         }
                         "moneyline" => {
                             game_has_moneyline = true;
                             match semantic.as_str() {
-                                "home_yes" => game_tgt.moneyline_home_yes = Some(tidx),
+                                "home_yes" | "home" => game_tgt.moneyline_home_yes = Some(tidx),
                                 "home_no" => game_tgt.moneyline_home_no = Some(tidx),
-                                "away_yes" => game_tgt.moneyline_away_yes = Some(tidx),
+                                "away_yes" | "away" => game_tgt.moneyline_away_yes = Some(tidx),
                                 "away_no" => game_tgt.moneyline_away_no = Some(tidx),
                                 "draw_yes" => game_tgt.moneyline_draw_yes = Some(tidx),
                                 "draw_no" => game_tgt.moneyline_draw_no = Some(tidx),
-                                _ => {}
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled moneyline semantic '{}' for game {}", other, game_id_ref);
+                                }
                             }
                         }
                         "spread" => {
@@ -261,7 +266,10 @@ impl NativeSoccerEngine {
                                 let side = match semantic.as_str() {
                                     "home" => SpreadSide::Home,
                                     "away" => SpreadSide::Away,
-                                    _ => continue,
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled spread semantic '{}' for game {}", other, game_id_ref);
+                                        continue;
+                                    }
                                 };
                                 game_tgt.spreads.push((side, l, tidx));
                             }
@@ -271,7 +279,9 @@ impl NativeSoccerEngine {
                             match semantic.as_str() {
                                 "yes" => game_tgt.btts_yes = Some(tidx),
                                 "no" => game_tgt.btts_no = Some(tidx),
-                                _ => {}
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled btts semantic '{}' for game {}", other, game_id_ref);
+                                }
                             }
                         }
                         "total_corners" => {
@@ -281,7 +291,9 @@ impl NativeSoccerEngine {
                                 match semantic.as_str() {
                                     "over" => game_tgt.corner_over_lines.push(OverLine { half_int: half, target_idx: tidx }),
                                     "under" => game_tgt.corner_under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    _ => {}
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled corners semantic '{}' for game {}", other, game_id_ref);
+                                    }
                                 }
                             }
                         }
@@ -292,9 +304,11 @@ impl NativeSoccerEngine {
                                 "home_no" => game_tgt.halftime_home_no = Some(tidx),
                                 "away_yes" | "away" => game_tgt.halftime_away_yes = Some(tidx),
                                 "away_no" => game_tgt.halftime_away_no = Some(tidx),
-                                "draw_yes" | "yes" => game_tgt.halftime_draw_yes = Some(tidx),
-                                "draw_no" | "no" => game_tgt.halftime_draw_no = Some(tidx),
-                                _ => {}
+                                "draw_yes" => game_tgt.halftime_draw_yes = Some(tidx),
+                                "draw_no" => game_tgt.halftime_draw_no = Some(tidx),
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled halftime semantic '{}' for game {}", other, game_id_ref);
+                                }
                             }
                         }
                         "soccer_exact_score" => {
@@ -312,6 +326,8 @@ impl NativeSoccerEngine {
                                     let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
                                     game_tgt.exact_scores.push((home_pred, away_pred, tidx));
                                 }
+                            } else {
+                                eprintln!("[polybot2] WARN: unhandled exact_score semantic '{}' for game {}", semantic, game_id_ref);
                             }
                         }
                         _ => {}
@@ -640,7 +656,9 @@ impl NativeSoccerEngine {
                                 match semantic.as_str() {
                                     "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
                                     "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    _ => {}
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled totals semantic '{}' for game {}", other, uid);
+                                    }
                                 }
                             }
                             self.has_totals[gi] = true;
@@ -648,13 +666,15 @@ impl NativeSoccerEngine {
                         }
                         "moneyline" => {
                             match semantic.as_str() {
-                                "home_yes" => game_tgt.moneyline_home_yes = Some(tidx),
+                                "home_yes" | "home" => game_tgt.moneyline_home_yes = Some(tidx),
                                 "home_no" => game_tgt.moneyline_home_no = Some(tidx),
-                                "away_yes" => game_tgt.moneyline_away_yes = Some(tidx),
+                                "away_yes" | "away" => game_tgt.moneyline_away_yes = Some(tidx),
                                 "away_no" => game_tgt.moneyline_away_no = Some(tidx),
                                 "draw_yes" => game_tgt.moneyline_draw_yes = Some(tidx),
                                 "draw_no" => game_tgt.moneyline_draw_no = Some(tidx),
-                                _ => {}
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled moneyline semantic '{}' for game {}", other, uid);
+                                }
                             }
                             self.has_moneyline[gi] = true;
                         }
@@ -663,7 +683,10 @@ impl NativeSoccerEngine {
                                 let side = match semantic.as_str() {
                                     "home" => SpreadSide::Home,
                                     "away" => SpreadSide::Away,
-                                    _ => continue,
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled spread semantic '{}' for game {}", other, uid);
+                                        continue;
+                                    }
                                 };
                                 game_tgt.spreads.push((side, l, tidx));
                             }
@@ -673,7 +696,9 @@ impl NativeSoccerEngine {
                             match semantic.as_str() {
                                 "yes" => game_tgt.btts_yes = Some(tidx),
                                 "no" => game_tgt.btts_no = Some(tidx),
-                                _ => {}
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled btts semantic '{}' for game {}", other, uid);
+                                }
                             }
                             self.has_btts[gi] = true;
                         }
@@ -683,7 +708,9 @@ impl NativeSoccerEngine {
                                 match semantic.as_str() {
                                     "over" => game_tgt.corner_over_lines.push(OverLine { half_int: half, target_idx: tidx }),
                                     "under" => game_tgt.corner_under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    _ => {}
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled corners semantic '{}' for game {}", other, uid);
+                                    }
                                 }
                             }
                             self.has_corners[gi] = true;
@@ -695,9 +722,11 @@ impl NativeSoccerEngine {
                                 "home_no" => game_tgt.halftime_home_no = Some(tidx),
                                 "away_yes" | "away" => game_tgt.halftime_away_yes = Some(tidx),
                                 "away_no" => game_tgt.halftime_away_no = Some(tidx),
-                                "draw_yes" | "yes" => game_tgt.halftime_draw_yes = Some(tidx),
-                                "draw_no" | "no" => game_tgt.halftime_draw_no = Some(tidx),
-                                _ => {}
+                                "draw_yes" => game_tgt.halftime_draw_yes = Some(tidx),
+                                "draw_no" => game_tgt.halftime_draw_no = Some(tidx),
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled halftime semantic '{}' for game {}", other, uid);
+                                }
                             }
                             self.has_halftime[gi] = true;
                         }
@@ -708,6 +737,8 @@ impl NativeSoccerEngine {
                                     let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
                                     game_tgt.exact_scores.push((home_pred, away_pred, tidx));
                                 }
+                            } else {
+                                eprintln!("[polybot2] WARN: unhandled exact_score semantic '{}' for game {}", semantic, uid);
                             }
                             self.has_exact_score[gi] = true;
                         }

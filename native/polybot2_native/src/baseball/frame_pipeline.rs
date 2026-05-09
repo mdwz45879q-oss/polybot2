@@ -93,6 +93,7 @@ fn flush_tick_logs(
                 tl.state.inning_number,
                 tl.state.inning_half,
                 tl.state.game_state,
+                None, // no corners for baseball
             );
         }
     }

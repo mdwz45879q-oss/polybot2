@@ -138,7 +138,7 @@ polybot2 hotpath observe --run-id <N> --league mlb
 polybot2 hotpath observe --log-file logs/hotpath_1_20260504T183200Z.jsonl
 
 # With team name resolution:
-polybot2 hotpath observe --run-id <N> --link-run-id <N> --league epl
+polybot2 hotpath observe --run-id 1--link-run-id 1--league epl
 ```
 
 ### Inspect log files with jq

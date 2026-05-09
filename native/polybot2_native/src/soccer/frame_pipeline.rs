@@ -74,6 +74,7 @@ fn flush_tick_logs(
                 None, // no inning number for soccer
                 tl.state.half,
                 tl.state.game_state,
+                tl.state.total_corners,
             );
         }
     }

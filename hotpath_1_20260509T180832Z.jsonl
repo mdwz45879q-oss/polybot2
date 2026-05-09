@@ -1,0 +1,24 @@
+{"ts":1778350112667,"ev":"startup","run_id":1,"games":1,"tokens":70,"mode":"noop"}
+{"ts":1778350112900,"ev":"ws_connect","subs":["Manchester City vs Brentford, 2026-05-09, 12"]}
+{"ts":1778350119673,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":2,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":9}
+{"ts":1778350168359,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL_CORNERS:OVER:9.5","tok":"5199106689026677147974078039771900086268754468090539114992836578687161029567","ok":true,"eid":"noop"}
+{"ts":1778350168360,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":2,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":10}
+{"ts":1778350280495,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL_CORNERS:OVER:10.5","tok":"107172968851131366076071311209793694835495004741956089313298647522727151938038","ok":true,"eid":"noop"}
+{"ts":1778350280496,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":2,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":11}
+{"ts":1778350755950,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL:OVER:2.5","tok":"66094765233954239802057192357695632284575435303787814716151890220911933939577","ok":true,"eid":"noop"}
+{"ts":1778350755951,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":3,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":11}
+{"ts":1778350873343,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL_CORNERS:OVER:11.5","tok":"26561439009390268485527034676689002868468286098771506444364630828313392810800","ok":true,"eid":"noop"}
+{"ts":1778350873344,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":3,"a":0,"inn":null,"half":"2nd half","gs":"LIVE","corners":12}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL:UNDER:3.5","tok":"39053716657140642135846127188257386072989859142966106159204048185557678998072","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL:UNDER:4.5","tok":"55747344850185525044931843603332669574526167945915702928234890517922571757214","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:MONEYLINE:HOME_YES","tok":"14217857576548855645229017785273803501251829924892187683500251674584755550608","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:MONEYLINE:AWAY_NO","tok":"35795280953187431187403483102994967876159808816054158518597323600313185128809","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:MONEYLINE:DRAW_NO","tok":"17348856379512443304060179803014705729342151750289963201658110612337111339829","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:SPREAD:HOME:-1.5","tok":"13661675300778066915526235060326810011470886781136677168749905289815419064903","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:SPREAD:HOME:-2.5","tok":"62502158704865187238152742765137005205117844644397707309876028892131909260369","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:BTTS:NO","tok":"9321555594659854687393447454766742829742302389123587763853144026225814172719","ok":true,"eid":"noop"}
+{"ts":1778351018089,"ev":"order","sk":"Manchester City vs Brentford, 2026-05-09, 12:TOTAL_CORNERS:UNDER:12.5","tok":"82820112633538200433045299239836857880172508678098644443473375180859156403175","ok":true,"eid":"noop"}
+{"ts":1778351018091,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":3,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":12}
+{"ts":1778351023554,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":3,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":12}
+{"ts":1778351027000,"ev":"tick","gid":"Manchester City vs Brentford, 2026-05-09, 12","h":3,"a":0,"inn":null,"half":"Ended","gs":"FINAL","corners":12}
+{"ts":1778351395100,"ev":"ws_disconnect","reason":"","reconnects":0}

@@ -61,6 +61,7 @@ impl LogWriter {
         inn: Option<i64>,
         half: &str,
         gs: &str,
+        corners: Option<i64>,
     ) {
         self.buf.clear();
         let _ = write!(self.buf, r#"{{"ts":{},"ev":"tick","gid":""#, now_unix_ms());
@@ -75,7 +76,12 @@ impl LogWriter {
         write_json_escape(&mut self.buf, half);
         self.buf.push_str(r#"","gs":""#);
         write_json_escape(&mut self.buf, gs);
-        self.buf.push_str(r#""}"#);
+        self.buf.push('"');
+        if let Some(c) = corners {
+            self.buf.push_str(r#","corners":"#);
+            let _ = write!(self.buf, "{}", c);
+        }
+        self.buf.push('}');
         self.flush_buf();
     }
 
