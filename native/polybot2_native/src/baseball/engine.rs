@@ -1227,7 +1227,7 @@ mod tests {
         }));
     }
 
-    fn tick_with_score(game_id: &str, home: i64, away: i64, ns: i64) -> Tick {
+    fn tick_with_score(game_id: &str, home: i64, away: i64, _ns: i64) -> Tick {
         Tick {
             universal_id: game_id.to_string(),
 
@@ -1594,7 +1594,7 @@ mod tests {
     // Walkoff tests
     // ---------------------------------------------------------------
 
-    fn tick_with_inning(game_id: &str, home: i64, away: i64, inning: i64, half: &'static str, ns: i64) -> Tick {
+    fn tick_with_inning(game_id: &str, home: i64, away: i64, inning: i64, half: &'static str, _ns: i64) -> Tick {
         Tick {
             universal_id: game_id.to_string(),
 
@@ -1608,7 +1608,7 @@ mod tests {
         }
     }
 
-    fn tick_ended(game_id: &str, home: i64, away: i64, ns: i64) -> Tick {
+    fn tick_ended(game_id: &str, home: i64, away: i64, _ns: i64) -> Tick {
         Tick {
             universal_id: game_id.to_string(),
 

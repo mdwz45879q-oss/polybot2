@@ -239,7 +239,7 @@ fn submit_presigned_miss_is_fail_closed() {
         presign_enabled: true,
         ..DispatchConfig::default()
     };
-    let (mut handle, mut rx) = make_handle_with_registry(
+    let (mut handle, rx) = make_handle_with_registry(
         cfg,
         registry_with_one_target("t", "strategy_a"),
     );
@@ -284,7 +284,7 @@ fn startup_warm_fails_when_templates_missing() {
 
 #[test]
 fn noop_dispatch_succeeds() {
-    let (mut handle, mut rx) = make_handle_with_registry(
+    let (mut handle, rx) = make_handle_with_registry(
         DispatchConfig::default(),
         registry_with_one_target("t1", "sk1"),
     );
@@ -327,7 +327,7 @@ fn empty_send_batch_is_noop() {
         mode: DispatchMode::Http,
         ..DispatchConfig::default()
     };
-    let (handle, mut rx) = make_handle_with_registry(cfg, empty_registry());
+    let (handle, rx) = make_handle_with_registry(cfg, empty_registry());
     let log = temp_log();
     handle.send_batch(SubmitBatch::new(), &log);
     // Empty batch should not send anything.
@@ -362,7 +362,7 @@ fn noop_dispatch_batch_succeeds() {
         ("t2", "sk2"),
         ("t3", "sk3"),
     ]);
-    let (mut handle, mut rx) =
+    let (mut handle, rx) =
         make_handle_with_registry(DispatchConfig::default(), registry);
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
@@ -380,7 +380,7 @@ fn presign_batch_miss_is_per_order() {
         ..DispatchConfig::default()
     };
     let registry = registry_with_n_targets(&[("t1", "sk1"), ("t2", "sk2")]);
-    let (mut handle, mut rx) = make_handle_with_registry(cfg, registry);
+    let (mut handle, rx) = make_handle_with_registry(cfg, registry);
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     dispatch_target_inline(&mut handle, crate::TargetIdx(1), &log);
@@ -399,12 +399,12 @@ fn dispatch_handle_logs_when_channel_closed() {
         presign_enabled: true,
         ..DispatchConfig::default()
     };
-    let (mut handle, _rx) = make_handle_with_registry(
+    let (mut handle, _) = make_handle_with_registry(
         cfg,
         registry_with_one_target("t1", "sk1"),
     );
+    // Receiver dropped here — channel is closed before dispatching.
     let log = temp_log();
-    drop(_rx);
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
 }
 
