@@ -141,7 +141,7 @@ TEAM_MAP_EPL = {
     "wolverhampton wanderers":{
         "polymarket_code": "wol",
         "provider_aliases": {
-            "boltodds": ["wolves",],
+            "boltodds": ["wolverhampton",],
         },
     },
 }
