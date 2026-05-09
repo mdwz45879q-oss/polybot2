@@ -262,7 +262,7 @@ impl NativeHotPathRuntime {
                     let ws_url = cfg
                         .boltodds_ws_url
                         .clone()
-                        .unwrap_or_else(|| "wss://spro.agency/api".to_string());
+                        .unwrap_or_else(|| "wss://spro.agency/api/livescores".to_string());
                     let bo_cfg = crate::ws_boltodds::BoltOddsWorkerConfig {
                         ws_url,
                         api_key,

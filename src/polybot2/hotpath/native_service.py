@@ -182,7 +182,7 @@ class NativeHotPathService:
             "run_id": int(plan.run_id) if plan is not None else 0,
             "provider": provider_name,
             "boltodds_api_key": os.getenv("BOLTODDS_API_KEY", ""),
-            "boltodds_ws_url": os.getenv("BOLTODDS_WS_URL", "wss://spro.agency/api"),
+            "boltodds_ws_url": os.getenv("BOLTODDS_WS_URL", "wss://spro.agency/api/livescores"),
         }
         return payload
 
