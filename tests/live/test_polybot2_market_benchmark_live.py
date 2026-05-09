@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from polybot2._cli.actions import dispatch
+from polybot2._cli.router import dispatch
 from polybot2._cli.parser import build_parser
 
 pytestmark = [

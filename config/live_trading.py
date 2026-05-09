@@ -2,23 +2,52 @@
 
 LIVE_TRADING_VERSION = "v1"
 
-DEFAULT_PROVIDER = "kalstrop"
+DEFAULT_PROVIDER = None
 
 LIVE_BETTING_LEAGUES = {
     "mlb",
-    # "bundesliga",
+    "epl",
+    "ucl",
 }
-
 LIVE_BETTING_MARKET_TYPES = {
-    "bundesliga": ["moneyline", "totals", "both_teams_to_score"],
-    "mlb": ["nrfi", "totals", "moneyline",],
+    "mlb": ["nrfi", 
+            "totals", 
+            "moneyline",
+            "spreads"],
+    "epl":["moneyline", 
+           "totals", 
+           "both_teams_to_score", 
+           "spreads", 
+           "soccer_halftime_result", 
+           "soccer_exact_score", 
+           "total_corners"],
+    "ucl": ["moneyline", 
+            "totals", 
+            "both_teams_to_score", 
+            "spreads", 
+            "soccer_halftime_result", 
+            "soccer_exact_score"],
 }
 
 # Centralized hotpath execution profile used by league runtime plugins.
 HOTPATH_EXECUTION_POLICY = {
     "mlb": {
-        "amount_usdc": 75.0,
-        "size_shares": 75.0,
+        "amount_usdc": 50.0,
+        "size_shares": 50.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+    },
+    "epl": {
+        "amount_usdc": 5.0,
+        "size_shares": 5.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+    },
+    "ucl": {
+        "amount_usdc": 5.0,
+        "size_shares": 5.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
@@ -34,10 +63,18 @@ HOTPATH_RUNTIME_POLICY = {
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 1800,
     },
-    "bundesliga": {
+    "epl": {
         "plan_horizon_hours": 24,
-        "subscribe_lead_minutes": 90,
+        "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 600,
+        "refresh_interval_seconds": 300,
+    },
+    "ucl": {
+        "plan_horizon_hours": 24,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 600,
+        "refresh_interval_seconds": 300,
     },
 }

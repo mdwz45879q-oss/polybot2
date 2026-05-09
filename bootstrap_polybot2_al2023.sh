@@ -4,7 +4,7 @@
 #
 # Sets up an Amazon Linux 2023 EC2 instance for polybot2:
 #   - OS-level build dependencies
-#   - Miniconda (Python 3.11 env with conda for additional packages)
+#   - Miniconda (base env with Python 3.11)
 #   - Rust toolchain via rustup
 #   - Python package + Rust native module build
 #   - Runtime directories, systemd unit, env file template
@@ -19,7 +19,6 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 APP_USER="${APP_USER:-$(stat -c '%U' "$APP_DIR" 2>/dev/null || whoami)}"
 CONDA_DIR="${CONDA_DIR:-/home/$APP_USER/miniconda3}"
-CONDA_ENV="${CONDA_ENV:-polybot2}"
 PYTHON_VERSION="3.11"
 
 if [[ ! -f "$APP_DIR/pyproject.toml" ]]; then
@@ -44,7 +43,6 @@ echo "=== polybot2 bootstrap ==="
 echo "Repo:        $APP_DIR"
 echo "App user:    $APP_USER"
 echo "Conda dir:   $CONDA_DIR"
-echo "Conda env:   $CONDA_ENV"
 echo "Python:      $PYTHON_VERSION"
 echo
 
@@ -80,14 +78,10 @@ run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept 
 run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true"
 
 # ───────────────────────────────────────────────────────────────────────────
-# 3. Conda environment with Python 3.11
+# 3. Ensure base env has correct Python version
 # ───────────────────────────────────────────────────────────────────────────
-if ! run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda env list | grep -q '^${CONDA_ENV} '"; then
-  echo ">>> Creating conda env '$CONDA_ENV' with Python $PYTHON_VERSION..."
-  run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda create -y -n '$CONDA_ENV' python=$PYTHON_VERSION"
-else
-  echo ">>> Conda env '$CONDA_ENV' already exists"
-fi
+echo ">>> Ensuring base conda env has Python $PYTHON_VERSION..."
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda install -y -n base python=$PYTHON_VERSION"
 
 # ───────────────────────────────────────────────────────────────────────────
 # 4. Rust toolchain
@@ -114,12 +108,12 @@ sudo chown -R "$APP_USER:$APP_USER" /var/log/polybot2 "$APP_DIR/runtime"
 echo ">>> Installing Python deps and building native module..."
 run_as_app_user "
   source '$CONDA_DIR/etc/profile.d/conda.sh'
-  conda activate '$CONDA_ENV'
   source ~/.cargo/env
 
   cd '$APP_DIR'
   pip install -U pip wheel setuptools maturin
   pip install -e '.[dev]'
+  pip install 'httpx[http2]'
   maturin develop --release --manifest-path native/polybot2_native/Cargo.toml
 "
 
@@ -129,7 +123,6 @@ run_as_app_user "
 echo ">>> Running smoke tests..."
 run_as_app_user "
   source '$CONDA_DIR/etc/profile.d/conda.sh'
-  conda activate '$CONDA_ENV'
 
   cd '$APP_DIR'
   cargo test --manifest-path native/polybot2_native/Cargo.toml -q
@@ -140,8 +133,7 @@ run_as_app_user "
 # 8. systemd service unit
 # ───────────────────────────────────────────────────────────────────────────
 echo ">>> Installing systemd unit..."
-CONDA_PYTHON="$CONDA_DIR/envs/$CONDA_ENV/bin/python"
-CONDA_ACTIVATE="source $CONDA_DIR/etc/profile.d/conda.sh && conda activate $CONDA_ENV && source ~/.cargo/env"
+CONDA_ACTIVATE="source $CONDA_DIR/etc/profile.d/conda.sh && source ~/.cargo/env"
 
 sudo tee /etc/systemd/system/polybot2-hotpath.service >/dev/null <<UNIT
 [Unit]
@@ -190,12 +182,13 @@ POLY_EXEC_CLOB_HOST=https://clob.polymarket.com
 # =============================================================================
 KALSTROP_CLIENT_ID=__SET_ME__
 KALSTROP_SHARED_SECRET_RAW=__SET_ME__
+BOLTODDS_API_KEY=__SET_ME__
 
 # =============================================================================
 # HOTPATH COMMAND
 # Edit for your actual run-id, db path, and execution mode.
 # =============================================================================
-POLYBOT2_COMMAND=hotpath run --db /opt/polybot2/runtime/polybot2.sqlite --provider kalstrop --league mlb --link-run-id 1 --execution-mode paper --with-observe
+POLYBOT2_COMMAND=hotpath live --league mlb --execution-mode paper
 ENV
   sudo chmod 600 /etc/polybot2/polybot2.env
   sudo chown "$APP_USER:$APP_USER" /etc/polybot2/polybot2.env
@@ -211,24 +204,22 @@ sudo systemctl daemon-reload
 echo
 echo "=== Bootstrap complete ==="
 echo
-echo "Conda env:   conda activate $CONDA_ENV"
 echo "Env file:    /etc/polybot2/polybot2.env"
 echo
 echo "Before running the hotpath, complete the prerequisite pipeline:"
-echo "  conda activate $CONDA_ENV && cd $APP_DIR"
-echo "  polybot2 data sync --db runtime/polybot2.sqlite"
-echo "  polybot2 provider sync --provider kalstrop --league mlb --db runtime/polybot2.sqlite"
-echo "  polybot2 link build --provider kalstrop --league mlb --db runtime/polybot2.sqlite"
-echo "  polybot2 link review session --provider kalstrop --league mlb --link-run-id <N> --db runtime/polybot2.sqlite"
+echo "  cd $APP_DIR"
+echo "  polybot2 market sync"
+echo "  polybot2 provider sync"
+echo "  polybot2 link build"
 echo
 echo "Then run the hotpath interactively:"
-echo "  polybot2 hotpath run --provider kalstrop --league mlb --link-run-id <N> --db runtime/polybot2.sqlite --execution-mode paper --with-observe"
+echo "  polybot2 hotpath live --league mlb --execution-mode paper"
 echo
 echo "To install additional packages:"
-echo "  conda activate $CONDA_ENV && conda install <package>"
-echo "  conda activate $CONDA_ENV && pip install <package>"
+echo "  conda install <package>"
+echo "  pip install <package>"
 echo
 echo "To rebuild after pulling new code:"
-echo "  conda activate $CONDA_ENV && cd $APP_DIR"
+echo "  cd $APP_DIR"
 echo "  pip install -e '.[dev]'"
 echo "  maturin develop --release --manifest-path native/polybot2_native/Cargo.toml"

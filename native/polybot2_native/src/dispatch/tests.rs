@@ -23,10 +23,10 @@ fn empty_registry() -> Arc<crate::TargetRegistry> {
 
 fn registry_with_one_target(token_id: &str, sk: &str) -> Arc<crate::TargetRegistry> {
     Arc::new(crate::TargetRegistry {
-        tokens: vec![crate::TokenSlot { token_id: token_id.to_string() }],
+        tokens: vec![crate::TokenSlot { token_id: Arc::from(token_id) }],
         targets: vec![crate::TargetSlot {
             token_idx: crate::TokenIdx(0),
-            strategy_key: sk.to_string(),
+            strategy_key: Arc::from(sk),
         }],
     })
 }
@@ -41,14 +41,14 @@ fn registry_with_n_targets(targets: &[(&str, &str)]) -> Arc<crate::TargetRegistr
             Some(&i) => i,
             None => {
                 let i = crate::TokenIdx(tokens.len() as u16);
-                tokens.push(crate::TokenSlot { token_id: token_id.to_string() });
+                tokens.push(crate::TokenSlot { token_id: Arc::from(*token_id) });
                 token_to_idx.insert(token_id.to_string(), i);
                 i
             }
         };
         target_slots.push(crate::TargetSlot {
             token_idx: idx,
-            strategy_key: sk.to_string(),
+            strategy_key: Arc::from(*sk),
         });
     }
     Arc::new(crate::TargetRegistry { tokens, targets: target_slots })
@@ -57,9 +57,9 @@ fn registry_with_n_targets(targets: &[(&str, &str)]) -> Arc<crate::TargetRegistr
 #[allow(dead_code)]
 fn make_handle_with_channel(
     cfg: DispatchConfig,
-) -> (DispatchHandle, tokio_mpsc::UnboundedReceiver<SubmitWork>) {
+) -> (DispatchHandle, flume::Receiver<SubmitWork>) {
     let mut handle = DispatchHandle::new(cfg, empty_registry());
-    let (tx, rx) = tokio_mpsc::unbounded_channel::<SubmitWork>();
+    let (tx, rx) = flume::unbounded::<SubmitWork>();
     handle.install_submit_tx(tx);
     (handle, rx)
 }
@@ -67,9 +67,9 @@ fn make_handle_with_channel(
 fn make_handle_with_registry(
     cfg: DispatchConfig,
     registry: Arc<crate::TargetRegistry>,
-) -> (DispatchHandle, tokio_mpsc::UnboundedReceiver<SubmitWork>) {
+) -> (DispatchHandle, flume::Receiver<SubmitWork>) {
     let mut handle = DispatchHandle::new(cfg, registry);
-    let (tx, rx) = tokio_mpsc::unbounded_channel::<SubmitWork>();
+    let (tx, rx) = flume::unbounded::<SubmitWork>();
     handle.install_submit_tx(tx);
     (handle, rx)
 }
@@ -202,7 +202,7 @@ fn submitter_health_default_is_not_running() {
 fn submitter_run_sets_running_then_clears_on_stop() {
     let cfg = DispatchConfig::default(); // Noop — skips SDK init
     let log = temp_log();
-    let (tx, rx) = tokio_mpsc::unbounded_channel::<SubmitWork>();
+    let (tx, rx) = flume::unbounded::<SubmitWork>();
     let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
     let submitter = OrderSubmitter::new(cfg, log, rx, Arc::clone(&health), empty_registry());
     let _ = tx.send(SubmitWork::Stop);
@@ -219,7 +219,7 @@ fn submitter_run_sets_running_then_clears_on_stop() {
 fn submitter_run_sets_running_then_clears_on_channel_close() {
     let cfg = DispatchConfig::default();
     let log = temp_log();
-    let (tx, rx) = tokio_mpsc::unbounded_channel::<SubmitWork>();
+    let (tx, rx) = flume::unbounded::<SubmitWork>();
     let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
     let submitter = OrderSubmitter::new(cfg, log, rx, Arc::clone(&health), empty_registry());
     drop(tx); // close the channel; submitter should exit cleanly
@@ -246,7 +246,7 @@ fn submit_presigned_miss_is_fail_closed() {
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     // Nothing was sent to the submitter channel: presign miss is fail-closed.
-    assert!(matches!(rx.try_recv(), Err(tokio_mpsc::error::TryRecvError::Empty)));
+    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn noop_dispatch_succeeds() {
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     // Noop short-circuits before reaching the channel.
-    assert!(matches!(rx.try_recv(), Err(tokio_mpsc::error::TryRecvError::Empty)));
+    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn empty_send_batch_is_noop() {
     let log = temp_log();
     handle.send_batch(SubmitBatch::new(), &log);
     // Empty batch should not send anything.
-    assert!(matches!(rx.try_recv(), Err(tokio_mpsc::error::TryRecvError::Empty)));
+    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn noop_dispatch_batch_succeeds() {
     dispatch_target_inline(&mut handle, crate::TargetIdx(1), &log);
     dispatch_target_inline(&mut handle, crate::TargetIdx(2), &log);
     // Noop never sends on the channel.
-    assert!(matches!(rx.try_recv(), Err(tokio_mpsc::error::TryRecvError::Empty)));
+    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
 }
 
 #[test]
@@ -385,7 +385,7 @@ fn presign_batch_miss_is_per_order() {
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     dispatch_target_inline(&mut handle, crate::TargetIdx(1), &log);
     // Both intents should have failed presign-miss, so nothing on the channel.
-    assert!(matches!(rx.try_recv(), Err(tokio_mpsc::error::TryRecvError::Empty)));
+    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
 }
 
 #[test]
@@ -442,7 +442,7 @@ fn build_live_dispatch_config() -> Option<DispatchConfig> {
 
 fn build_test_submitter(cfg: DispatchConfig) -> OrderSubmitter {
     let log = temp_log();
-    let (_tx, rx) = tokio_mpsc::unbounded_channel::<SubmitWork>();
+    let (_tx, rx) = flume::unbounded::<SubmitWork>();
     let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
     OrderSubmitter::new(cfg, log, rx, health, empty_registry())
 }

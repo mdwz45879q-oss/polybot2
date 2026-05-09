@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 import sys
 
-from polybot2._cli.actions import dispatch
+from polybot2._cli.router import dispatch
 from polybot2._cli.parser import build_parser
 
 LOG_FMT = "%(asctime)s [%(levelname)s] %(name)s | %(message)s"
@@ -36,11 +35,6 @@ def main() -> None:
     args = parser.parse_args()
 
     loop = asyncio.new_event_loop()
-    for sig_name in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig_name, loop.stop)
-        except NotImplementedError:
-            pass
 
     try:
         code = loop.run_until_complete(dispatch(args, logger=log))

@@ -1,6 +1,6 @@
 """SQLite schema for polybot2."""
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS _schema_version (
@@ -26,9 +26,6 @@ CREATE TABLE IF NOT EXISTS pm_events (
     start_ts_utc            INTEGER,
     end_ts_utc              INTEGER,
     status                  TEXT NOT NULL DEFAULT '',
-    payload_sha256          TEXT NOT NULL DEFAULT '',
-    payload_ref             TEXT NOT NULL DEFAULT '',
-    payload_size_bytes      INTEGER,
     updated_at              INTEGER NOT NULL DEFAULT 0
 );
 
@@ -48,9 +45,6 @@ CREATE TABLE IF NOT EXISTS pm_markets (
     volume                  REAL NOT NULL DEFAULT 0,
     end_date                TEXT NOT NULL DEFAULT '',
     end_ts_utc              INTEGER,
-    payload_sha256          TEXT NOT NULL DEFAULT '',
-    payload_ref             TEXT NOT NULL DEFAULT '',
-    payload_size_bytes      INTEGER,
     updated_at              INTEGER NOT NULL DEFAULT 0
 );
 
@@ -87,35 +81,8 @@ CREATE TABLE IF NOT EXISTS pm_event_teams (
     PRIMARY KEY (event_id, team_index)
 );
 
-CREATE TABLE IF NOT EXISTS pm_sports_ref (
-    sport                   TEXT PRIMARY KEY,
-    sport_id                INTEGER,
-    image                   TEXT NOT NULL DEFAULT '',
-    resolution              TEXT NOT NULL DEFAULT '',
-    ordering                TEXT NOT NULL DEFAULT '',
-    tags_csv                TEXT NOT NULL DEFAULT '',
-    series                  TEXT NOT NULL DEFAULT '',
-    created_at_raw          TEXT NOT NULL DEFAULT '',
-    synced_at               INTEGER NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS pm_sports_market_types_ref (
     market_type             TEXT PRIMARY KEY,
-    synced_at               INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS pm_teams_ref (
-    team_id                 INTEGER PRIMARY KEY,
-    name                    TEXT NOT NULL DEFAULT '',
-    league                  TEXT NOT NULL DEFAULT '',
-    abbreviation            TEXT NOT NULL DEFAULT '',
-    alias                   TEXT NOT NULL DEFAULT '',
-    provider_team_id        INTEGER,
-    record                  TEXT NOT NULL DEFAULT '',
-    logo                    TEXT NOT NULL DEFAULT '',
-    color                   TEXT NOT NULL DEFAULT '',
-    created_at_raw          TEXT NOT NULL DEFAULT '',
-    updated_at_raw          TEXT NOT NULL DEFAULT '',
     synced_at               INTEGER NOT NULL DEFAULT 0
 );
 
@@ -126,16 +93,15 @@ CREATE TABLE IF NOT EXISTS provider_games (
     orig_teams              TEXT NOT NULL DEFAULT '',
     sport_raw               TEXT NOT NULL DEFAULT '',
     league_raw              TEXT NOT NULL DEFAULT '',
-    when_raw_et             TEXT NOT NULL DEFAULT '',
+    category_name           TEXT NOT NULL DEFAULT '',
+    category_country_code   TEXT NOT NULL DEFAULT '',
+    when_raw             TEXT NOT NULL DEFAULT '',
     start_ts_utc            INTEGER,
     game_date_et            TEXT NOT NULL DEFAULT '',
     home_raw                TEXT NOT NULL DEFAULT '',
     away_raw                TEXT NOT NULL DEFAULT '',
     parse_status            TEXT NOT NULL DEFAULT '',
     parse_reason            TEXT NOT NULL DEFAULT '',
-    payload_sha256          TEXT NOT NULL DEFAULT '',
-    payload_ref             TEXT NOT NULL DEFAULT '',
-    payload_size_bytes      INTEGER,
     updated_at              INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (provider, provider_game_id)
 );
@@ -144,6 +110,7 @@ CREATE TABLE IF NOT EXISTS link_runs (
     run_id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     run_ts                  INTEGER NOT NULL DEFAULT 0,
     provider                TEXT NOT NULL DEFAULT '',
+    league                  TEXT NOT NULL DEFAULT '',
     league_scope            TEXT NOT NULL DEFAULT '',
     mapping_version         TEXT NOT NULL DEFAULT '',
     mapping_hash            TEXT NOT NULL DEFAULT '',
@@ -179,6 +146,7 @@ CREATE TABLE IF NOT EXISTS link_event_bindings (
     event_id                TEXT NOT NULL DEFAULT '',
     event_slug_prefix       TEXT NOT NULL DEFAULT '',
     updated_at              INTEGER NOT NULL DEFAULT 0,
+    run_id                  INTEGER,
     PRIMARY KEY (provider, provider_game_id, event_id)
 );
 
@@ -209,7 +177,7 @@ CREATE TABLE IF NOT EXISTS link_run_provider_games (
     game_label               TEXT NOT NULL DEFAULT '',
     sport_raw                TEXT NOT NULL DEFAULT '',
     league_raw               TEXT NOT NULL DEFAULT '',
-    when_raw_et              TEXT NOT NULL DEFAULT '',
+    when_raw              TEXT NOT NULL DEFAULT '',
     start_ts_utc             INTEGER,
     game_date_et             TEXT NOT NULL DEFAULT '',
     home_raw                 TEXT NOT NULL DEFAULT '',
@@ -289,30 +257,12 @@ CREATE TABLE IF NOT EXISTS link_review_decisions (
     decided_at               INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS link_launch_audit (
-    audit_id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id                   INTEGER,
-    provider                 TEXT NOT NULL DEFAULT '',
-    approved_run_id          INTEGER,
-    gate_result              TEXT NOT NULL DEFAULT '',
-    unresolved_games         INTEGER NOT NULL DEFAULT 0,
-    decision_progress_json   TEXT NOT NULL DEFAULT '{}',
-    force_launch             INTEGER NOT NULL DEFAULT 0,
-    blocked                  INTEGER NOT NULL DEFAULT 0,
-    message                  TEXT NOT NULL DEFAULT '',
-    created_at               INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_pm_events_slug_raw ON pm_events(slug_raw);
 CREATE INDEX IF NOT EXISTS idx_pm_markets_event_id ON pm_markets(event_id);
 CREATE INDEX IF NOT EXISTS idx_pm_market_tokens_condition_id ON pm_market_tokens(condition_id);
 CREATE INDEX IF NOT EXISTS idx_pm_event_teams_event_id ON pm_event_teams(event_id);
 CREATE INDEX IF NOT EXISTS idx_pm_event_teams_team_id ON pm_event_teams(team_id);
 CREATE INDEX IF NOT EXISTS idx_pm_event_teams_provider_team_id ON pm_event_teams(provider_team_id);
 CREATE INDEX IF NOT EXISTS idx_pm_event_teams_league_abbrev ON pm_event_teams(league, abbreviation);
-CREATE INDEX IF NOT EXISTS idx_pm_teams_ref_league_abbrev ON pm_teams_ref(league, abbreviation);
-CREATE INDEX IF NOT EXISTS idx_pm_teams_ref_provider_team_id ON pm_teams_ref(provider_team_id);
-CREATE INDEX IF NOT EXISTS idx_pm_teams_ref_name ON pm_teams_ref(name);
 CREATE INDEX IF NOT EXISTS idx_provider_games_provider_game ON provider_games(provider, provider_game_id);
 CREATE INDEX IF NOT EXISTS idx_link_market_bindings_provider_game_tradeable
     ON link_market_bindings(provider, provider_game_id, is_tradeable);
@@ -326,6 +276,6 @@ CREATE INDEX IF NOT EXISTS idx_link_run_market_targets_run_provider
     ON link_run_market_targets(run_id, provider, provider_game_id, condition_id, outcome_index);
 CREATE INDEX IF NOT EXISTS idx_link_review_decisions_run_provider_game
     ON link_review_decisions(run_id, provider, provider_game_id, decision_id);
-CREATE INDEX IF NOT EXISTS idx_link_launch_audit_run_provider
-    ON link_launch_audit(run_id, provider, created_at);
+CREATE INDEX IF NOT EXISTS idx_pm_events_league_date
+    ON pm_events(league_key, game_date_et);
 """

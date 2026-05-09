@@ -1,4 +1,4 @@
-"""MLB order policy definition."""
+"""Sport-generic order execution policy."""
 
 from __future__ import annotations
 
@@ -6,14 +6,13 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class MlbOrderPolicy:
+class OrderPolicy:
     """Execution profile injected from live trading policy."""
 
     amount_usdc: float = 5.0
     size_shares: float = 5.0
     limit_price: float = 0.52
     time_in_force: str = "FAK"
-    gtd_expiration_seconds: int = 300
 
 
-__all__ = ["MlbOrderPolicy"]
+__all__ = ["OrderPolicy"]

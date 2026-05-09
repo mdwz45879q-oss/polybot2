@@ -11,11 +11,12 @@ pip install -e /Users/reda/polymarket_bot/polybot2
 ## CLI
 
 ```bash
-polybot2 data sync --markets
-polybot2 provider sync
-polybot2 mapping validate
-polybot2 link build --league-scope live
-polybot2 link report
+polybot2 market sync
+polybot2 provider sync --provider kalstrop_v1
+polybot2 link build --auto-approve
+polybot2 link review --run-id <N>
+polybot2 hotpath live --league mlb --link-run-id <N> --execution-mode live
+polybot2 hotpath observe --run-id <N>
 ```
 
 ## Native Hotpath Exec Payload (Current)

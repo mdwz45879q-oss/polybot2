@@ -15,11 +15,9 @@ class _DummyMarketsAdapter:
         *,
         events_data: list[dict[str, Any]],
         updated_ts: int,
-        payload_writer: Any,
-        compute_lineage_hash: bool = True,
         commit: bool = True,
     ) -> tuple[int, int, int, int]:
-        del updated_ts, payload_writer, compute_lineage_hash, commit
+        del updated_ts, commit
         n = len(events_data)
         self.upsert_batch_sizes.append(n)
         return (0, n, 0, 0)

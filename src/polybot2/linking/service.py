@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import json
+import logging
 import time
 from typing import Any
 
@@ -19,6 +20,8 @@ from polybot2.linking.mapping_loader import (
 )
 from polybot2.market_types import normalize_sports_market_type
 from polybot2.linking.normalize import normalize_league_key
+
+log = logging.getLogger(__name__)
 
 
 def _norm(text: str) -> str:
@@ -71,12 +74,32 @@ class _EventChoice:
     diagnostics: dict[str, Any]
 
 
+@dataclass
+class _LinkBuildBatch:
+    provider: str
+    league: str
+    n_games_seen: int
+    n_games_linked: int
+    n_games_tradeable: int
+    n_targets: int
+    n_targets_tradeable: int
+    game_binding_rows: list[tuple[Any, ...]]
+    event_binding_rows: list[tuple[Any, ...]]
+    market_binding_rows: list[tuple[Any, ...]]
+    run_provider_games: list[dict[str, Any]]
+    run_game_reviews: list[dict[str, Any]]
+    run_event_candidates: list[dict[str, Any]]
+    run_market_targets: list[dict[str, Any]]
+    unresolved_reason_counter: dict[str, int]
+    candidate_debug: list[dict[str, Any]]
+
+
 class LinkService:
     def __init__(self, *, db: Database):
         self._db = db
 
     def _load_match_rules(self, *, mapping: LoadedMapping, league: str) -> _LeagueMatchRules:
-        cfg = mapping.league_match_rules.get(_norm(league), {})
+        cfg = mapping.league_match_rules.get(_norm(league), mapping.league_match_rules.get("default", {}))
         if not isinstance(cfg, dict):
             cfg = {}
         return _LeagueMatchRules(
@@ -175,16 +198,27 @@ class LinkService:
     ) -> tuple[_ResolvedProviderGame | None, str]:
         league_raw = _norm(row.get("league_raw") or "")
         sport_raw = _norm(row.get("sport_raw") or "")
-        # Provider league signal fallback:
-        # - Kalstrop usually provides league_raw as expected.
-        # - BoltOdds often puts league-like value in sport_raw.
+        category_name = str(row.get("category_name") or "").strip()
         league_signal = league_raw or sport_raw
-        provider_alias_map = mapping.provider_league_aliases.get(_norm(provider), {})
-        canonical_league = _norm(provider_alias_map.get(league_signal) or "")
+
+        # Try country-qualified disambiguation first (PROVIDER_LEAGUE_COUNTRY).
+        canonical_league = ""
+        if category_name:
+            provider_country_map = mapping.provider_league_country.get(_norm(provider), {})
+            country_key = (_norm(category_name), _norm(league_signal))
+            canonical_league = _norm(str(provider_country_map.get(country_key, "")))
+
+        # Fall back to unambiguous aliases (PROVIDER_LEAGUE_ALIASES).
+        if not canonical_league:
+            provider_alias_map = mapping.provider_league_aliases.get(_norm(provider), {})
+            canonical_league = _norm(provider_alias_map.get(league_signal) or "")
+
+        # Fall back to normalize_league_key.
         if not canonical_league:
             normalized_guess = _norm(normalize_league_key(league_signal))
             if normalized_guess in mapping.leagues:
                 canonical_league = normalized_guess
+
         if not canonical_league:
             return (None, "league_unmapped")
         if league_scope == "live" and canonical_league not in live_betting_leagues:
@@ -589,20 +623,53 @@ class LinkService:
             return "NO_TRADEABLE_TARGETS"
         return rc.upper() if rc else "UNRESOLVED"
 
-    def build_links(
+    def _process_provider_league(
         self,
         *,
         provider: str,
+        league: str | None = None,
         mapping: LoadedMapping,
         live_policy: LoadedLiveTradingPolicy | None = None,
         league_scope: str = "live",
-    ) -> LinkBuildResult:
+        horizon_hours: float | None = None,
+    ) -> _LinkBuildBatch:
+        """Process games for one (provider, league) pair without writing to DB.
+
+        Returns a _LinkBuildBatch containing all accumulated rows and stats,
+        ready for persistence via _persist_link_run.
+        """
         p = _norm(provider)
         scope = _norm(league_scope)
         if scope not in {"live", "all"}:
             raise ValueError("league_scope must be live|all")
+        league_filter = _norm(league) if league else ""
 
         provider_rows = self._db.linking.load_provider_games(provider=p)
+
+        # Filter by kickoff time window if horizon_hours is set.
+        n_dropped_horizon = 0
+        if horizon_hours is not None and horizon_hours > 0:
+            now_ts_horizon = int(time.time())
+            upper_ts = int(now_ts_horizon + (horizon_hours * 3600))
+            lower_ts = int(now_ts_horizon - (6 * 3600))
+            filtered = []
+            for row in provider_rows:
+                kickoff = _int_or_none(row.get("start_ts_utc"))
+                if kickoff is None:
+                    filtered.append(row)  # keep games with unknown kickoff
+                    continue
+                if lower_ts <= kickoff <= upper_ts:
+                    filtered.append(row)
+                else:
+                    n_dropped_horizon += 1
+            provider_rows = filtered
+            if n_dropped_horizon > 0:
+                log.info(
+                    "link build: %s/%s: dropped %d games outside horizon window [-%dh, +%dh]",
+                    p, league_filter, n_dropped_horizon, 6, int(horizon_hours),
+                )
+
+        n_league_filtered = 0
         n_games_seen = len(provider_rows)
         policy = live_policy or load_live_trading_policy()
         unknown_live_leagues = sorted(x for x in policy.live_betting_leagues if x not in mapping.leagues)
@@ -621,12 +688,12 @@ class LinkService:
         valid_market_types = {_norm(x) for x in self._db.markets.load_valid_sports_market_types() if _norm(x)}
         if valid_market_types:
             unknown_market_types: dict[str, list[str]] = {}
-            for league, types in policy.live_betting_market_types_by_league.items():
+            for lk, types in policy.live_betting_market_types_by_league.items():
                 bad = sorted(t for t in types if t not in valid_market_types)
                 if bad:
-                    unknown_market_types[league] = bad
+                    unknown_market_types[lk] = bad
             if unknown_market_types:
-                parts = [f"{league}:[{','.join(vals)}]" for league, vals in sorted(unknown_market_types.items())]
+                parts = [f"{lk}:[{','.join(vals)}]" for lk, vals in sorted(unknown_market_types.items())]
                 raise MappingValidationError(
                     "LIVE_BETTING_MARKET_TYPES contains unknown market type(s) vs pm_sports_market_types_ref: "
                     + "; ".join(parts)
@@ -659,7 +726,7 @@ class LinkService:
             game_label = str(row.get("game_label") or "")
             sport_raw = str(row.get("sport_raw") or "")
             league_raw = str(row.get("league_raw") or "")
-            when_raw_et = str(row.get("when_raw_et") or "")
+            when_raw = str(row.get("when_raw") or "")
             start_ts_utc = _int_or_none(row.get("start_ts_utc"))
             game_date_et = str(row.get("game_date_et") or "")
             home_raw = str(row.get("home_raw") or "")
@@ -672,6 +739,10 @@ class LinkService:
                 league_scope=scope,
                 live_betting_leagues=policy.live_betting_leagues,
             )
+            if resolved is not None and league_filter and resolved.canonical_league != league_filter:
+                n_league_filtered += 1
+                continue  # skip games outside the requested league
+
             if resolved is None:
                 unresolved_reason_counter[reason] += 1
                 game_binding_status = "unresolved"
@@ -701,7 +772,7 @@ class LinkService:
                         "game_label": game_label,
                         "sport_raw": sport_raw,
                         "league_raw": league_raw,
-                        "when_raw_et": when_raw_et,
+                        "when_raw": when_raw,
                         "start_ts_utc": start_ts_utc,
                         "game_date_et": game_date_et,
                         "home_raw": home_raw,
@@ -808,7 +879,7 @@ class LinkService:
                         "game_label": game_label,
                         "sport_raw": sport_raw,
                         "league_raw": league_raw,
-                        "when_raw_et": when_raw_et,
+                        "when_raw": when_raw,
                         "start_ts_utc": start_ts_utc,
                         "game_date_et": game_date_et,
                         "home_raw": home_raw,
@@ -882,7 +953,7 @@ class LinkService:
                         "game_label": game_label,
                         "sport_raw": sport_raw,
                         "league_raw": league_raw,
-                        "when_raw_et": when_raw_et,
+                        "when_raw": when_raw,
                         "start_ts_utc": start_ts_utc,
                         "game_date_et": game_date_et,
                         "home_raw": home_raw,
@@ -1046,7 +1117,7 @@ class LinkService:
                     "game_label": game_label,
                     "sport_raw": sport_raw,
                     "league_raw": league_raw,
-                    "when_raw_et": when_raw_et,
+                    "when_raw": when_raw,
                     "start_ts_utc": start_ts_utc,
                     "game_date_et": game_date_et,
                     "home_raw": home_raw,
@@ -1098,23 +1169,126 @@ class LinkService:
                 }
             )
 
+        n_games_seen -= n_league_filtered
+
+        # Post-pass dedup: if multiple games selected the same primary event, keep best match
+        event_to_games: dict[str, list[tuple[str, int | None]]] = {}
+        for rec in run_game_reviews:
+            eid = str(rec.get("selected_event_id") or "")
+            gid = str(rec.get("provider_game_id") or "")
+            delta = rec.get("kickoff_delta_sec")
+            if eid and gid:
+                event_to_games.setdefault(eid, []).append((gid, delta))
+
+        duplicate_event_games: set[str] = set()
+        for eid, games in event_to_games.items():
+            if len(games) > 1:
+                sorted_games = sorted(games, key=lambda x: abs(x[1]) if x[1] is not None else 10**9)
+                for gid, _ in sorted_games[1:]:
+                    duplicate_event_games.add(gid)
+
+        if duplicate_event_games:
+            game_binding_rows = [r for r in game_binding_rows if str(r[1]) not in duplicate_event_games]
+            event_binding_rows = [r for r in event_binding_rows if str(r[1]) not in duplicate_event_games]
+            market_binding_rows = [r for r in market_binding_rows if str(r[1]) not in duplicate_event_games]
+            n_games_linked -= len(duplicate_event_games)
+            for gid in duplicate_event_games:
+                unresolved_reason_counter["ambiguous_doubleheader"] += 1
+
+        return _LinkBuildBatch(
+            provider=p,
+            league=league_filter,
+            n_games_seen=n_games_seen,
+            n_games_linked=n_games_linked,
+            n_games_tradeable=n_games_tradeable,
+            n_targets=n_targets,
+            n_targets_tradeable=n_targets_tradeable,
+            game_binding_rows=game_binding_rows,
+            event_binding_rows=event_binding_rows,
+            market_binding_rows=market_binding_rows,
+            run_provider_games=run_provider_games,
+            run_game_reviews=run_game_reviews,
+            run_event_candidates=run_event_candidates,
+            run_market_targets=run_market_targets,
+            unresolved_reason_counter=dict(unresolved_reason_counter),
+            candidate_debug=candidate_debug,
+        )
+
+    def _persist_link_run(
+        self,
+        batches: list[_LinkBuildBatch],
+        *,
+        mapping: LoadedMapping,
+        league_scope: str,
+    ) -> LinkBuildResult:
+        """Persist one or more processed batches as a single link run in one transaction."""
+        scope = _norm(league_scope)
+        now_ts = int(time.time())
+
+        # Aggregate stats across all batches.
+        n_games_seen = sum(b.n_games_seen for b in batches)
+        n_games_linked = sum(b.n_games_linked for b in batches)
+        n_games_tradeable = sum(b.n_games_tradeable for b in batches)
+        n_targets = sum(b.n_targets for b in batches)
+        n_targets_tradeable = sum(b.n_targets_tradeable for b in batches)
         gate_result = "pass" if n_targets_tradeable > 0 else "fail"
+
+        # Collect unique providers and leagues.
+        unique_providers = sorted({b.provider for b in batches})
+        unique_leagues = sorted({b.league for b in batches if b.league})
+
+        # Merge unresolved reason counters.
+        merged_unresolved: Counter[str] = Counter()
+        merged_candidate_debug: list[dict[str, Any]] = []
+        for b in batches:
+            merged_unresolved.update(b.unresolved_reason_counter)
+            merged_candidate_debug.extend(b.candidate_debug)
+
+        # Concatenate all binding rows.
+        all_game_binding_rows: list[tuple[Any, ...]] = []
+        all_event_binding_rows: list[tuple[Any, ...]] = []
+        all_market_binding_rows: list[tuple[Any, ...]] = []
+        for b in batches:
+            all_game_binding_rows.extend(b.game_binding_rows)
+            all_event_binding_rows.extend(b.event_binding_rows)
+            all_market_binding_rows.extend(b.market_binding_rows)
+
+        provider_label = ",".join(unique_providers)
+        league_label = ",".join(unique_leagues)
 
         try:
             self._db.execute("BEGIN IMMEDIATE")
-            self._db.linking.clear_provider_bindings(provider=p, commit=False)
-            self._db.linking.upsert_game_bindings(game_binding_rows, commit=False)
-            self._db.linking.upsert_event_bindings(event_binding_rows, commit=False)
-            self._db.linking.upsert_market_bindings(market_binding_rows, commit=False)
 
-            report = self._db.linking.load_link_report_rows(provider=p)
+            # Clear bindings for each unique provider.
+            for p in unique_providers:
+                self._db.linking.clear_provider_bindings(provider=p, commit=False)
+
+            # Insert all binding rows.
+            self._db.linking.upsert_game_bindings(all_game_binding_rows, commit=False)
+            self._db.linking.upsert_event_bindings(all_event_binding_rows, commit=False)
+            self._db.linking.upsert_market_bindings(all_market_binding_rows, commit=False)
+
+            # Build merged report from DB state (after bindings inserted).
+            report: dict[str, Any] = {
+                "parent_status_counts": {},
+                "target_status_tradeable_counts": {},
+                "unresolved_reason_counts": {},
+            }
+            for p in unique_providers:
+                p_report = self._db.linking.load_link_report_rows(provider=p)
+                for key in ("parent_status_counts", "target_status_tradeable_counts", "unresolved_reason_counts"):
+                    sub = p_report.get(key, {})
+                    if isinstance(sub, dict):
+                        for k, v in sub.items():
+                            report[key][k] = int(report[key].get(k, 0)) + int(v or 0)
             report["n_games_seen"] = n_games_seen
-            report["unresolved_reason_counts_local"] = dict(unresolved_reason_counter)
-            if candidate_debug:
-                report["candidate_debug_sample"] = candidate_debug[:200]
+            report["unresolved_reason_counts_local"] = dict(merged_unresolved)
+            if merged_candidate_debug:
+                report["candidate_debug_sample"] = merged_candidate_debug[:200]
 
             run_id = self._db.linking.insert_link_run(
-                provider=p,
+                provider=provider_label,
+                league=league_label,
                 league_scope=scope,
                 mapping_version=mapping.mapping_version,
                 mapping_hash=mapping.mapping_hash,
@@ -1129,95 +1303,102 @@ class LinkService:
                 commit=False,
             )
 
-            self._db.execute("UPDATE link_game_bindings SET run_id = ? WHERE provider = ?", (int(run_id), p))
-            self._db.execute("UPDATE link_market_bindings SET run_id = ? WHERE provider = ?", (int(run_id), p))
+            # Stamp run_id on binding rows for each provider.
+            for p in unique_providers:
+                self._db.execute("UPDATE link_game_bindings SET run_id = ? WHERE provider = ?", (int(run_id), p))
+                self._db.execute("UPDATE link_event_bindings SET run_id = ? WHERE provider = ?", (int(run_id), p))
+                self._db.execute("UPDATE link_market_bindings SET run_id = ? WHERE provider = ?", (int(run_id), p))
 
+            # Build and insert run detail rows from all batches.
             run_provider_rows: list[tuple[Any, ...]] = []
-            for rec in run_provider_games:
-                run_provider_rows.append(
-                    (
-                        int(run_id),
-                        p,
-                        str(rec.get("provider_game_id") or ""),
-                        str(rec.get("parse_status") or ""),
-                        str(rec.get("parse_reason") or ""),
-                        str(rec.get("game_label") or ""),
-                        str(rec.get("sport_raw") or ""),
-                        str(rec.get("league_raw") or ""),
-                        str(rec.get("when_raw_et") or ""),
-                        _int_or_none(rec.get("start_ts_utc")),
-                        str(rec.get("game_date_et") or ""),
-                        str(rec.get("home_raw") or ""),
-                        str(rec.get("away_raw") or ""),
-                        str(rec.get("canonical_league") or ""),
-                        str(rec.get("canonical_home_team") or ""),
-                        str(rec.get("canonical_away_team") or ""),
-                        str(rec.get("event_slug_prefix") or ""),
-                        str(rec.get("binding_status") or ""),
-                        str(rec.get("reason_code") or ""),
-                        1 if int(rec.get("is_tradeable") or 0) == 1 else 0,
-                        int(now_ts),
-                    )
-                )
             run_review_rows: list[tuple[Any, ...]] = []
-            for rec in run_game_reviews:
-                run_review_rows.append(
-                    (
-                        int(run_id),
-                        p,
-                        str(rec.get("provider_game_id") or ""),
-                        str(rec.get("resolution_state") or ""),
-                        str(rec.get("reason_code") or ""),
-                        str(rec.get("selected_event_id") or ""),
-                        str(rec.get("selected_event_slug") or ""),
-                        1 if int(rec.get("used_slug_fallback") or 0) == 1 else 0,
-                        int(rec.get("kickoff_tolerance_minutes") or 0),
-                        _int_or_none(rec.get("kickoff_delta_sec")),
-                        json.dumps(rec.get("score_tuple") or [], separators=(",", ":"), default=str),
-                        json.dumps(rec.get("trace_json") or {}, separators=(",", ":"), sort_keys=True, default=str),
-                        int(now_ts),
-                    )
-                )
             run_candidate_rows: list[tuple[Any, ...]] = []
-            for rec in run_event_candidates:
-                run_candidate_rows.append(
-                    (
-                        int(run_id),
-                        p,
-                        str(rec.get("provider_game_id") or ""),
-                        int(rec.get("candidate_rank") or 0),
-                        str(rec.get("event_id") or ""),
-                        str(rec.get("event_slug") or ""),
-                        _int_or_none(rec.get("kickoff_ts_utc")),
-                        1 if int(rec.get("team_set_match") or 0) == 1 else 0,
-                        _int_or_none(rec.get("kickoff_within_tolerance")),
-                        1 if int(rec.get("slug_hint_match") or 0) == 1 else 0,
-                        int(rec.get("ordering_bonus") or 0),
-                        _int_or_none(rec.get("kickoff_delta_sec")),
-                        json.dumps(rec.get("score_tuple") or [], separators=(",", ":"), default=str),
-                        1 if int(rec.get("is_selected") or 0) == 1 else 0,
-                        str(rec.get("reject_reason") or ""),
-                        int(now_ts),
-                    )
-                )
             run_target_rows: list[tuple[Any, ...]] = []
-            for rec in run_market_targets:
-                run_target_rows.append(
-                    (
-                        int(run_id),
-                        p,
-                        str(rec.get("provider_game_id") or ""),
-                        str(rec.get("condition_id") or ""),
-                        int(rec.get("outcome_index") or 0),
-                        str(rec.get("token_id") or ""),
-                        str(rec.get("market_slug") or ""),
-                        str(rec.get("sports_market_type") or ""),
-                        str(rec.get("binding_status") or ""),
-                        str(rec.get("reason_code") or ""),
-                        1 if int(rec.get("is_tradeable") or 0) == 1 else 0,
-                        int(now_ts),
+
+            for batch in batches:
+                bp = batch.provider
+                for rec in batch.run_provider_games:
+                    run_provider_rows.append(
+                        (
+                            int(run_id),
+                            bp,
+                            str(rec.get("provider_game_id") or ""),
+                            str(rec.get("parse_status") or ""),
+                            str(rec.get("parse_reason") or ""),
+                            str(rec.get("game_label") or ""),
+                            str(rec.get("sport_raw") or ""),
+                            str(rec.get("league_raw") or ""),
+                            str(rec.get("when_raw") or ""),
+                            _int_or_none(rec.get("start_ts_utc")),
+                            str(rec.get("game_date_et") or ""),
+                            str(rec.get("home_raw") or ""),
+                            str(rec.get("away_raw") or ""),
+                            str(rec.get("canonical_league") or ""),
+                            str(rec.get("canonical_home_team") or ""),
+                            str(rec.get("canonical_away_team") or ""),
+                            str(rec.get("event_slug_prefix") or ""),
+                            str(rec.get("binding_status") or ""),
+                            str(rec.get("reason_code") or ""),
+                            1 if int(rec.get("is_tradeable") or 0) == 1 else 0,
+                            int(now_ts),
+                        )
                     )
-                )
+                for rec in batch.run_game_reviews:
+                    run_review_rows.append(
+                        (
+                            int(run_id),
+                            bp,
+                            str(rec.get("provider_game_id") or ""),
+                            str(rec.get("resolution_state") or ""),
+                            str(rec.get("reason_code") or ""),
+                            str(rec.get("selected_event_id") or ""),
+                            str(rec.get("selected_event_slug") or ""),
+                            1 if int(rec.get("used_slug_fallback") or 0) == 1 else 0,
+                            int(rec.get("kickoff_tolerance_minutes") or 0),
+                            _int_or_none(rec.get("kickoff_delta_sec")),
+                            json.dumps(rec.get("score_tuple") or [], separators=(",", ":"), default=str),
+                            json.dumps(rec.get("trace_json") or {}, separators=(",", ":"), sort_keys=True, default=str),
+                            int(now_ts),
+                        )
+                    )
+                for rec in batch.run_event_candidates:
+                    run_candidate_rows.append(
+                        (
+                            int(run_id),
+                            bp,
+                            str(rec.get("provider_game_id") or ""),
+                            int(rec.get("candidate_rank") or 0),
+                            str(rec.get("event_id") or ""),
+                            str(rec.get("event_slug") or ""),
+                            _int_or_none(rec.get("kickoff_ts_utc")),
+                            1 if int(rec.get("team_set_match") or 0) == 1 else 0,
+                            _int_or_none(rec.get("kickoff_within_tolerance")),
+                            1 if int(rec.get("slug_hint_match") or 0) == 1 else 0,
+                            int(rec.get("ordering_bonus") or 0),
+                            _int_or_none(rec.get("kickoff_delta_sec")),
+                            json.dumps(rec.get("score_tuple") or [], separators=(",", ":"), default=str),
+                            1 if int(rec.get("is_selected") or 0) == 1 else 0,
+                            str(rec.get("reject_reason") or ""),
+                            int(now_ts),
+                        )
+                    )
+                for rec in batch.run_market_targets:
+                    run_target_rows.append(
+                        (
+                            int(run_id),
+                            bp,
+                            str(rec.get("provider_game_id") or ""),
+                            str(rec.get("condition_id") or ""),
+                            int(rec.get("outcome_index") or 0),
+                            str(rec.get("token_id") or ""),
+                            str(rec.get("market_slug") or ""),
+                            str(rec.get("sports_market_type") or ""),
+                            str(rec.get("binding_status") or ""),
+                            str(rec.get("reason_code") or ""),
+                            1 if int(rec.get("is_tradeable") or 0) == 1 else 0,
+                            int(now_ts),
+                        )
+                    )
 
             self._db.linking.upsert_run_provider_games(run_provider_rows, commit=False)
             self._db.linking.upsert_run_game_reviews(run_review_rows, commit=False)
@@ -1232,7 +1413,7 @@ class LinkService:
             raise
 
         return LinkBuildResult(
-            provider=p,
+            provider=provider_label,
             run_id=int(run_id),
             mapping_version=mapping.mapping_version,
             mapping_hash=mapping.mapping_hash,
@@ -1245,10 +1426,44 @@ class LinkService:
             report=report,
         )
 
-    def report(self, *, provider: str) -> dict[str, Any]:
-        p = _norm(provider)
-        latest = self._db.linking.load_latest_link_run(provider=p)
-        return {
-            "latest_run": latest,
-            "quality": self._db.linking.load_link_report_rows(provider=p),
-        }
+    def build_links(
+        self,
+        *,
+        provider: str,
+        league: str | None = None,
+        mapping: LoadedMapping,
+        live_policy: LoadedLiveTradingPolicy | None = None,
+        league_scope: str = "live",
+    ) -> LinkBuildResult:
+        batch = self._process_provider_league(
+            provider=provider, league=league, mapping=mapping,
+            live_policy=live_policy, league_scope=league_scope,
+        )
+        return self._persist_link_run([batch], mapping=mapping, league_scope=league_scope)
+
+    def build_links_multi(
+        self,
+        *,
+        league_provider_pairs: list[tuple[str, str]],
+        mapping: LoadedMapping,
+        live_policy: LoadedLiveTradingPolicy | None = None,
+        league_scope: str = "live",
+        horizon_hours: float | None = None,
+    ) -> LinkBuildResult:
+        """Process multiple (league, provider) pairs and persist as a single run_id."""
+        policy = live_policy or load_live_trading_policy()
+        batches: list[_LinkBuildBatch] = []
+        for league, provider in league_provider_pairs:
+            # Resolve per-league default if --horizon-hours not explicitly set.
+            effective_horizon = horizon_hours
+            if effective_horizon is None:
+                runtime_cfg = policy.hotpath_runtime_by_league.get(league, {})
+                effective_horizon = runtime_cfg.get("plan_horizon_hours")
+            batch = self._process_provider_league(
+                provider=provider, league=league, mapping=mapping,
+                live_policy=live_policy, league_scope=league_scope,
+                horizon_hours=effective_horizon,
+            )
+            batches.append(batch)
+        return self._persist_link_run(batches, mapping=mapping, league_scope=league_scope)
+

@@ -126,8 +126,8 @@ class ScopedLaunchCheck:
     scope_rows: tuple[ScopeGameRow, ...]
 
     @property
-    def approved_game_ids(self) -> tuple[str, ...]:
-        return tuple(r.provider_game_id for r in self.scope_rows if r.decision == "approve")
+    def eligible_game_ids(self) -> tuple[str, ...]:
+        return tuple(r.provider_game_id for r in self.scope_rows if r.decision != "reject")
 
 
 class HotPathPlanError(ValueError):
@@ -242,9 +242,9 @@ def evaluate_hotpath_scope(
     pending = sum(1 for r in scope_rows if r.decision not in {"approve", "reject", "skip"})
 
     tradeable_targets = 0
-    approved_ids = [r.provider_game_id for r in scope_rows if r.provider_game_id]
-    if approved_ids:
-        placeholders = ",".join("?" for _ in approved_ids)
+    eligible_ids = [r.provider_game_id for r in scope_rows if r.provider_game_id and r.decision != "reject"]
+    if eligible_ids:
+        placeholders = ",".join("?" for _ in eligible_ids)
         status_closed = ("closed", "resolved", "ended", "finished", "final", "complete", "completed", "cancelled", "canceled")
         status_placeholders = ",".join("?" for _ in status_closed)
         row = db.execute(
@@ -269,19 +269,13 @@ def evaluate_hotpath_scope(
               AND LOWER(TRIM(COALESCE(pe.status, ''))) NOT IN ({status_placeholders})
               AND t.provider_game_id IN ({placeholders})
             """,
-            (rid, p, *status_closed, *approved_ids),
+            (rid, p, *status_closed, *eligible_ids),
         ).fetchone()
         tradeable_targets = int((dict(row or {}).get("n")) or 0)
 
     blockers: list[str] = []
     if not scope_rows:
         blockers.append("no_in_scope_games")
-    if pending > 0:
-        blockers.append("pending_reviews")
-    if rejected > 0:
-        blockers.append("has_rejected")
-    if skipped > 0:
-        blockers.append("has_skipped")
     if scope_rows and tradeable_targets <= 0:
         blockers.append("no_tradeable_targets")
 
@@ -319,11 +313,10 @@ def compile_hotpath_plan(
     league: str,
     run_id: int,
     live_policy: LoadedLiveTradingPolicy | None = None,
-    require_all_approved: bool = True,
-    include_all_scope_games: bool = False,
     now_ts_utc: int | None = None,
     plan_horizon_hours: int | None = None,
     exclude_strategy_keys: set[str] | None = None,
+    include_inactive: bool = False,
 ) -> CompiledPlan:
     policy = live_policy or load_live_trading_policy()
     scope = evaluate_hotpath_scope(
@@ -333,14 +326,11 @@ def compile_hotpath_plan(
         run_id=run_id,
         live_policy=policy,
         now_ts_utc=now_ts_utc,
+        include_inactive=include_inactive,
     )
     if not scope.run_found:
         raise HotPathPlanError("no_link_run", f"link run not found for provider={provider} run_id={run_id}")
     blockers = list(scope.blockers)
-    if not bool(require_all_approved):
-        blockers = [b for b in blockers if b not in {"pending_reviews", "has_rejected", "has_skipped"}]
-    if bool(include_all_scope_games):
-        blockers = [b for b in blockers if b != "no_tradeable_targets"]
     if blockers:
         raise HotPathPlanError(
             "scope_blocked",
@@ -349,11 +339,7 @@ def compile_hotpath_plan(
 
     allowed_market_types = _load_allowed_market_types(policy=policy, league=scope.league)
 
-    selected_ids = (
-        [r.provider_game_id for r in scope.scope_rows if r.provider_game_id]
-        if bool(include_all_scope_games)
-        else [x for x in scope.approved_game_ids if x]
-    )
+    selected_ids = [x for x in scope.eligible_game_ids if x]
     dropped_missing_kickoff = 0
     dropped_outside_window = 0
     if plan_horizon_hours is not None:
@@ -362,6 +348,7 @@ def compile_hotpath_plan(
             raise HotPathPlanError("invalid_plan_horizon", "plan_horizon_hours must be > 0")
         now_ts = int(time.time()) if now_ts_utc is None else int(now_ts_utc)
         upper_ts = int(now_ts + (horizon_hours * 3600))
+        lower_ts = int(now_ts - (6 * 3600))
         meta_by_id = {r.provider_game_id: r for r in scope.scope_rows if r.provider_game_id}
         filtered_ids: list[str] = []
         for gid in selected_ids:
@@ -371,10 +358,7 @@ def compile_hotpath_plan(
                 dropped_missing_kickoff += 1
                 continue
             kickoff_ts = int(kickoff)
-            # Runtime actionable filters already remove finalized/closed games.
-            # Keep currently live/in-progress games (kickoff in the past) and
-            # only enforce an upper kickoff horizon bound here.
-            if kickoff_ts > upper_ts:
+            if kickoff_ts < lower_ts or kickoff_ts > upper_ts:
                 dropped_outside_window += 1
                 continue
             filtered_ids.append(str(gid))
@@ -444,7 +428,7 @@ def compile_hotpath_plan(
     scope_meta = {
         r.provider_game_id: r
         for r in scope.scope_rows
-        if (r.provider_game_id and (bool(include_all_scope_games) or r.decision == "approve"))
+        if r.provider_game_id and r.decision != "reject"
     }
     by_game: dict[str, dict[str, Any]] = {}
 
@@ -539,8 +523,7 @@ def compile_hotpath_plan(
 
         effective_line = line_val
         if sports_market_type == "spread" and line_val is not None:
-            raw_label = _norm(outcome_label)
-            if raw_label == "no":
+            if outcome_semantic == "away":
                 effective_line = -line_val
 
         market_bucket["targets"].append(

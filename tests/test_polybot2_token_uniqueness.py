@@ -190,29 +190,27 @@ def test_linking_uses_updated_tokens_after_replacement(tmp_path: Path) -> None:
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid1",
-                    "ARI Diamondbacks vs ATL Braves, 2026-04-18, 01",
+                    "Arizona Diamondbacks vs Atlanta Braves, 2026-04-18, 01",
                     "",
-                    "MLB",
-                    "mlb",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     "2026-04-18, 01:10 PM",
                     None,
                     "2026-04-18",
-                    "ARI Diamondbacks",
-                    "ATL Braves",
+                    "Arizona Diamondbacks",
+                    "Atlanta Braves",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
 
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         assert res.n_targets_tradeable >= 2
 
         rows = db.execute(
@@ -222,6 +220,6 @@ def test_linking_uses_updated_tokens_after_replacement(tmp_path: Path) -> None:
             WHERE provider = ? AND provider_game_id = ? AND condition_id = ?
             ORDER BY outcome_index
             """,
-            ("boltodds", "gid1", "c1"),
+            ("kalstrop_v1", "gid1", "c1"),
         ).fetchall()
         assert [tuple(r) for r in rows] == [(0, "new_yes"), (1, "new_no")]

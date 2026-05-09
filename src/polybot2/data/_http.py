@@ -46,7 +46,7 @@ async def request_json_with_retry(
         except httpx.HTTPError as exc:
             if attempt >= attempts:
                 if logger is not None:
-                    logger.debug("HTTP %s failed (%s): %s", method, log_context, exc)
+                    logger.warning("HTTP %s failed (%s): %s", method, log_context, exc)
                 if metrics is not None:
                     metrics["hard_failures"] = int(metrics.get("hard_failures", 0)) + 1
                 return None

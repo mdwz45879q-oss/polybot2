@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from polybot2.hotpath.contracts import CompiledPlan, HotPathConfig
-from polybot2.hotpath.mlb.triggers import MlbOrderPolicy
+from polybot2.hotpath.contracts import CompiledPlan
 
 
 class NativeEngineUnavailable(RuntimeError):
@@ -72,52 +71,6 @@ def serialize_compiled_plan(plan: CompiledPlan | None) -> dict[str, Any]:
     }
 
 
-class NativeMlbEngineBridge:
-    """Thin Python bridge over the Rust NativeMlbEngine."""
-
-    def __init__(
-        self,
-        *,
-        config: HotPathConfig,
-        order_policy: MlbOrderPolicy,
-        required: bool,
-    ) -> None:
-        mod = _import_native_module(required=required)
-        if mod is None:
-            raise NativeEngineUnavailable("native module unavailable")
-        self._module = mod
-        self._engine = mod.NativeMlbEngine(
-            dedup_ttl_seconds=float(config.dedup_ttl_seconds),
-            decision_cooldown_seconds=float(config.decision_cooldown_seconds),
-            decision_debounce_seconds=float(config.decision_debounce_seconds),
-        )
-
-    def load_plan(self, plan: CompiledPlan | None) -> None:
-        payload = serialize_compiled_plan(plan)
-        self._engine.load_plan(payload)
-
-    def reset_runtime_state(self) -> None:
-        self._engine.reset_runtime_state()
-
-    def process_score_event(self, event: Any, *, recv_monotonic_ns: int) -> dict[str, Any]:
-        out = self._engine.process_score_event(event, int(recv_monotonic_ns))
-        return dict(out) if isinstance(out, dict) else {}
-
-    def process_score_frame(
-        self,
-        frame: Any,
-        *,
-        recv_monotonic_ns: int,
-        source_recv_monotonic_ns: int,
-    ) -> dict[str, Any]:
-        out = self._engine.process_score_frame(
-            frame,
-            int(recv_monotonic_ns),
-            int(source_recv_monotonic_ns),
-        )
-        return dict(out) if isinstance(out, dict) else {}
-
-
 class NativeHotPathRuntimeBridge:
     """Lifecycle bridge over the Rust NativeHotPathRuntime."""
 
@@ -171,10 +124,24 @@ class NativeHotPathRuntimeBridge:
         except Exception:
             return 0
 
+    def patch_plan(
+        self,
+        *,
+        compiled_plan_json: str,
+        templates_json: str,
+    ) -> int:
+        out = self._runtime.patch_plan(
+            str(compiled_plan_json),
+            str(templates_json),
+        )
+        try:
+            return int(out)
+        except Exception:
+            return 0
+
 
 __all__ = [
     "NativeEngineUnavailable",
     "NativeHotPathRuntimeBridge",
-    "NativeMlbEngineBridge",
     "serialize_compiled_plan",
 ]

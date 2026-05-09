@@ -9,6 +9,21 @@ fn install_rustls_provider_once() {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
+/// Determine the sport league from the compiled plan JSON.
+fn detect_league_from_plan(plan_json: &str) -> &'static str {
+    // Quick scan for "league" key to avoid full parse.
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(plan_json) {
+        if let Some(league) = val.get("league").and_then(|v| v.as_str()) {
+            return match league {
+                "epl" | "ucl" | "bundesliga" | "la_liga" => "soccer",
+                _ => "baseball",
+            };
+        }
+    }
+    "baseball"
+}
+
+#[cfg(feature = "python-extension")]
 #[pymethods]
 impl NativeHotPathRuntime {
     #[new]
@@ -22,6 +37,8 @@ impl NativeHotPathRuntime {
             presign_templates: Vec::new(),
             live_worker: None,
             submitter: None,
+            cached_sdk_client: None,
+            cached_signer: None,
         }
     }
 
@@ -57,16 +74,29 @@ impl NativeHotPathRuntime {
         .map_err(PyValueError::new_err)?;
         self.dispatch_cfg = dispatch_cfg.clone();
 
-        let mut engine = NativeMlbEngine::new(
-            cfg.dedup_ttl_seconds.unwrap_or(2.0),
-            cfg.decision_cooldown_seconds.unwrap_or(0.5),
-            cfg.decision_debounce_seconds.unwrap_or(0.1),
-        );
-        let json_mod = py.import_bound("json")?;
-        let plan_any = json_mod.call_method1("loads", (compiled_plan_json,))?;
-        let plan_dict = plan_any.downcast::<PyDict>()?;
-        engine.load_plan(plan_dict)?;
-        engine.reset_runtime_state();
+        // Determine sport from plan JSON and provider from config.
+        let sport = detect_league_from_plan(compiled_plan_json);
+        let provider = cfg.provider.clone().unwrap_or_default();
+
+        // Create engine based on sport type.
+        let engine: SportEngine = match sport {
+            "soccer" => {
+                let mut e = NativeSoccerEngine::new();
+                e.load_plan_from_json(compiled_plan_json)
+                    .map_err(|err| PyValueError::new_err(format!("soccer_load_plan:{}", err)))?;
+                e.reset_runtime_state();
+                SportEngine::Soccer(e)
+            }
+            _ => {
+                let mut e = NativeMlbEngine::new();
+                let json_mod = py.import_bound("json")?;
+                let plan_any = json_mod.call_method1("loads", (compiled_plan_json,))?;
+                let plan_dict = plan_any.downcast::<PyDict>()?;
+                e.load_plan(plan_dict)?;
+                e.reset_runtime_state();
+                SportEngine::Baseball(e)
+            }
+        };
         self.engine = Some(engine);
 
         if cfg.live_enabled.unwrap_or(false) {
@@ -92,7 +122,8 @@ impl NativeHotPathRuntime {
                 reconnects: 0,
                 last_error: String::new(),
             }));
-            let (command_tx, command_rx) = tokio_mpsc::unbounded_channel::<LiveWorkerCommand>();
+            let (command_tx, command_rx) = flume::unbounded::<LiveWorkerCommand>();
+            let (patch_tx, patch_rx) = flume::unbounded::<PatchPayload>();
 
             // Extract registry from engine. Both DispatchHandle and OrderSubmitter
             // share an Arc clone for read-only target/token resolution.
@@ -123,7 +154,7 @@ impl NativeHotPathRuntime {
             let games_count = self
                 .engine
                 .as_ref()
-                .map(|e| e.token_ids_by_game.len())
+                .map(|e| e.token_ids_by_game_len())
                 .unwrap_or(0);
             if let Ok(mut g) = log_arc.lock() {
                 g.log_startup(
@@ -137,7 +168,7 @@ impl NativeHotPathRuntime {
             // Build the submitter-thread half. In Http mode, initialize the SDK
             // runtime and run presign warmup using its client/signer references.
             let (submit_tx, submit_rx) =
-                tokio_mpsc::unbounded_channel::<crate::dispatch::SubmitWork>();
+                flume::unbounded::<crate::dispatch::SubmitWork>();
             let submitter_log_arc = Arc::clone(&log_arc);
             let submitter_health = Arc::new(Mutex::new(SubmitterHealth::default()));
             let mut submitter = OrderSubmitter::new(
@@ -178,6 +209,8 @@ impl NativeHotPathRuntime {
                             err
                         )));
                     }
+                    self.cached_sdk_client = submitter.sdk_client_ref().ok().map(|c| c.clone());
+                    self.cached_signer = submitter.signer_ref().ok().map(|s| s.clone());
                 }
 
                 dispatch_handle.install_submit_tx(submit_tx.clone());
@@ -203,39 +236,95 @@ impl NativeHotPathRuntime {
                 None
             };
 
-            let mut worker_engine = self
+            // Clone the engine for the worker thread.
+            let worker_engine = self
                 .engine
                 .as_ref()
-                .ok_or_else(|| PyValueError::new_err("engine unavailable"))?
-                .clone();
+                .ok_or_else(|| PyValueError::new_err("engine unavailable"))?;
+            let mut worker_engine = match worker_engine {
+                SportEngine::Baseball(e) => SportEngine::Baseball(e.clone()),
+                SportEngine::Soccer(e) => SportEngine::Soccer(e.clone()),
+            };
             let worker_dispatch_handle = dispatch_handle;
             let subs_clone = Arc::clone(&subs);
             let health_clone = Arc::clone(&health);
             let worker_log_arc = Arc::clone(&log_arc);
 
-            let join = thread::spawn(move || {
-                if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build() {
-                    runtime.block_on(crate::ws::run_live_worker_async(
-                        &mut worker_engine,
-                        worker_cfg,
-                        worker_dispatch_handle,
-                        subs_clone,
-                        health_clone,
-                        initial_candidates,
-                        initial_active_subscriptions,
-                        command_rx,
-                        worker_log_arc,
-                    ));
-                } else {
-                    crate::ws::with_health(&health_clone, |h| {
-                        h.running = false;
-                        h.last_error = "tokio_runtime_create_failed".to_string();
-                    });
+            // Spawn the appropriate WS worker based on provider.
+            let join = match provider.as_str() {
+                "boltodds" => {
+                    let api_key = cfg.boltodds_api_key.clone().unwrap_or_default();
+                    if api_key.is_empty() {
+                        return Err(PyValueError::new_err(
+                            "boltodds_api_key_required_for_boltodds_provider",
+                        ));
+                    }
+                    let ws_url = cfg
+                        .boltodds_ws_url
+                        .clone()
+                        .unwrap_or_else(|| "wss://spro.agency/api".to_string());
+                    let bo_cfg = crate::ws_boltodds::BoltOddsWorkerConfig {
+                        ws_url,
+                        api_key,
+                    };
+                    // For BoltOdds, game_labels come from the engine's game_ids
+                    // (which are universal_ids set at plan load time).
+                    let game_labels: Vec<String> = worker_engine.game_ids().to_vec();
+
+                    thread::spawn(move || {
+                        if let Ok(runtime) =
+                            TokioBuilder::new_current_thread().enable_all().build()
+                        {
+                            runtime.block_on(crate::ws_boltodds::run_boltodds_worker_async(
+                                &mut worker_engine,
+                                bo_cfg,
+                                worker_dispatch_handle,
+                                subs_clone,
+                                health_clone,
+                                game_labels,
+                                command_rx,
+                                patch_rx,
+                                worker_log_arc,
+                            ));
+                        } else {
+                            crate::ws::with_health(&health_clone, |h| {
+                                h.running = false;
+                                h.last_error = "tokio_runtime_create_failed".to_string();
+                            });
+                        }
+                    })
                 }
-            });
+                _ => {
+                    // Default: Kalstrop V1 worker
+                    thread::spawn(move || {
+                        if let Ok(runtime) =
+                            TokioBuilder::new_current_thread().enable_all().build()
+                        {
+                            runtime.block_on(crate::ws::run_live_worker_async(
+                                &mut worker_engine,
+                                worker_cfg,
+                                worker_dispatch_handle,
+                                subs_clone,
+                                health_clone,
+                                initial_candidates,
+                                initial_active_subscriptions,
+                                command_rx,
+                                patch_rx,
+                                worker_log_arc,
+                            ));
+                        } else {
+                            crate::ws::with_health(&health_clone, |h| {
+                                h.running = false;
+                                h.last_error = "tokio_runtime_create_failed".to_string();
+                            });
+                        }
+                    })
+                }
+            };
 
             self.live_worker = Some(LiveWorkerHandle {
                 command_tx,
+                patch_tx,
                 join: Some(join),
                 subscriptions: subs,
                 health,
@@ -290,6 +379,87 @@ impl NativeHotPathRuntime {
         Ok(self.presign_templates.len())
     }
 
+    fn patch_plan(
+        &self,
+        py: Python<'_>,
+        plan_json: String,
+        templates_json: String,
+    ) -> PyResult<usize> {
+        let worker = self.live_worker.as_ref().ok_or_else(|| {
+            PyValueError::new_err("patch_plan_requires_running_live_worker")
+        })?;
+        let patch_tx = worker.patch_tx.clone();
+        let client = self.cached_sdk_client.as_ref().ok_or_else(|| {
+            PyValueError::new_err("patch_plan_requires_cached_sdk_client")
+        })?.clone();
+        let signer = self.cached_signer.as_ref().ok_or_else(|| {
+            PyValueError::new_err("patch_plan_requires_cached_signer")
+        })?.clone();
+        let dispatch_cfg = self.dispatch_cfg.clone();
+
+        let templates: Vec<crate::dispatch::PresignTemplateData> =
+            serde_json::from_str(&templates_json)
+                .map_err(|e| PyValueError::new_err(format!("patch_plan_invalid_templates:{}", e)))?;
+        let mut template_map: std::collections::HashMap<String, crate::dispatch::OrderRequestData> =
+            std::collections::HashMap::new();
+        for tpl in &templates {
+            if let Some(req) = crate::dispatch::DispatchHandle::parse_template_request(tpl) {
+                template_map.insert(req.token_id.clone(), req);
+            }
+        }
+
+        let plan_json_owned = plan_json;
+        let template_map_clone = template_map.clone();
+
+        let sign_result = py.allow_threads(move || -> Result<std::collections::HashMap<String, SdkSignedOrder>, String> {
+            if !dispatch_cfg.presign_enabled || template_map_clone.is_empty() {
+                return Ok(std::collections::HashMap::new());
+            }
+            let rt = TokioBuilder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| format!("patch_tokio_rt:{}", e))?;
+            rt.block_on(async {
+                let handles: Vec<_> = template_map_clone
+                    .into_iter()
+                    .map(|(token_id, request)| {
+                        let c = client.clone();
+                        let s = signer.clone();
+                        tokio::spawn(async move {
+                            let result =
+                                crate::dispatch::sdk_exec::sign_order_batch(&c, &s, &request, 1)
+                                    .await;
+                            (token_id, result)
+                        })
+                    })
+                    .collect();
+                let mut signed = std::collections::HashMap::new();
+                for handle in handles {
+                    let (token_id, result) =
+                        handle.await.map_err(|e| format!("patch_sign_task:{}", e))?;
+                    let orders =
+                        result.map_err(|e| format!("patch_sign:{}:{}", token_id, e))?;
+                    if let Some(order) = orders.into_iter().next() {
+                        signed.insert(token_id, order);
+                    }
+                }
+                Ok(signed)
+            })
+        }).map_err(|e| PyValueError::new_err(format!("patch_plan_sign_error:{}", e)))?;
+
+        let new_count = sign_result.len();
+        let payload = PatchPayload {
+            plan_json: plan_json_owned,
+            new_presigned: sign_result,
+            new_templates: template_map,
+        };
+        patch_tx.send(payload).map_err(|_| {
+            PyValueError::new_err("patch_plan_channel_closed")
+        })?;
+
+        Ok(new_count)
+    }
+
     fn health_snapshot(&self, py: Python<'_>) -> PyResult<PyObject> {
         let mut running = self.running;
         let mut reconnects = 0i64;
@@ -332,6 +502,6 @@ impl NativeHotPathRuntime {
                 "posted_err": posted_err,
             },
         });
-        crate::engine::serde_value_to_py(py, &payload)
+        crate::baseball::engine::serde_value_to_py(py, &payload)
     }
 }

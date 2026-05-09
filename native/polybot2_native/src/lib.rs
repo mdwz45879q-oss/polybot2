@@ -1,12 +1,18 @@
+mod baseball;
+mod soccer;
 mod dispatch;
-mod engine;
-mod eval;
+pub(crate) mod boltodds_frame_pipeline;
+pub(crate) mod boltodds_types;
+pub(crate) mod fast_extract;
 mod kalstrop_types;
 mod log_writer;
-mod parse;
-mod replay;
 mod runtime;
 mod ws;
+pub(crate) mod ws_boltodds;
+
+#[cfg(feature = "bench-support")]
+#[doc(hidden)]
+pub mod bench_support;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
@@ -23,10 +29,15 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use tokio::runtime::Builder as TokioBuilder;
-use tokio::sync::mpsc as tokio_mpsc;
 use tokio::time::sleep as tokio_sleep;
 
 use tokio_tungstenite::tungstenite::Message;
+
+use polymarket_client_sdk_v2::auth::state::Authenticated as SdkAuthenticatedState;
+use polymarket_client_sdk_v2::auth::Normal as SdkAuthNormal;
+use polymarket_client_sdk_v2::clob::Client as SdkClient;
+use polymarket_client_sdk_v2::clob::types::SignedOrder as SdkSignedOrder;
+type CachedSigner = alloy::signers::local::PrivateKeySigner;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 struct GameIdx(u16);
@@ -39,7 +50,7 @@ struct TokenIdx(pub(crate) u16);
 
 #[derive(Clone)]
 struct TokenSlot {
-    token_id: String,
+    token_id: Arc<str>,
 }
 
 /// Read-only mapping of `TargetIdx → TargetSlot` and `TokenIdx → TokenSlot`,
@@ -50,6 +61,45 @@ struct TargetRegistry {
     tokens: Vec<TokenSlot>,
     targets: Vec<TargetSlot>,
 }
+
+
+#[derive(Clone)]
+struct TargetSlot {
+    token_idx: TokenIdx,
+    strategy_key: Arc<str>,
+}
+
+// --- Inline string for zero-alloc StateRow dedup ---
+
+/// Fixed-capacity inline string. No heap allocation.
+/// Used in StateRow for dedup -- stores short raw field values.
+#[derive(Clone)]
+pub(crate) struct InlineStr<const N: usize> {
+    buf: [u8; N],
+    len: u8,
+}
+
+impl<const N: usize> InlineStr<N> {
+    pub const fn new() -> Self {
+        Self { buf: [0u8; N], len: 0 }
+    }
+    pub fn from_str(s: &str) -> Self {
+        let bytes = s.as_bytes();
+        let copy_len = bytes.len().min(N);
+        let mut this = Self { buf: [0u8; N], len: copy_len as u8 };
+        this.buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        this
+    }
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(&self.buf[..self.len as usize]) }
+    }
+}
+
+impl<const N: usize> Default for InlineStr<N> {
+    fn default() -> Self { Self::new() }
+}
+
+// --- Sport-generic types shared by baseball and soccer ---
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum SpreadSide {
@@ -63,105 +113,8 @@ struct OverLine {
     target_idx: TargetIdx,
 }
 
-#[derive(Clone, Default)]
-struct GameTargets {
-    over_lines: Vec<OverLine>,
-    under_lines: Vec<OverLine>,
-    nrfi_yes: Option<TargetIdx>,
-    nrfi_no: Option<TargetIdx>,
-    moneyline_home: Option<TargetIdx>,
-    moneyline_away: Option<TargetIdx>,
-    spreads: Vec<(SpreadSide, f64, TargetIdx)>,
-}
-
-impl GameTargets {
-    #[allow(dead_code)]
-    fn all_target_indices(&self) -> Vec<TargetIdx> {
-        let mut out = Vec::with_capacity(
-            self.over_lines.len() + self.under_lines.len() + 4 + self.spreads.len(),
-        );
-        for ol in &self.over_lines {
-            out.push(ol.target_idx);
-        }
-        for ol in &self.under_lines {
-            out.push(ol.target_idx);
-        }
-        if let Some(t) = self.nrfi_yes {
-            out.push(t);
-        }
-        if let Some(t) = self.nrfi_no {
-            out.push(t);
-        }
-        if let Some(t) = self.moneyline_home {
-            out.push(t);
-        }
-        if let Some(t) = self.moneyline_away {
-            out.push(t);
-        }
-        for &(_, _, t) in &self.spreads {
-            out.push(t);
-        }
-        out
-    }
-}
-
-#[derive(Clone)]
-struct TargetSlot {
-    token_idx: TokenIdx,
-    strategy_key: String,
-}
-
 struct RawIntent {
     target_idx: TargetIdx,
-}
-
-#[derive(Clone, Default)]
-struct Tick {
-    universal_id: String,
-    action: &'static str,
-    recv_monotonic_ns: i64,
-    goals_home: Option<i64>,
-    goals_away: Option<i64>,
-    inning_number: Option<i64>,
-    inning_half: &'static str,
-    match_completed: Option<bool>,
-    game_state: &'static str,
-}
-
-#[derive(Clone, Copy, Default)]
-struct DeltaEvent {
-    recv_monotonic_ns: i64,
-    material_change: bool,
-    goal_delta_home: i64,
-    goal_delta_away: i64,
-}
-
-#[derive(Clone, Default)]
-struct StateRow {
-    seen_monotonic_ns: i64,
-    action: &'static str,
-    goals_home: Option<i64>,
-    goals_away: Option<i64>,
-    inning_number: Option<i64>,
-    inning_half: &'static str,
-    match_completed: Option<bool>,
-}
-
-#[derive(Clone, Copy, Default)]
-struct GameState {
-    home: Option<i64>,
-    away: Option<i64>,
-    total: Option<i64>,
-    prev_total: Option<i64>,
-    inning_number: Option<i64>,
-    inning_half: &'static str,
-    match_completed: Option<bool>,
-    game_state: &'static str,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
-struct DecisionSig {
-    token_idx: TokenIdx,
 }
 
 #[derive(Clone, Copy)]
@@ -169,19 +122,88 @@ struct Intent {
     target_idx: TargetIdx,
 }
 
-struct TickResult {
-    game_id: String,
-    state: GameState,
-    intents: Vec<Intent>,
-    material: bool,
+/// Sport-specific engine variant. The WS worker matches once per frame
+/// and dispatches to the right frame pipeline. One branch per frame
+/// (~1ns, always predicted) — no trait vtable overhead.
+enum SportEngine {
+    Baseball(baseball::types::NativeMlbEngine),
+    Soccer(soccer::types::NativeSoccerEngine),
+}
+
+impl SportEngine {
+    fn active_subscriptions_for_candidates(
+        &self,
+        candidates: &[String],
+        now_ts_utc: i64,
+        subscribe_lead_minutes: i64,
+    ) -> Vec<String> {
+        match self {
+            Self::Baseball(e) => e.active_subscriptions_for_candidates(candidates, now_ts_utc, subscribe_lead_minutes),
+            Self::Soccer(e) => e.active_subscriptions_for_candidates(candidates, now_ts_utc, subscribe_lead_minutes),
+        }
+    }
+
+    fn merge_plan(&mut self, plan_json: &str) -> Result<MergePlanResult, String> {
+        match self {
+            Self::Baseball(e) => e.merge_plan(plan_json),
+            Self::Soccer(e) => e.merge_plan(plan_json),
+        }
+    }
+
+    fn tokens(&self) -> &[TokenSlot] {
+        match self {
+            Self::Baseball(e) => &e.tokens,
+            Self::Soccer(e) => &e.tokens,
+        }
+    }
+
+    fn target_slots(&self) -> &[TargetSlot] {
+        match self {
+            Self::Baseball(e) => &e.target_slots,
+            Self::Soccer(e) => &e.target_slots,
+        }
+    }
+
+    fn set_registry(&mut self, reg: Option<Arc<TargetRegistry>>) {
+        match self {
+            Self::Baseball(e) => e.registry = reg,
+            Self::Soccer(e) => e.registry = reg,
+        }
+    }
+
+    fn game_ids(&self) -> &[String] {
+        match self {
+            Self::Baseball(e) => &e.game_ids,
+            Self::Soccer(e) => &e.game_ids,
+        }
+    }
+
+    fn all_token_ids(&self) -> Vec<String> {
+        match self {
+            Self::Baseball(e) => e.all_token_ids(),
+            Self::Soccer(e) => e.all_token_ids(),
+        }
+    }
+
+    fn clone_registry(&self) -> Option<Arc<TargetRegistry>> {
+        match self {
+            Self::Baseball(e) => e.clone_registry(),
+            Self::Soccer(e) => e.clone_registry(),
+        }
+    }
+
+    fn token_ids_by_game_len(&self) -> usize {
+        match self {
+            Self::Baseball(e) => e.token_ids_by_game.len(),
+            Self::Soccer(e) => e.token_ids_by_game.len(),
+        }
+    }
+
 }
 
 #[derive(Default, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct RuntimeStartConfig {
-    dedup_ttl_seconds: Option<f64>,
-    decision_cooldown_seconds: Option<f64>,
-    decision_debounce_seconds: Option<f64>,
     subscribe_lead_minutes: Option<i64>,
     subscription_refresh_seconds: Option<f64>,
     amount_usdc: Option<f64>,
@@ -195,6 +217,12 @@ struct RuntimeStartConfig {
     kalstrop_shared_secret_raw: Option<String>,
     log_dir: Option<String>,
     run_id: Option<i64>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    boltodds_api_key: Option<String>,
+    #[serde(default)]
+    boltodds_ws_url: Option<String>,
 }
 
 #[derive(Default, Deserialize, Clone)]
@@ -297,14 +325,21 @@ impl Default for DispatchConfig {
 }
 
 struct LiveWorkerHandle {
-    command_tx: tokio_mpsc::UnboundedSender<LiveWorkerCommand>,
+    command_tx: flume::Sender<LiveWorkerCommand>,
+    patch_tx: flume::Sender<PatchPayload>,
     join: Option<JoinHandle<()>>,
     subscriptions: Arc<RwLock<Vec<String>>>,
     health: Arc<Mutex<RuntimeHealth>>,
 }
 
+pub(crate) struct PatchPayload {
+    pub(crate) plan_json: String,
+    pub(crate) new_presigned: HashMap<String, SdkSignedOrder>,
+    pub(crate) new_templates: HashMap<String, crate::dispatch::OrderRequestData>,
+}
+
 struct SubmitterHandle {
-    submit_tx: tokio_mpsc::UnboundedSender<crate::dispatch::SubmitWork>,
+    submit_tx: flume::Sender<crate::dispatch::SubmitWork>,
     join: Option<JoinHandle<()>>,
     health: Arc<Mutex<SubmitterHealth>>,
 }
@@ -315,44 +350,12 @@ enum LiveWorkerCommand {
     SetCandidateSubscriptions(Vec<String>),
 }
 
-#[pyclass]
-#[derive(Clone)]
-struct NativeMlbEngine {
-    dedup_ttl_ns: i64,
-    decision_cooldown_ns: i64,
-    decision_debounce_ns: i64,
+use crate::baseball::types::NativeMlbEngine;
+use crate::soccer::types::NativeSoccerEngine;
 
-    game_id_to_idx: HashMap<String, GameIdx>,
-    game_ids: Vec<String>,
-    game_targets: Vec<GameTargets>,
-    target_slots: Vec<TargetSlot>,
-    tokens: Vec<TokenSlot>,
-    token_id_to_idx: HashMap<String, TokenIdx>,
-    /// Built once at the end of `load_plan`. Cloned via `clone_registry()`
-    /// for cross-thread sharing with `DispatchHandle` and `OrderSubmitter`.
-    registry: Option<Arc<TargetRegistry>>,
-    kickoff_ts: Vec<Option<i64>>,
-    token_ids_by_game: Vec<Vec<String>>,
-
-    has_totals: Vec<bool>,
-    has_nrfi: Vec<bool>,
-    has_final: Vec<bool>,
-
-    rows: Vec<Option<StateRow>>,
-    game_states: Vec<GameState>,
-
-    totals_final_under_emitted: Vec<bool>,
-    nrfi_resolved_games: Vec<bool>,
-    nrfi_first_inning_observed: Vec<bool>,
-    final_resolved_games: Vec<bool>,
-
-    last_emit_ns: Vec<i64>,
-    last_signature: Vec<Option<DecisionSig>>,
-}
-
-#[pyclass]
+#[cfg_attr(feature = "python-extension", pyclass)]
 struct NativeHotPathRuntime {
-    engine: Option<NativeMlbEngine>,
+    engine: Option<SportEngine>,
     running: bool,
     subscriptions: Vec<String>,
     runtime_cfg: RuntimeStartConfig,
@@ -360,8 +363,16 @@ struct NativeHotPathRuntime {
     presign_templates: Vec<crate::dispatch::PresignTemplateData>,
     live_worker: Option<LiveWorkerHandle>,
     submitter: Option<SubmitterHandle>,
+    cached_sdk_client: Option<SdkClient<SdkAuthenticatedState<SdkAuthNormal>>>,
+    cached_signer: Option<CachedSigner>,
 }
 
+pub(crate) struct MergePlanResult {
+    pub(crate) new_tokens: usize,
+    pub(crate) new_targets: usize,
+}
+
+#[cfg(feature = "python-extension")]
 #[pymodule]
 fn polybot2_native(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<NativeMlbEngine>()?;

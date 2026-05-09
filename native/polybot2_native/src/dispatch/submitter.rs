@@ -54,16 +54,21 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
 
     // Extract shared state for spawned tasks.
     let sdk_client = sub.sdk_runtime.take().map(|r| r.client);
-    let registry = sub.registry;
+    let mut registry = sub.registry;
     let log = sub.log;
     let health = sub.health.clone();
-    let mut submit_rx = sub.submit_rx;
+    let submit_rx = sub.submit_rx;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SUBMITS));
 
     loop {
-        let batch = match submit_rx.recv().await {
-            None | Some(SubmitWork::Stop) => break,
-            Some(SubmitWork::Batch(b)) => b,
+        let batch = match submit_rx.recv_async().await {
+            Err(_) => break, // channel closed
+            Ok(SubmitWork::Stop) => break,
+            Ok(SubmitWork::UpdateRegistry(new_reg)) => {
+                registry = new_reg;
+                continue;
+            }
+            Ok(SubmitWork::Batch(b)) => b,
         };
 
         // Acquire a slot. Blocks the dispatcher (not the WS thread) if all
@@ -92,9 +97,10 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
 }
 
 async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
-    while let Some(work) = sub.submit_rx.recv().await {
+    while let Ok(work) = sub.submit_rx.recv_async().await {
         match work {
             SubmitWork::Stop => return,
+            SubmitWork::UpdateRegistry(_) => continue,
             SubmitWork::Batch(b) => {
                 for (target_idx, _) in b {
                     log_outcome_idx(&sub.log, &sub.registry, target_idx, &Err(err.to_string()));
@@ -120,7 +126,7 @@ async fn submit_batch_task(
 
     if batch.len() == 1 {
         let (target_idx, signed) = batch.into_iter().next().expect("len==1");
-        let outcome = match client.post_order(signed).await {
+        let outcome = match client.post_order(*signed).await {
             Ok(resp) => {
                 map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
             }
@@ -134,7 +140,7 @@ async fn submit_batch_task(
     // Multi-order: post_orders with chunking at CLOB limit.
     let target_idxs: smallvec::SmallVec<[crate::TargetIdx; 4]> =
         batch.iter().map(|(idx, _)| *idx).collect();
-    let mut signed: Vec<SdkSignedOrder> = batch.into_iter().map(|(_, s)| s).collect();
+    let mut signed: Vec<SdkSignedOrder> = batch.into_iter().map(|(_, s)| *s).collect();
 
     let mut offset = 0;
     while !signed.is_empty() {
@@ -144,15 +150,27 @@ async fn submit_batch_task(
 
         match client.post_orders(chunk).await {
             Ok(responses) => {
-                for (tidx, resp) in chunk_idxs.iter().zip(responses) {
+                let resp_len = responses.len();
+                for (tidx, resp) in chunk_idxs.iter().zip(&responses) {
                     let outcome = map_post_response(
                         resp.success,
-                        resp.order_id,
-                        resp.error_msg,
+                        resp.order_id.clone(),
+                        resp.error_msg.clone(),
                         "batch_submit_failed",
                     );
                     record_outcome(health, &outcome);
                     log_outcome_idx(log, registry, *tidx, &outcome);
+                }
+                if resp_len < chunk_idxs.len() {
+                    let err = format!(
+                        "batch_response_short:expected={},got={}",
+                        chunk_idxs.len(),
+                        resp_len
+                    );
+                    for tidx in &chunk_idxs[resp_len..] {
+                        record_outcome(health, &Err(err.clone()));
+                        log_outcome_idx(log, registry, *tidx, &Err(err.clone()));
+                    }
                 }
             }
             Err(e) => {
@@ -173,10 +191,10 @@ fn log_outcome_idx(
     target_idx: crate::TargetIdx,
     outcome: &Result<String, String>,
 ) {
-    let (sk, tok) = match registry.targets.get(target_idx.0 as usize) {
+    let (sk, tok): (&str, &str) = match registry.targets.get(target_idx.0 as usize) {
         Some(target) => match registry.tokens.get(target.token_idx.0 as usize) {
-            Some(token) => (target.strategy_key.as_str(), token.token_id.as_str()),
-            None => (target.strategy_key.as_str(), "_"),
+            Some(token) => (&target.strategy_key, &token.token_id),
+            None => (&target.strategy_key, "_"),
         },
         None => ("_", "_"),
     };

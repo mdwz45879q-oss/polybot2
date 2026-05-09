@@ -888,6 +888,7 @@ class LinkReviewService:
             for m in (semantic_markets + unselected_markets)
             if str(m.get("event_id") or "") and str(m.get("condition_id") or "")
         }
+        _provider_tz_map = {"boltodds": "ET", "kalstrop_v1": "UTC", "kalstrop_v2": "UTC"}
         return {
             "provider": p,
             "run_id": rid,
@@ -895,12 +896,15 @@ class LinkReviewService:
             "found": True,
             "card": {
                 "provider_game": {
+                    "provider": p,
                     "provider_game_id": game.get("provider_game_id"),
                     "parse_status": game.get("parse_status"),
                     "parse_reason": game.get("parse_reason"),
                     "league_raw": game.get("league_raw"),
                     "sport_raw": game.get("sport_raw"),
                     "game_label": game.get("game_label"),
+                    "when_raw": game.get("when_raw"),
+                    "provider_timezone": _provider_tz_map.get(p, "UTC"),
                     "game_date_et": game.get("game_date_et"),
                     "kickoff_ts_utc": game.get("start_ts_utc"),
                     "home_raw": game.get("home_raw"),

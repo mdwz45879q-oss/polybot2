@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections import deque
 import hashlib
 import hmac
-import json
 
 import httpx
 
@@ -12,36 +10,7 @@ from polybot2.providers import sync as sync_module
 from polybot2.providers.sync import sync_provider_games
 from polybot2.sports import ProviderGameRecord
 from polybot2.sports.factory import resolve_kalstrop_credentials_from_env
-from polybot2.sports.kalstrop import KalstropProvider, KalstropProviderConfig
-
-
-class _FakeWS:
-    def __init__(self, frames: list[object]):
-        self._frames = deque(frames)
-        self.sent: list[str] = []
-
-    def settimeout(self, timeout: float) -> None:
-        del timeout
-
-    def recv(self):
-        if self._frames:
-            return self._frames.popleft()
-        raise TimeoutError("timed out")
-
-    def send(self, payload: str) -> None:
-        self.sent.append(payload)
-
-    def close(self) -> None:
-        return None
-
-
-class _SingleWSFactory:
-    def __init__(self, frames: list[object]):
-        self._frames = list(frames)
-
-    def __call__(self, *, ws_url: str, timeout_seconds: float):
-        del ws_url, timeout_seconds
-        return _FakeWS(list(self._frames))
+from polybot2.sports.kalstrop_v1 import KalstropV1Provider, KalstropV1ProviderConfig
 
 
 def test_kalstrop_signature_matches_spec() -> None:
@@ -54,7 +23,7 @@ def test_kalstrop_signature_matches_spec() -> None:
         f"{client_id}:{timestamp}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-    got = KalstropProvider.build_signature(
+    got = KalstropV1Provider.build_signature(
         client_id=client_id,
         shared_secret_raw=secret,
         timestamp=timestamp,
@@ -83,8 +52,8 @@ def test_resolve_kalstrop_credentials_uses_legacy_fallback(monkeypatch) -> None:
 
 
 def test_kalstrop_catalog_handles_outer_and_inner_cursors() -> None:
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(
+    provider = KalstropV1Provider(
+        config=KalstropV1ProviderConfig(
             client_id="cid",
             shared_secret_raw="secret",
             catalog_sport_codes=("baseball",),
@@ -153,13 +122,12 @@ def test_kalstrop_catalog_handles_outer_and_inner_cursors() -> None:
     fixture_1 = [r for r in rows if r.provider_game_id == "fixture_1"][0]
     assert fixture_1.home_team_raw == "Chicago White Sox"
     assert fixture_1.away_team_raw == "Athletics"
-    assert fixture_1.league_key == "mlb"
     assert fixture_1.parse_status == "ok"
 
 
 def test_kalstrop_catalog_supports_sports_fixtures_upcoming_shape() -> None:
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(
+    provider = KalstropV1Provider(
+        config=KalstropV1ProviderConfig(
             client_id="cid",
             shared_secret_raw="secret",
             catalog_sport_codes=("soccer",),
@@ -226,12 +194,11 @@ def test_kalstrop_catalog_supports_sports_fixtures_upcoming_shape() -> None:
     a = [r for r in rows if r.provider_game_id == "fixture_a"][0]
     assert a.home_team_raw == "Yupanqui"
     assert a.away_team_raw == "CA Puerto Nuevo"
-    assert a.sport_key == "soccer"
 
 
 def test_kalstrop_fetch_sports_page_upcoming_omits_fixture_first_on_primary_request() -> None:
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(
+    provider = KalstropV1Provider(
+        config=KalstropV1ProviderConfig(
             client_id="cid",
             shared_secret_raw="secret",
             catalog_sport_codes=("baseball",),
@@ -255,8 +222,8 @@ def test_kalstrop_fetch_sports_page_upcoming_omits_fixture_first_on_primary_requ
 
 
 def test_kalstrop_fetch_sports_page_retries_without_fixture_first_on_bad_request() -> None:
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(
+    provider = KalstropV1Provider(
+        config=KalstropV1ProviderConfig(
             client_id="cid",
             shared_secret_raw="secret",
             catalog_sport_codes=("baseball",),
@@ -287,8 +254,8 @@ def test_kalstrop_fetch_sports_page_retries_without_fixture_first_on_bad_request
 
 
 def test_kalstrop_catalog_skips_unsupported_sport_branch() -> None:
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(
+    provider = KalstropV1Provider(
+        config=KalstropV1ProviderConfig(
             client_id="cid",
             shared_secret_raw="secret",
             catalog_sport_codes=("unsupported_sport", "baseball"),
@@ -336,74 +303,6 @@ def test_kalstrop_catalog_skips_unsupported_sport_branch() -> None:
     assert [r.provider_game_id for r in rows] == ["fixture_ok"]
 
 
-def test_kalstrop_stream_scores_maps_sports_match_state_event() -> None:
-    ack = {"type": "connection_ack"}
-    next_msg = {
-        "type": "next",
-        "payload": {
-            "data": {
-                "sportsMatchStateUpdatedV2": {
-                    "fixtureId": "fixture_1",
-                    "name": "Chicago White Sox vs Athletics",
-                    "matchSummary": {
-                        "eventState": "FINAL",
-                        "timeElapsed": 10800000,
-                        "homeScore": 8,
-                        "awayScore": 4,
-                        "clockRunning": False,
-                        "updatedAt": "2026-04-19T01:40:00Z",
-                        "matchStatusDisplay": [{"freeText": "Final"}],
-                    },
-                }
-            }
-        },
-    }
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(client_id="cid", shared_secret_raw="secret"),
-        ws_factory=_SingleWSFactory([json.dumps(ack), json.dumps(next_msg)]),
-    )
-    provider._catalog_by_uid["fixture_1"] = ProviderGameRecord(
-        provider="kalstrop",
-        provider_game_id="fixture_1",
-        game_label="Chicago White Sox vs Athletics",
-        home_team_raw="Chicago White Sox",
-        away_team_raw="Athletics",
-        league_key="mlb",
-        parse_status="ok",
-    )
-    provider._subscribed_scores_uids = {"fixture_1"}
-
-    envs = provider.stream_scores(read_timeout_seconds=0.01)
-    provider.close()
-
-    assert len(envs) == 1
-    event = envs[0].event
-    assert event.universal_id == "fixture_1"
-    assert event.period == "Final"
-    assert int(event.home_score or 0) == 8
-    assert int(event.away_score or 0) == 4
-    assert event.match_completed is True
-
-
-def test_kalstrop_stream_playbyplay_is_explicitly_unsupported() -> None:
-    provider = KalstropProvider(
-        config=KalstropProviderConfig(client_id="cid", shared_secret_raw="secret")
-    )
-    provider._catalog_by_uid["fixture_1"] = ProviderGameRecord(
-        provider="kalstrop",
-        provider_game_id="fixture_1",
-        game_label="Example",
-        parse_status="ok",
-    )
-    provider.subscribe_playbyplay(["fixture_1"])
-    envs = provider.stream_playbyplay(read_timeout_seconds=0.01)
-    metrics = provider.get_stream_metrics().get("playbyplay") or {}
-    provider.close()
-
-    assert envs == []
-    assert int(metrics.get("recv_calls") or 0) >= 1
-    assert str(metrics.get("last_error") or "") == "unsupported_v1"
-
 
 def test_sync_provider_games_kalstrop_inserts_rows(tmp_path, monkeypatch) -> None:
     runtime = DataRuntimeConfig(db_path=str(tmp_path / "db.sqlite"))
@@ -431,8 +330,6 @@ def test_sync_provider_games_kalstrop_inserts_rows(tmp_path, monkeypatch) -> Non
                     when_raw="2026-04-18T19:30:00Z",
                     home_team_raw="Hoffenheim",
                     away_team_raw="Dortmund",
-                    sport_key="soccer",
-                    league_key="bundesliga",
                     start_ts_utc=1776540600,
                     parse_status="ok",
                 )
@@ -442,23 +339,22 @@ def test_sync_provider_games_kalstrop_inserts_rows(tmp_path, monkeypatch) -> Non
             return None
 
     monkeypatch.setattr(sync_module, "resolve_kalstrop_credentials_from_env", lambda: ("cid", "secret", "kalstrop_prefixed"))
-    monkeypatch.setattr(sync_module, "load_mapping", lambda: _FakeMap())
-    monkeypatch.setattr(sync_module, "KalstropProvider", _FakeKalstropProvider)
+    monkeypatch.setattr(sync_module, "KalstropV1Provider", _FakeKalstropProvider)
 
     with open_database(runtime) as db:
-        res = sync_provider_games(db=db, provider="kalstrop")
+        res = sync_provider_games(db=db, provider="kalstrop_v1")
         row = db.execute(
             """
             SELECT provider, provider_game_id, league_raw, home_raw, away_raw, parse_status
             FROM provider_games
-            WHERE provider='kalstrop' AND provider_game_id='fixture_123'
+            WHERE provider='kalstrop_v1' AND provider_game_id='fixture_123'
             """
         ).fetchone()
 
     assert res.status == "ok"
     assert int(res.n_rows) == 1
     assert row is not None
-    assert row["provider"] == "kalstrop"
+    assert row["provider"] == "kalstrop_v1"
     assert row["league_raw"] == "bundesliga"
     assert row["home_raw"] == "Hoffenheim"
     assert row["away_raw"] == "Dortmund"

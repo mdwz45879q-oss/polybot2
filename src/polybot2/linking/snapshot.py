@@ -113,15 +113,3 @@ class BindingResolver:
         return [t for t in view.targets if normalize_sports_market_type(t.sports_market_type) == mt]
 
 
-class SnapshotBuilder:
-    """Compatibility no-op for hotpath contract parity."""
-
-    def __init__(self, *, db: Any):
-        self._db = db
-
-    def build_and_activate(self, *, bindings: list[Any], target_bindings: list[Any], source_watermark: str) -> int:
-        del bindings, target_bindings, source_watermark
-        latest = self._db.execute("SELECT MAX(run_id) AS max_run_id FROM link_runs").fetchone()
-        if latest is None or latest["max_run_id"] is None:
-            return 0
-        return int(latest["max_run_id"])

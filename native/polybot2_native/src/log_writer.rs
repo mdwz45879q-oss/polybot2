@@ -1,14 +1,16 @@
+use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
 pub(crate) struct LogWriter {
     writer: BufWriter<File>,
+    buf: String,
 }
 
-fn opt_i64(v: Option<i64>) -> String {
+fn write_opt_i64(buf: &mut String, v: Option<i64>) {
     match v {
-        Some(n) => n.to_string(),
-        None => "null".to_string(),
+        Some(n) => { let _ = write!(buf, "{}", n); }
+        None => buf.push_str("null"),
     }
 }
 
@@ -19,20 +21,18 @@ fn now_unix_ms() -> i64 {
     }
 }
 
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
+fn write_json_escape(buf: &mut String, s: &str) {
     for c in s.chars() {
         match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
+            '"' => buf.push_str("\\\""),
+            '\\' => buf.push_str("\\\\"),
+            '\n' => buf.push_str("\\n"),
+            '\r' => buf.push_str("\\r"),
+            '\t' => buf.push_str("\\t"),
             c if c.is_control() => {}
-            c => out.push(c),
+            c => buf.push(c),
         }
     }
-    out
 }
 
 impl LogWriter {
@@ -40,11 +40,13 @@ impl LogWriter {
         let file = File::create(path).map_err(|e| format!("log_open_failed:{}", e))?;
         Ok(Self {
             writer: BufWriter::new(file),
+            buf: String::with_capacity(256),
         })
     }
 
-    fn write_line(&mut self, line: &str) {
-        let _ = writeln!(self.writer, "{}", line);
+    fn flush_buf(&mut self) {
+        let _ = writeln!(self.writer, "{}", self.buf);
+        self.buf.clear();
     }
 
     pub fn flush(&mut self) {
@@ -60,70 +62,94 @@ impl LogWriter {
         half: &str,
         gs: &str,
     ) {
-        let ts = now_unix_ms();
-        self.write_line(&format!(
-            r#"{{"ts":{},"ev":"tick","gid":"{}","h":{},"a":{},"inn":{},"half":"{}","gs":"{}"}}"#,
-            ts,
-            json_escape(gid),
-            opt_i64(home),
-            opt_i64(away),
-            opt_i64(inn),
-            json_escape(half),
-            json_escape(gs)
-        ));
+        self.buf.clear();
+        let _ = write!(self.buf, r#"{{"ts":{},"ev":"tick","gid":""#, now_unix_ms());
+        write_json_escape(&mut self.buf, gid);
+        self.buf.push_str(r#"","h":"#);
+        write_opt_i64(&mut self.buf, home);
+        self.buf.push_str(r#","a":"#);
+        write_opt_i64(&mut self.buf, away);
+        self.buf.push_str(r#","inn":"#);
+        write_opt_i64(&mut self.buf, inn);
+        self.buf.push_str(r#","half":""#);
+        write_json_escape(&mut self.buf, half);
+        self.buf.push_str(r#"","gs":""#);
+        write_json_escape(&mut self.buf, gs);
+        self.buf.push_str(r#""}"#);
+        self.flush_buf();
     }
 
     pub fn log_order_ok(&mut self, sk: &str, tok: &str, eid: &str) {
-        let ts = now_unix_ms();
-        self.write_line(&format!(
-            r#"{{"ts":{},"ev":"order","sk":"{}","tok":"{}","ok":true,"eid":"{}"}}"#,
-            ts,
-            json_escape(sk),
-            json_escape(tok),
-            json_escape(eid)
-        ));
+        self.buf.clear();
+        let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","sk":""#, now_unix_ms());
+        write_json_escape(&mut self.buf, sk);
+        self.buf.push_str(r#"","tok":""#);
+        write_json_escape(&mut self.buf, tok);
+        self.buf.push_str(r#"","ok":true,"eid":""#);
+        write_json_escape(&mut self.buf, eid);
+        self.buf.push_str(r#""}"#);
+        self.flush_buf();
     }
 
     pub fn log_order_err(&mut self, sk: &str, tok: &str, err: &str) {
-        let ts = now_unix_ms();
-        self.write_line(&format!(
-            r#"{{"ts":{},"ev":"order","sk":"{}","tok":"{}","ok":false,"err":"{}"}}"#,
-            ts,
-            json_escape(sk),
-            json_escape(tok),
-            json_escape(err)
-        ));
+        self.buf.clear();
+        let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","sk":""#, now_unix_ms());
+        write_json_escape(&mut self.buf, sk);
+        self.buf.push_str(r#"","tok":""#);
+        write_json_escape(&mut self.buf, tok);
+        self.buf.push_str(r#"","ok":false,"err":""#);
+        write_json_escape(&mut self.buf, err);
+        self.buf.push_str(r#""}"#);
+        self.flush_buf();
+    }
+
+    pub fn log_patch(&mut self, new_tokens: usize, new_targets: usize) {
+        self.buf.clear();
+        let _ = write!(
+            self.buf,
+            r#"{{"ts":{},"ev":"patch","new_tokens":{},"new_targets":{}}}"#,
+            now_unix_ms(), new_tokens, new_targets
+        );
+        self.flush_buf();
     }
 
     pub fn log_startup(&mut self, run_id: i64, games: usize, tokens: usize, mode: &str) {
-        let ts = now_unix_ms();
-        self.write_line(&format!(
-            r#"{{"ts":{},"ev":"startup","run_id":{},"games":{},"tokens":{},"mode":"{}"}}"#,
-            ts, run_id, games, tokens, json_escape(mode)
-        ));
+        self.buf.clear();
+        let _ = write!(
+            self.buf,
+            r#"{{"ts":{},"ev":"startup","run_id":{},"games":{},"tokens":{},"mode":""#,
+            now_unix_ms(), run_id, games, tokens
+        );
+        write_json_escape(&mut self.buf, mode);
+        self.buf.push_str(r#""}"#);
+        self.flush_buf();
     }
 
     pub fn log_ws_connect(&mut self, subs: &[String]) {
-        let ts = now_unix_ms();
-        let subs_json: Vec<String> = subs
-            .iter()
-            .map(|s| format!("\"{}\"", json_escape(s)))
-            .collect();
-        self.write_line(&format!(
-            r#"{{"ts":{},"ev":"ws_connect","subs":[{}]}}"#,
-            ts,
-            subs_json.join(",")
-        ));
+        self.buf.clear();
+        let _ = write!(self.buf, r#"{{"ts":{},"ev":"ws_connect","subs":["#, now_unix_ms());
+        for (i, s) in subs.iter().enumerate() {
+            if i > 0 {
+                self.buf.push(',');
+            }
+            self.buf.push('"');
+            write_json_escape(&mut self.buf, s);
+            self.buf.push('"');
+        }
+        self.buf.push_str("]}");
+        self.flush_buf();
     }
 
     pub fn log_ws_disconnect(&mut self, reason: &str, reconnects: i64) {
-        let ts = now_unix_ms();
-        self.write_line(&format!(
-            r#"{{"ts":{},"ev":"ws_disconnect","reason":"{}","reconnects":{}}}"#,
-            ts,
-            json_escape(reason),
-            reconnects
-        ));
+        self.buf.clear();
+        let _ = write!(
+            self.buf,
+            r#"{{"ts":{},"ev":"ws_disconnect","reason":""#,
+            now_unix_ms()
+        );
+        write_json_escape(&mut self.buf, reason);
+        let _ = write!(self.buf, r#"","reconnects":{}}}"#, reconnects);
+        self.flush_buf();
         self.flush();
     }
 }

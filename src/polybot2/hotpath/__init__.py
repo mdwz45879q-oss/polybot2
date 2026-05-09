@@ -15,9 +15,13 @@ from polybot2.hotpath.contracts import (
     MatchDeltaEvent,
     OrderIntent,
 )
-from polybot2.hotpath.mlb import MlbOrderPolicy
+from polybot2.hotpath.order_policy import OrderPolicy
 from polybot2.hotpath.native_service import NativeHotPathService
-from polybot2.hotpath.replay import ReplayConfig, ReplaySummary, run_hotpath_replay
+from polybot2.hotpath.incremental import (
+    IncrementalRefreshResult,
+    discover_new_markets,
+    discover_new_markets_sync,
+)
 
 __all__ = [
     "CompiledGamePlan",
@@ -26,14 +30,14 @@ __all__ = [
     "CompiledTarget",
     "HotPathConfig",
     "HotPathPlanError",
-    "MlbOrderPolicy",
+    "IncrementalRefreshResult",
+    "OrderPolicy",
     "MatchDeltaEvent",
     "NativeHotPathService",
     "OrderIntent",
-    "ReplayConfig",
-    "ReplaySummary",
     "ScopedLaunchCheck",
     "compile_hotpath_plan",
+    "discover_new_markets",
+    "discover_new_markets_sync",
     "evaluate_hotpath_scope",
-    "run_hotpath_replay",
 ]

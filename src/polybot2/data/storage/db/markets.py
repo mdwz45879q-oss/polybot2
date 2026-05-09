@@ -6,8 +6,6 @@ import hashlib
 import json
 from typing import Any
 
-from polybot2.data.payload_artifacts import PayloadArtifactWriter
-
 _SQLITE_SAFE_DELETE_BATCH_SIZE = 500
 
 
@@ -74,24 +72,6 @@ class MarketsAdapter:
             return None
 
     @staticmethod
-    def _lineage(
-        *,
-        payload: dict[str, Any] | list[Any] | str | int | float | bool | None,
-        payload_writer: PayloadArtifactWriter | None,
-        stream_name: str,
-        entity_key: str,
-        compute_hash: bool = True,
-    ) -> tuple[str, str, int]:
-        if payload_writer is not None:
-            record = payload_writer.write_payload(stream_name=stream_name, entity_key=entity_key, payload=payload)
-            return (str(record.payload_sha256), str(record.payload_ref), int(record.payload_size_bytes))
-        if not bool(compute_hash):
-            return ("", "", 0)
-        payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True, default=str)
-        digest = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
-        return (digest, "", int(len(payload_json.encode("utf-8"))))
-
-    @staticmethod
     def _event_id_from_event(event: dict[str, Any]) -> str:
         for key in ("id", "eventId", "event_id"):
             text = str(event.get(key) or "").strip()
@@ -153,8 +133,6 @@ class MarketsAdapter:
         *,
         events_data: list[dict[str, Any]],
         updated_ts: int,
-        payload_writer: PayloadArtifactWriter | None = None,
-        compute_lineage_hash: bool = True,
         commit: bool = True,
     ) -> tuple[int, int, int, int]:
         if not events_data:
@@ -181,13 +159,6 @@ class MarketsAdapter:
             end_ts = self._parse_iso_ts(str(event.get("endDate") or event.get("end_date") or ""))
             game_id = self._to_optional_int(event.get("gameId") or event.get("game_id"))
             status = "closed" if bool(event.get("closed")) else "open"
-            event_sha, event_ref, event_size = self._lineage(
-                payload=event,
-                payload_writer=payload_writer,
-                stream_name="pm_events",
-                entity_key=event_id,
-                compute_hash=compute_lineage_hash,
-            )
             event_rows.append(
                 (
                     event_id,
@@ -203,9 +174,6 @@ class MarketsAdapter:
                     start_ts,
                     end_ts,
                     status,
-                    event_sha,
-                    event_ref,
-                    event_size,
                     int(updated_ts),
                 )
             )
@@ -239,13 +207,6 @@ class MarketsAdapter:
                 condition_id = str(market.get("conditionId") or market.get("condition_id") or "").strip()
                 if not condition_id:
                     continue
-                market_sha, market_ref, market_size = self._lineage(
-                    payload=market,
-                    payload_writer=payload_writer,
-                    stream_name="pm_markets",
-                    entity_key=condition_id,
-                    compute_hash=compute_lineage_hash,
-                )
                 market_slug = str(market.get("slug") or "").strip().lower()
                 end_date = str(market.get("endDate") or market.get("end_date") or "")
                 event_start_ts = self._parse_iso_ts(
@@ -271,9 +232,6 @@ class MarketsAdapter:
                         self._to_float(market.get("volume")),
                         end_date,
                         self._parse_iso_ts(end_date),
-                        market_sha,
-                        market_ref,
-                        market_size,
                         int(updated_ts),
                     )
                 )
@@ -330,53 +288,26 @@ class MarketsAdapter:
         normalized_rows: list[tuple[Any, ...]] = []
         for row in rows:
             vals = tuple(row)
-            if len(vals) == 17:
-                normalized_rows.append(vals)
-                continue
-            if len(vals) == 16:
-                normalized_rows.append(
-                    (
-                        vals[0],  # event_id
-                        vals[1],  # title
-                        vals[2],  # ticker
-                        vals[3],  # slug
-                        vals[4],  # slug_raw
-                        vals[5],  # sport_key
-                        vals[6],  # league_key
-                        vals[7],  # game_id
-                        vals[8],  # game_date_et
-                        None,  # kickoff_ts_utc
-                        vals[9],  # start_ts_utc
-                        vals[10],  # end_ts_utc
-                        vals[11],  # status
-                        vals[12],  # payload_sha256
-                        vals[13],  # payload_ref
-                        vals[14],  # payload_size_bytes
-                        vals[15],  # updated_at
-                    )
-                )
-                continue
             if len(vals) == 14:
-                normalized_rows.append(
-                    (
-                        vals[0],  # event_id
-                        vals[1],  # title
-                        "",  # ticker
-                        vals[2],  # slug
-                        vals[3],  # slug_raw
-                        vals[4],  # sport_key
-                        vals[5],  # league_key
-                        None,  # game_id
-                        vals[6],  # game_date_et
-                        None,  # kickoff_ts_utc
-                        vals[7],  # start_ts_utc
-                        vals[8],  # end_ts_utc
-                        vals[9],  # status
-                        vals[10],  # payload_sha256
-                        vals[11],  # payload_ref
-                        vals[12],  # payload_size_bytes
-                        vals[13],  # updated_at
+                # Disambiguate: new format has status at position 12 (str like "open"/"closed")
+                # Old legacy format has status at position 9 and payload_size at position 12 (int 0)
+                if isinstance(vals[12], str) and vals[12] in ("open", "closed", ""):
+                    normalized_rows.append(vals)
+                else:
+                    # Old 14-element legacy format with payload cols:
+                    # (eid, title, slug, slug_raw, sport, league, gdate, start, end, status, sha, ref, size, ts)
+                    normalized_rows.append(
+                        (vals[0], vals[1], "", vals[2], vals[3], vals[4], vals[5], None, vals[6], None, vals[7], vals[8], vals[9], vals[13])
                     )
+                continue
+            if len(vals) == 17:
+                # Old format with all fields including payload columns — strip payload
+                normalized_rows.append(vals[:13] + (vals[16],))
+                continue
+            if len(vals) == 11:
+                # Legacy test format: (eid, title, slug, slug_raw, sport, league, gdate, start, end, status, ts)
+                normalized_rows.append(
+                    (vals[0], vals[1], "", vals[2], vals[3], vals[4], vals[5], None, vals[6], None, vals[7], vals[8], vals[9], vals[10])
                 )
                 continue
             raise ValueError(f"pm_events row has unsupported length: {len(vals)}")
@@ -386,9 +317,8 @@ class MarketsAdapter:
                 """
                 INSERT OR REPLACE INTO pm_events
                 (event_id, title, ticker, slug, slug_raw, sport_key, league_key, game_id, game_date_et,
-                 kickoff_ts_utc, start_ts_utc, end_ts_utc, status, payload_sha256, payload_ref,
-                 payload_size_bytes, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 kickoff_ts_utc, start_ts_utc, end_ts_utc, status, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 normalized_rows[i : i + bs],
             )
@@ -401,57 +331,26 @@ class MarketsAdapter:
         normalized_rows: list[tuple[Any, ...]] = []
         for row in rows:
             vals = tuple(row)
-            if len(vals) == 19:
+            if len(vals) == 16:
                 normalized_rows.append(vals)
                 continue
+            if len(vals) == 19:
+                # Old format with payload columns — strip them
+                normalized_rows.append(vals[:15] + (vals[18],))
+                continue
             if len(vals) == 17:
+                # Old test format without event_start/game_start but with payload cols:
+                # (cid, mid, eid, q, qid, slug, smt, line, resolved, res_val, vol, end_date, end_ts, sha, ref, size, ts)
                 normalized_rows.append(
-                    (
-                        vals[0],  # condition_id
-                        vals[1],  # market_id
-                        vals[2],  # event_id
-                        vals[3],  # question
-                        vals[4],  # question_id
-                        vals[5],  # slug
-                        vals[6],  # sports_market_type
-                        vals[7],  # line
-                        None,  # event_start_ts_utc
-                        None,  # game_start_ts_utc
-                        vals[8],  # resolved
-                        vals[9],  # resolution_value
-                        vals[10],  # volume
-                        vals[11],  # end_date
-                        vals[12],  # end_ts_utc
-                        vals[13],  # payload_sha256
-                        vals[14],  # payload_ref
-                        vals[15],  # payload_size_bytes
-                        vals[16],  # updated_at
-                    )
+                    (vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7],
+                     None, None, vals[8], vals[9], vals[10], vals[11], vals[12], vals[16])
                 )
                 continue
-            if len(vals) == 13:
+            if len(vals) == 14:
+                # Minimal test format: (cid, mid, eid, q, qid, slug, smt, line, resolved, res_val, vol, end_date, end_ts, ts)
                 normalized_rows.append(
-                    (
-                        vals[0],  # condition_id
-                        "",  # market_id
-                        vals[1],  # event_id
-                        vals[2],  # question
-                        "",  # question_id
-                        vals[3],  # slug
-                        "",  # sports_market_type
-                        None,  # line
-                        None,  # event_start_ts_utc
-                        None,  # game_start_ts_utc
-                        vals[4],  # resolved
-                        vals[5],  # resolution_value
-                        vals[6],  # volume
-                        vals[7],  # end_date
-                        vals[8],  # end_ts_utc
-                        vals[9],  # payload_sha256
-                        vals[10],  # payload_ref
-                        vals[11],  # payload_size_bytes
-                        vals[12],  # updated_at
-                    )
+                    (vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7],
+                     None, None, vals[8], vals[9], vals[10], vals[11], vals[12], vals[13])
                 )
                 continue
             raise ValueError(f"pm_markets row has unsupported length: {len(vals)}")
@@ -462,9 +361,8 @@ class MarketsAdapter:
                 INSERT OR REPLACE INTO pm_markets
                 (condition_id, market_id, event_id, question, question_id, slug, sports_market_type, line,
                  event_start_ts_utc, game_start_ts_utc, resolved, resolution_value,
-                 volume, end_date, end_ts_utc, payload_sha256, payload_ref,
-                 payload_size_bytes, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 volume, end_date, end_ts_utc, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 normalized_rows[i : i + bs],
             )
@@ -547,94 +445,6 @@ class MarketsAdapter:
         if bool(commit):
             self._db.commit()
 
-    def replace_pm_sports_ref(self, rows: list[tuple[Any, ...]]) -> None:
-        try:
-            self._db.execute("BEGIN IMMEDIATE")
-            self._db.execute("DELETE FROM pm_sports_ref")
-            if rows:
-                bs = max(1, int(self._db._infra.db_batch_size))
-                for i in range(0, len(rows), bs):
-                    self._db.executemany(
-                        """
-                        INSERT INTO pm_sports_ref
-                        (sport, sport_id, image, resolution, ordering, tags_csv, series, created_at_raw, synced_at)
-                        VALUES (?,?,?,?,?,?,?,?,?)
-                        """,
-                        rows[i : i + bs],
-                    )
-            self._db.commit()
-        except Exception:
-            self._db.rollback()
-            raise
-
-    def replace_pm_sports_market_types_ref(self, rows: list[tuple[Any, ...]]) -> None:
-        try:
-            self._db.execute("BEGIN IMMEDIATE")
-            self._db.execute("DELETE FROM pm_sports_market_types_ref")
-            if rows:
-                bs = max(1, int(self._db._infra.db_batch_size))
-                for i in range(0, len(rows), bs):
-                    self._db.executemany(
-                        """
-                        INSERT INTO pm_sports_market_types_ref
-                        (market_type, synced_at)
-                        VALUES (?,?)
-                        """,
-                        rows[i : i + bs],
-                    )
-            self._db.commit()
-        except Exception:
-            self._db.rollback()
-            raise
-
-    def replace_pm_teams_ref(self, rows: list[tuple[Any, ...]]) -> None:
-        try:
-            self._db.execute("BEGIN IMMEDIATE")
-            self._db.execute("DELETE FROM pm_teams_ref")
-            if rows:
-                bs = max(1, int(self._db._infra.db_batch_size))
-                for i in range(0, len(rows), bs):
-                    self._db.executemany(
-                        """
-                        INSERT INTO pm_teams_ref
-                        (team_id, name, league, abbreviation, alias, provider_team_id,
-                         record, logo, color, created_at_raw, updated_at_raw, synced_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                        """,
-                        rows[i : i + bs],
-                    )
-            self._db.commit()
-        except Exception:
-            self._db.rollback()
-            raise
-
-    def market_tags_filter_sql(self, market_tags: str | None, *, alias: str = "") -> tuple[str, tuple[Any, ...]]:
-        text = str(market_tags or "").strip().lower()
-        if not text:
-            return "1=1", tuple()
-        tags = [t for t in text.replace(",", " ").split() if t]
-        if not tags:
-            return "1=1", tuple()
-        col = f"{alias}." if alias else ""
-        placeholders = ",".join("?" for _ in tags)
-        sql = (
-            f"{col}condition_id IN ("
-            f"SELECT condition_id FROM pm_market_tags "
-            f"WHERE LOWER(slug) IN ({placeholders}) "
-            f"GROUP BY condition_id HAVING COUNT(DISTINCT LOWER(slug)) = ?"
-            f")"
-        )
-        return sql, tuple(tags) + (len(tags),)
-
-    def load_pm_events_by_slug_raw(self, slug_raw: str) -> list[dict[str, Any]]:
-        rows = self._db.execute(
-            """
-            SELECT * FROM pm_events WHERE slug_raw = ? ORDER BY event_id
-            """,
-            (str(slug_raw).strip().lower(),),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
     def load_pm_events_by_league_and_date_range(
         self,
         *,
@@ -708,31 +518,6 @@ class MarketsAdapter:
             """
         ).fetchall()
         return [str(r["market_type"] or "") for r in rows if str(r["market_type"] or "").strip()]
-
-    def load_sports_ref(self) -> list[dict[str, Any]]:
-        rows = self._db.execute(
-            """
-            SELECT *
-            FROM pm_sports_ref
-            ORDER BY sport
-            """
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def load_market_end_ts_for_condition(self, condition_id: str) -> int | None:
-        row = self._db.execute(
-            "SELECT end_ts_utc FROM pm_markets WHERE condition_id = ? LIMIT 1",
-            (str(condition_id or "").strip(),),
-        ).fetchone()
-        if row is None:
-            return None
-        val = row["end_ts_utc"]
-        if val is None:
-            return None
-        try:
-            return int(val)
-        except (TypeError, ValueError):
-            return None
 
     def load_market_tokens_for_condition_pl(self, condition_id: str):
         cid = str(condition_id or "").strip()

@@ -14,7 +14,6 @@ from tqdm import tqdm
 
 from polybot2.data._http import request_json_with_retry
 from polybot2.data._rate_limit import SlidingWindowRateLimiter
-from polybot2.data.payload_artifacts import PayloadArtifactWriter
 from polybot2.data.storage.database import Database
 from polybot2.data.sync_config import MarketSyncConfig
 
@@ -40,17 +39,13 @@ class MarketSync:
         self._resolved_max_pages = None if cfg.resolved_max_pages is None else max(1, int(cfg.resolved_max_pages))
         self._open_max_pages = None if cfg.open_max_pages is None else max(1, int(cfg.open_max_pages))
         self._open_only = bool(getattr(cfg, "open_only", False))
-        self._enable_reference_sync = bool(cfg.enable_reference_sync)
-        self._enable_payload_artifacts = bool(cfg.enable_payload_artifacts)
         self._fast_mode = bool(cfg.fast_mode)
-        self._payload_artifact_dir = str(cfg.payload_artifact_dir)
-        self._compute_lineage_hash = not (self._fast_mode and (not self._enable_payload_artifacts))
+        self._http2 = bool(getattr(cfg, "http2", True))
         self._rate_limiter = (
             SlidingWindowRateLimiter(self._max_rps, window_seconds=1.0)
             if self._max_rps > 0
             else None
         )
-        self._payload_writer: PayloadArtifactWriter | None = None
         self._http_metrics: dict[str, int] = {}
         self._last_run_stats: dict[str, Any] | None = None
 
@@ -125,139 +120,6 @@ class MarketSync:
             },
         )
 
-    async def _fetch_sports_ref(self, client: httpx.AsyncClient) -> list[dict[str, Any]] | None:
-        payload = await request_json_with_retry(
-            client=client,
-            method="GET",
-            url=f"{self._gamma_api}/sports",
-            max_retries=self._fetch_max_retries,
-            before_request=self._wait_for_request_slot,
-            logger=log,
-            log_context="sports",
-            metrics=self._http_metrics,
-        )
-        if not isinstance(payload, list):
-            return None
-        return [x for x in payload if isinstance(x, dict)]
-
-    async def _fetch_sports_market_types_ref(self, client: httpx.AsyncClient) -> list[str] | None:
-        payload = await request_json_with_retry(
-            client=client,
-            method="GET",
-            url=f"{self._gamma_api}/sports/market-types",
-            max_retries=self._fetch_max_retries,
-            before_request=self._wait_for_request_slot,
-            logger=log,
-            log_context="sports_market_types",
-            metrics=self._http_metrics,
-        )
-        if not isinstance(payload, dict):
-            return None
-        vals = payload.get("marketTypes")
-        if not isinstance(vals, list):
-            return None
-        out = sorted({str(x).strip().lower() for x in vals if str(x).strip()})
-        return out
-
-    async def _fetch_teams_ref_page(
-        self,
-        client: httpx.AsyncClient,
-        *,
-        limit: int,
-        offset: int,
-    ) -> list[dict[str, Any]] | None:
-        payload = await request_json_with_retry(
-            client=client,
-            method="GET",
-            url=f"{self._gamma_api}/teams",
-            params={
-                "limit": int(limit),
-                "offset": int(offset),
-                "order": "id",
-                "ascending": "true",
-            },
-            max_retries=self._fetch_max_retries,
-            before_request=self._wait_for_request_slot,
-            logger=log,
-            log_context=f"teams offset={offset}",
-            metrics=self._http_metrics,
-        )
-        if not isinstance(payload, list):
-            return None
-        return [x for x in payload if isinstance(x, dict)]
-
-    async def _sync_reference_metadata(self, client: httpx.AsyncClient, *, now_ts: int) -> None:
-        sports_payload = await self._fetch_sports_ref(client)
-        if sports_payload is None:
-            log.warning("Skipping /sports reference refresh (fetch failed)")
-        else:
-            sports_rows: list[tuple[Any, ...]] = []
-            for row in sports_payload:
-                sport = str(row.get("sport") or "").strip().lower()
-                if not sport:
-                    continue
-                sports_rows.append(
-                    (
-                        sport,
-                        self._to_optional_int(row.get("id")),
-                        str(row.get("image") or ""),
-                        str(row.get("resolution") or ""),
-                        str(row.get("ordering") or ""),
-                        str(row.get("tags") or ""),
-                        str(row.get("series") or ""),
-                        str(row.get("createdAt") or ""),
-                        int(now_ts),
-                    )
-                )
-            self._db.markets.replace_pm_sports_ref(sports_rows)
-
-        market_types = await self._fetch_sports_market_types_ref(client)
-        if market_types is None:
-            log.warning("Skipping /sports/market-types reference refresh (fetch failed)")
-        else:
-            market_type_rows = [(str(mt), int(now_ts)) for mt in market_types]
-            self._db.markets.replace_pm_sports_market_types_ref(market_type_rows)
-
-        teams_rows: list[tuple[Any, ...]] = []
-        limit = max(1, int(self._batch_size))
-        offset = 0
-        teams_failed = False
-        while True:
-            page = await self._fetch_teams_ref_page(client, limit=limit, offset=offset)
-            if page is None:
-                teams_failed = True
-                break
-            if not page:
-                break
-            for row in page:
-                team_id = self._to_optional_int(row.get("id"))
-                if team_id is None:
-                    continue
-                teams_rows.append(
-                    (
-                        team_id,
-                        str(row.get("name") or ""),
-                        str(row.get("league") or "").strip().lower(),
-                        str(row.get("abbreviation") or "").strip().lower(),
-                        str(row.get("alias") or ""),
-                        self._to_optional_int(row.get("providerId") or row.get("provider_id")),
-                        str(row.get("record") or ""),
-                        str(row.get("logo") or ""),
-                        str(row.get("color") or ""),
-                        str(row.get("createdAt") or ""),
-                        str(row.get("updatedAt") or ""),
-                        int(now_ts),
-                    )
-                )
-            if len(page) < limit:
-                break
-            offset += len(page)
-
-        if teams_failed:
-            log.warning("Skipping /teams reference refresh (fetch failed)")
-        else:
-            self._db.markets.replace_pm_teams_ref(teams_rows)
-
     async def _run_pass(
         self,
         client: httpx.AsyncClient,
@@ -314,8 +176,6 @@ class MarketSync:
                     _, market_n, _, _ = self._db.markets.upsert_from_gamma_events(
                         events_data=ingest_events,
                         updated_ts=now_ts,
-                        payload_writer=self._payload_writer,
-                        compute_lineage_hash=self._compute_lineage_hash,
                     )
                     if stage_metrics is not None:
                         stage_metrics["db_upsert_s"] = float(stage_metrics.get("db_upsert_s", 0.0)) + float(
@@ -339,21 +199,12 @@ class MarketSync:
         stage_metrics: dict[str, float] = {
             "fetch_s": 0.0,
             "db_upsert_s": 0.0,
-            "reference_sync_s": 0.0,
-            "artifact_write_s": 0.0,
-            "artifact_close_s": 0.0,
         }
         now_ts = int(time.time())
         self._http_metrics = {}
         self._last_run_stats = None
         mode = "open-only" if self._open_only else "resolved+open"
         log.info("Polymarket Market sync starting (%s; concurrency=%d, max_rps=%d)", mode, self._concurrency, self._max_rps)
-        self._payload_writer = None
-        if self._enable_payload_artifacts:
-            self._payload_writer = PayloadArtifactWriter(
-                root_dir=self._payload_artifact_dir,
-                run_label=f"polymarket_{now_ts}",
-            )
         total = 0
         resolved_pages = 0
         resolved_rows = 0
@@ -365,7 +216,8 @@ class MarketSync:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 follow_redirects=True,
-                http2=True,
+                http2=self._http2,
+                headers={"Accept-Encoding": "gzip, deflate"},
                 limits=httpx.Limits(
                     max_keepalive_connections=self._concurrency * 2,
                     max_connections=self._concurrency * 2,
@@ -408,18 +260,7 @@ class MarketSync:
                     stage_metrics=stage_metrics,
                 )
                 total += open_markets
-                if self._enable_reference_sync:
-                    ref_started = time.perf_counter()
-                    await self._sync_reference_metadata(client, now_ts=now_ts)
-                    stage_metrics["reference_sync_s"] = float(time.perf_counter() - ref_started)
         finally:
-            if self._payload_writer is not None:
-                stage_metrics["artifact_write_s"] = float(getattr(self._payload_writer, "write_elapsed_s", 0.0))
-                close_started = time.perf_counter()
-                self._payload_writer.close()
-                close_elapsed = float(time.perf_counter() - close_started)
-                writer_close = float(getattr(self._payload_writer, "close_elapsed_s", 0.0))
-                stage_metrics["artifact_close_s"] = writer_close if writer_close > 0 else close_elapsed
             elapsed_s = float(time.perf_counter() - started)
             self._last_run_stats = {
                 "elapsed_s": elapsed_s,
@@ -441,9 +282,6 @@ class MarketSync:
                 "stage_timing_s": {
                     "fetch": float(stage_metrics.get("fetch_s", 0.0)),
                     "db_upsert": float(stage_metrics.get("db_upsert_s", 0.0)),
-                    "reference_sync": float(stage_metrics.get("reference_sync_s", 0.0)),
-                    "artifact_write": float(stage_metrics.get("artifact_write_s", 0.0)),
-                    "artifact_close": float(stage_metrics.get("artifact_close_s", 0.0)),
                 },
                 "config": {
                     "batch_size": int(self._batch_size),
@@ -452,10 +290,7 @@ class MarketSync:
                     "resolved_max_pages": self._resolved_max_pages,
                     "open_max_pages": self._open_max_pages,
                     "open_only": bool(self._open_only),
-                    "enable_reference_sync": bool(self._enable_reference_sync),
-                    "enable_payload_artifacts": bool(self._enable_payload_artifacts),
                     "fast_mode": bool(self._fast_mode),
-                    "compute_lineage_hash": bool(self._compute_lineage_hash),
                 },
             }
         log.info("Polymarket Market sync complete: %d markets processed", total)

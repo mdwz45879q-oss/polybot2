@@ -10,8 +10,8 @@ from typing import Any, Callable
 
 from polybot2.execution.contracts import OrderRequest
 from polybot2.execution.service import FastExecutionService
-from polybot2.hotpath.contracts import CompiledGamePlan, CompiledPlan, HotPathConfig
-from polybot2.hotpath.mlb.triggers import MlbOrderPolicy
+from polybot2.hotpath.contracts import CompiledPlan, HotPathConfig
+from polybot2.hotpath.order_policy import OrderPolicy
 from polybot2.hotpath.native_engine import (
     NativeEngineUnavailable,
     NativeHotPathRuntimeBridge,
@@ -39,7 +39,6 @@ class NativeHotPathService:
         self._provider = provider
         self._execution = execution
         self._config = config or HotPathConfig()
-        self._binding_resolver = binding_resolver
 
         self._running = False
         self._lock = threading.RLock()
@@ -55,9 +54,8 @@ class NativeHotPathService:
         }
 
         self._compiled_plan: CompiledPlan | None = None
-        self._compiled_games_by_uid: dict[str, CompiledGamePlan] = {}
 
-        self._native_order_policy = MlbOrderPolicy()
+        self._native_order_policy = OrderPolicy()
         self._runtime_bridge: NativeHotPathRuntimeBridge | None = None
         self._pending_presign_templates: list[dict[str, Any]] = []
         self._subscribe_lead_minutes: int = 90
@@ -77,14 +75,8 @@ class NativeHotPathService:
     def set_compiled_plan(self, plan: CompiledPlan | None) -> None:
         with self._plan_lock:
             self._compiled_plan = plan
-            self._compiled_games_by_uid = {}
-            if plan is not None:
-                for game in tuple(plan.games):
-                    uid = str(game.provider_game_id or "").strip()
-                    if uid:
-                        self._compiled_games_by_uid[uid] = game
 
-    def set_order_policy(self, policy: MlbOrderPolicy) -> None:
+    def set_order_policy(self, policy: OrderPolicy) -> None:
         self._native_order_policy = policy
 
     def _append_error(self, text: str) -> None:
@@ -130,9 +122,6 @@ class NativeHotPathService:
             except Exception as exc:
                 self._append_error(f"runtime_set_subscriptions:{type(exc).__name__}:{exc}")
 
-    def set_binding_resolver(self, resolver: BindingResolver | None) -> None:
-        self._binding_resolver = resolver
-
     def set_runtime_timing_policy(
         self,
         *,
@@ -174,10 +163,8 @@ class NativeHotPathService:
     def _runtime_config_payload(self) -> dict[str, Any]:
         provider_cfg = getattr(self._provider, "config", None)
         plan = self._compiled_plan
+        provider_name = str(getattr(self._provider, "provider_name", "") or "")
         payload = {
-            "dedup_ttl_seconds": float(self._config.dedup_ttl_seconds),
-            "decision_cooldown_seconds": float(self._config.decision_cooldown_seconds),
-            "decision_debounce_seconds": float(self._config.decision_debounce_seconds),
             "subscribe_lead_minutes": int(self._subscribe_lead_minutes),
             "subscription_refresh_seconds": int(self._subscription_refresh_seconds),
             "amount_usdc": float(self._native_order_policy.amount_usdc),
@@ -186,18 +173,21 @@ class NativeHotPathService:
             "time_in_force": str(self._native_order_policy.time_in_force),
             "live_enabled": True,
             "reconnect_sleep_seconds": float(self._config.reconnect_base_sleep_seconds),
-            "kalstrop_ws_url": str(getattr(provider_cfg, "ws_url", "") or ""),
+            "kalstrop_ws_url": str(getattr(provider_cfg, "ws_url", "") or "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"),
             "kalstrop_client_id": str(getattr(provider_cfg, "client_id", "") or ""),
             "kalstrop_shared_secret_raw": str(
                 getattr(provider_cfg, "shared_secret_raw", "") or ""
             ),
             "log_dir": str(self._log_dir) if self._log_dir else ".",
             "run_id": int(plan.run_id) if plan is not None else 0,
+            "provider": provider_name,
+            "boltodds_api_key": os.getenv("BOLTODDS_API_KEY", ""),
+            "boltodds_ws_url": os.getenv("BOLTODDS_WS_URL", "wss://spro.agency/api"),
         }
         return payload
 
     def _execution_config_payload(self) -> dict[str, Any]:
-        exec_cfg = getattr(self._execution, "_config", None)
+        exec_cfg = self._execution.config if hasattr(self._execution, "config") else None
         return {
             "dispatch_mode": ("noop" if self._execution_mode == "paper" else "http"),
             "clob_host": str(getattr(exec_cfg, "clob_host", "") or ""),
@@ -227,8 +217,6 @@ class NativeHotPathService:
         plan = self._compiled_plan
         if plan is None:
             raise RuntimeError("native hotpath requires compiled plan")
-        if str(plan.league or "").lower() != "mlb":
-            raise RuntimeError("native hotpath currently supports league=mlb only")
 
         try:
             bridge = NativeHotPathRuntimeBridge(
@@ -301,11 +289,63 @@ class NativeHotPathService:
             "subscription_resolution": subscription_resolution,
             "reconnects": int(runtime_health.get("reconnects", 0) or 0),
             "last_error": str(runtime_health.get("last_error", "") or ""),
-            "telemetry_emitted": int(runtime_health.get("telemetry_emitted", 0) or 0),
-            "telemetry_dropped": int(runtime_health.get("telemetry_dropped", 0) or 0),
             "errors": errors,
         }
         return snap
+
+    def apply_incremental_refresh(
+        self,
+        result: Any,
+        order_policy: OrderPolicy | None = None,
+    ) -> int:
+        if result.new_plan is None or not result.new_targets:
+            return 0
+        with self._lock:
+            bridge = self._runtime_bridge
+        if bridge is None:
+            self._append_error("apply_incremental_refresh:no_runtime_bridge")
+            return 0
+        policy = order_policy or self._native_order_policy
+        templates: list[dict[str, Any]] = []
+        seen_tokens: set[str] = set()
+        for target in result.new_targets:
+            token_id = str(target.token_id or "").strip()
+            if not token_id or token_id in seen_tokens:
+                continue
+            seen_tokens.add(token_id)
+            templates.append({
+                "token_id": token_id,
+                "side": "buy_yes",
+                "amount_usdc": float(policy.amount_usdc),
+                "size_shares": float(policy.size_shares),
+                "limit_price": float(policy.limit_price),
+                "time_in_force": str(policy.time_in_force),
+            })
+        plan_json = json.dumps(
+            serialize_compiled_plan(result.new_plan),
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        )
+        templates_json = json.dumps(
+            templates,
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        )
+        try:
+            count = bridge.patch_plan(
+                compiled_plan_json=plan_json,
+                templates_json=templates_json,
+            )
+            with self._lock:
+                self._compiled_plan = result.new_plan
+            return count
+        except Exception as exc:
+            self._append_error(
+                f"apply_incremental_refresh:{type(exc).__name__}:{exc}"
+            )
+            return 0
 
     def reset_latency_samples(self) -> None:
         # Rust runtime owns latency buckets; this method remains for compatibility.

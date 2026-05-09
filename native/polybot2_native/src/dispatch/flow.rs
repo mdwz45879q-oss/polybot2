@@ -19,9 +19,9 @@ impl DispatchHandle {
             return ("_", "_");
         };
         let Some(token) = self.registry.tokens.get(target.token_idx.0 as usize) else {
-            return (target.strategy_key.as_str(), "_");
+            return (&*target.strategy_key, "_");
         };
-        (target.strategy_key.as_str(), token.token_id.as_str())
+        (&*target.strategy_key, &*token.token_id)
     }
 
     /// Pop a presigned order for the given target from the per-token pool.
@@ -30,7 +30,7 @@ impl DispatchHandle {
     pub(crate) fn pop_for_target(
         &mut self,
         target_idx: crate::TargetIdx,
-    ) -> Result<SdkSignedOrder, String> {
+    ) -> Result<Box<SdkSignedOrder>, String> {
         let target = self
             .registry
             .targets
@@ -42,13 +42,13 @@ impl DispatchHandle {
             .get_mut(token_idx)
             .ok_or_else(|| "dispatch_invalid_token_idx".to_string())?;
         match slot.take() {
-            Some(p) => Ok(p.signed_order),
+            Some(boxed) => Ok(boxed),
             None => {
                 let token_id = self
                     .registry
                     .tokens
                     .get(token_idx)
-                    .map(|t| t.token_id.as_str())
+                    .map(|t| &*t.token_id)
                     .unwrap_or("_");
                 Err(format!(
                     "submit_presigned_miss:token_id={}",
@@ -79,7 +79,7 @@ impl DispatchHandle {
         };
         // Send first — zero allocation on the success path. On failure,
         // recover the batch from SendError for diagnostics.
-        if let Err(tokio_mpsc::error::SendError(work)) = tx.send(SubmitWork::Batch(batch)) {
+        if let Err(flume::SendError(work)) = tx.send(SubmitWork::Batch(batch)) {
             let SubmitWork::Batch(returned) = work else { return };
             for (target_idx, _) in returned {
                 let (sk, tok) = self.resolve_strings(target_idx);
@@ -87,6 +87,12 @@ impl DispatchHandle {
                     g.log_order_err(sk, tok, "submit_channel_closed");
                 }
             }
+        }
+    }
+
+    pub(crate) fn send_registry_update(&self, new_registry: Arc<crate::TargetRegistry>) {
+        if let Some(tx) = self.submit_tx.as_ref() {
+            let _ = tx.send(SubmitWork::UpdateRegistry(new_registry));
         }
     }
 }

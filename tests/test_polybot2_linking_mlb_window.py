@@ -36,7 +36,7 @@ def test_linking_mlb_window_matches_all_games(tmp_path: Path) -> None:
         ck = str(canonical_team)
         provider_alias_idx[" ".join(ck.strip().lower().split())] = ck
         aliases = (tmeta or {}).get("provider_aliases", {}) if isinstance(tmeta, dict) else {}
-        for alias in aliases.get("boltodds", []) if isinstance(aliases, dict) else []:
+        for alias in aliases.get("kalstrop_v1", []) if isinstance(aliases, dict) else []:
             provider_alias_idx[" ".join(str(alias).strip().lower().split())] = ck
 
     team_to_code = {
@@ -73,12 +73,13 @@ def test_linking_mlb_window_matches_all_games(tmp_path: Path) -> None:
 
             provider_db_rows.append(
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     gid,
                     f"{home_raw} vs {away_raw}, {d}",
                     "",
-                    "MLB",
-                    "mlb",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     f"{d}, {hr:02d}:00 PM",
                     provider_ts,
                     d,
@@ -86,9 +87,6 @@ def test_linking_mlb_window_matches_all_games(tmp_path: Path) -> None:
                     away_raw,
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             )
@@ -179,7 +177,7 @@ def test_linking_mlb_window_matches_all_games(tmp_path: Path) -> None:
         db.linking.upsert_provider_games(provider_db_rows)
 
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
 
         unresolved = db.execute(
             """
@@ -189,7 +187,7 @@ def test_linking_mlb_window_matches_all_games(tmp_path: Path) -> None:
             GROUP BY reason_code
             ORDER BY reason_code
             """,
-            ("boltodds",),
+            ("kalstrop_v1",),
         ).fetchall()
         event_bindings = db.execute(
             """
@@ -198,7 +196,7 @@ def test_linking_mlb_window_matches_all_games(tmp_path: Path) -> None:
             WHERE provider = ?
             ORDER BY provider_game_id
             """,
-            ("boltodds",),
+            ("kalstrop_v1",),
         ).fetchall()
 
     assert res.n_games_seen == len(rows)

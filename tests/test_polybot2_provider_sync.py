@@ -39,14 +39,14 @@ def test_replace_provider_games_snapshot_prunes_removed_rows(tmp_path: Path) -> 
     with open_database(runtime) as db:
         db.linking.upsert_provider_games(
             [
-                ("kalstrop", "gid_a", "", "", "", "", "", None, "", "", "", "ok", "", "", "", 0, 100),
-                ("kalstrop", "gid_b", "", "", "", "", "", None, "", "", "", "ok", "", "", "", 0, 100),
+                ("kalstrop", "gid_a", "", "", "", "", "", "", "", None, "", "", "", "ok", "", 100),
+                ("kalstrop", "gid_b", "", "", "", "", "", "", "", None, "", "", "", "ok", "", 100),
             ]
         )
         db.linking.replace_provider_games_snapshot(
             provider="kalstrop",
             rows=[
-                ("kalstrop", "gid_b", "", "", "", "", "", None, "", "", "", "ok", "", "", "", 0, 200),
+                ("kalstrop", "gid_b", "", "", "", "", "", "", "", None, "", "", "", "ok", "", 200),
             ],
         )
         rows = db.linking.load_provider_games(provider="kalstrop")
@@ -54,22 +54,12 @@ def test_replace_provider_games_snapshot_prunes_removed_rows(tmp_path: Path) -> 
     assert ids == ["gid_b"]
 
 
-def test_resolve_kalstrop_catalog_sport_codes_from_mapping() -> None:
-    class _FakeMap:
-        leagues = {
-            "mlb": {"sport_family": "baseball"},
-            "nba": {"sport_family": "basketball"},
-            "bundesliga": {"sport_family": "soccer"},
-        }
-
-    out = _resolve_kalstrop_catalog_sport_codes(loaded_mapping=_FakeMap())
-    assert out == ("baseball", "basketball", "soccer")
+def test_resolve_kalstrop_catalog_sport_codes_default() -> None:
+    out = _resolve_kalstrop_catalog_sport_codes()
+    assert out == ("baseball", "soccer")
 
 
 def test_resolve_kalstrop_catalog_sport_codes_env_override(monkeypatch) -> None:
-    class _FakeMap:
-        leagues = {"mlb": {"sport_family": "baseball"}}
-
     monkeypatch.setenv("KALSTROP_CATALOG_SPORT_CODES", "tennis, soccer ,american-football")
-    out = _resolve_kalstrop_catalog_sport_codes(loaded_mapping=_FakeMap())
+    out = _resolve_kalstrop_catalog_sport_codes()
     assert out == ("american_football", "soccer", "tennis")

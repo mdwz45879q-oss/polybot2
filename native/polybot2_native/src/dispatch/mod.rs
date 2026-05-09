@@ -15,16 +15,15 @@ use std::str::FromStr;
 
 mod flow;
 mod presign_pool;
-mod sdk_exec;
+pub(crate) mod sdk_exec;
 mod submitter;
 mod types;
 
 pub(crate) use presign_pool::warm_presign_startup_into;
 pub(crate) use submitter::run_submitter_async;
 pub(crate) use types::{DispatchHandle, OrderSubmitter, PresignTemplateData, SubmitBatch, SubmitWork};
-pub(super) use types::{
-    OrderRequestData, PolymarketSdkRuntime, PreSignedOrderData,
-};
+pub(crate) use types::OrderRequestData;
+pub(super) use types::PolymarketSdkRuntime;
 
 pub(crate) fn build_dispatch_config(
     exec_cfg: ExecStartConfig,

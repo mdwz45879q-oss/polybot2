@@ -13,7 +13,7 @@ impl DispatchHandle {
         }
     }
 
-    pub(crate) fn install_submit_tx(&mut self, tx: tokio_mpsc::UnboundedSender<SubmitWork>) {
+    pub(crate) fn install_submit_tx(&mut self, tx: flume::Sender<SubmitWork>) {
         self.submit_tx = Some(tx);
     }
 
@@ -21,12 +21,12 @@ impl DispatchHandle {
         &mut self,
     ) -> (
         &[Option<OrderRequestData>],
-        &mut [Option<PreSignedOrderData>],
+        &mut [Option<Box<SdkSignedOrder>>],
     ) {
         (self.presign_templates.as_slice(), self.presign_pool.as_mut_slice())
     }
 
-    fn parse_template_request(template: &PresignTemplateData) -> Option<OrderRequestData> {
+    pub(crate) fn parse_template_request(template: &PresignTemplateData) -> Option<OrderRequestData> {
         let token_id = template.token_id.trim().to_string();
         if token_id.is_empty() {
             return None;
@@ -82,6 +82,33 @@ impl DispatchHandle {
         }
         active
     }
+
+    pub(crate) fn extend_for_patch(
+        &mut self,
+        new_templates: &mut std::collections::HashMap<String, OrderRequestData>,
+        new_presigned: &mut std::collections::HashMap<String, SdkSignedOrder>,
+        registry_tokens: &[crate::TokenSlot],
+    ) {
+        let old_len = self.presign_templates.len();
+        let new_len = registry_tokens.len();
+        self.presign_templates.resize_with(new_len, || None);
+        self.presign_pool.resize_with(new_len, || None);
+        for idx in old_len..new_len {
+            let token_id = registry_tokens[idx].token_id.trim();
+            if let Some(tpl) = new_templates.remove(token_id) {
+                self.presign_template_catalog
+                    .insert(token_id.to_string(), tpl.clone());
+                self.presign_templates[idx] = Some(tpl);
+            }
+            if let Some(signed) = new_presigned.remove(token_id) {
+                self.presign_pool[idx] = Some(Box::new(signed));
+            }
+        }
+    }
+
+    pub(crate) fn replace_registry(&mut self, new_registry: std::sync::Arc<crate::TargetRegistry>) {
+        self.registry = new_registry;
+    }
 }
 
 /// Signs one order per token at startup and stores them in the pool. Pool
@@ -91,7 +118,7 @@ pub(crate) async fn warm_presign_startup_into(
     client: &SdkClient<SdkAuthenticatedState<SdkAuthNormal>>,
     signer: &super::CachedSigner,
     templates: &[Option<OrderRequestData>],
-    pool: &mut [Option<PreSignedOrderData>],
+    pool: &mut [Option<Box<SdkSignedOrder>>],
 ) -> Result<(), String> {
     if !cfg.presign_enabled {
         return Ok(());
@@ -169,7 +196,7 @@ pub(crate) async fn warm_presign_startup_into(
             format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
         })?;
         if let Some(signed) = signed_orders.into_iter().next() {
-            pool[idx] = Some(PreSignedOrderData { signed_order: signed });
+            pool[idx] = Some(Box::new(signed));
         }
     }
 

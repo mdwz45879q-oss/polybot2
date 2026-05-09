@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 from typing import Any
 
 from polybot2.data import DataRuntimeConfig
 from polybot2.execution import OrderRequest
-from polybot2.hotpath import MlbOrderPolicy
+from polybot2.hotpath import OrderPolicy
 from polybot2.linking import load_live_trading_policy
 from polybot2.linking.normalize import sport_key_for_league
 
@@ -41,7 +40,7 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-_VALID_PROVIDERS = {"boltodds", "kalstrop"}
+_VALID_PROVIDERS = {"boltodds", "kalstrop_v1", "kalstrop_v2"}
 
 
 def _resolve_provider_name(
@@ -54,15 +53,15 @@ def _resolve_provider_name(
     explicit = str(getattr(args, "provider", "")).strip().lower()
     if explicit:
         if explicit not in _VALID_PROVIDERS:
-            logger.error("%s supports only provider=boltodds|kalstrop", context)
+            logger.error("%s supports only provider=boltodds|kalstrop_v1|kalstrop_v2", context)
             return None
         return explicit
 
     policy = live_policy or load_live_trading_policy()
-    default_provider = str(getattr(policy, "default_provider", "") or "").strip().lower() or "kalstrop"
+    default_provider = str(getattr(policy, "default_provider", "") or "").strip().lower() or "kalstrop_v1"
     if default_provider not in _VALID_PROVIDERS:
         logger.error(
-            "invalid DEFAULT_PROVIDER=%s (must be boltodds|kalstrop)",
+            "invalid DEFAULT_PROVIDER=%s (must be boltodds|kalstrop_v1|kalstrop_v2)",
             str(getattr(policy, "default_provider", "") or ""),
         )
         return None
@@ -70,23 +69,10 @@ def _resolve_provider_name(
     return default_provider
 
 
-def _parse_int_list(text: str, *, default: list[int]) -> list[int]:
-    src = str(text or "").strip()
-    if not src:
-        return list(default)
-    vals: list[int] = []
-    for part in src.replace(";", ",").split(","):
-        p = str(part).strip()
-        if not p:
-            continue
-        vals.append(int(p))
-    return [v for v in vals if v > 0] or list(default)
-
-
-def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tuple[MlbOrderPolicy, bool, bool]:
+def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tuple[OrderPolicy, bool, bool]:
     cfg = dict((getattr(live_policy, "hotpath_execution_by_league", {}) or {}).get(str(league_key), {}) or {})
     return (
-        MlbOrderPolicy(
+        OrderPolicy(
             amount_usdc=float(cfg.get("amount_usdc", 5.0)),
             size_shares=float(cfg.get("size_shares", 5.0)),
             limit_price=float(cfg.get("limit_price", 0.52)),
@@ -103,8 +89,8 @@ def _hotpath_runtime_policy_for_league(*, live_policy: Any, league_key: str) -> 
     return {
         "plan_horizon_hours": int(cfg.get("plan_horizon_hours", 24)),
         "subscribe_lead_minutes": int(cfg.get("subscribe_lead_minutes", 90)),
-        "unsubscribe_grace_minutes": int(cfg.get("unsubscribe_grace_minutes", 15)),
         "provider_catalog_max_age_seconds": int(cfg.get("provider_catalog_max_age_seconds", 600)),
+        "refresh_interval_seconds": int(cfg.get("refresh_interval_seconds", 300)),
         # Backward compatible: older policy uses reload_interval_seconds.
         "subscription_refresh_seconds": refresh_seconds,
     }
@@ -116,7 +102,7 @@ def _apply_env_uid_filter(*, uids: list[str], env_uids: list[str]) -> list[str]:
     return sorted(set(str(x) for x in uids if str(x).strip()).intersection(set(env_uids)))
 
 
-def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: MlbOrderPolicy) -> list[OrderRequest]:
+def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPolicy) -> list[OrderRequest]:
     out: list[OrderRequest] = []
     seen: set[tuple[str, str, float, float, str, str]] = set()
     for game in tuple(compiled_plan.games):
@@ -152,7 +138,7 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: MlbOrder
 
 
 def _scope_provider_catalog_to_league(*, provider: Any, provider_name: str, league_key: str) -> None:
-    if str(provider_name or "").strip().lower() != "kalstrop":
+    if str(provider_name or "").strip().lower() not in ("kalstrop_v1", "kalstrop_v2"):
         return
     cfg = getattr(provider, "config", None)
     if cfg is None or not hasattr(cfg, "catalog_sport_codes"):
@@ -179,13 +165,6 @@ def _scope_provider_catalog_to_league(*, provider: Any, provider_name: str, leag
         setattr(cfg, "catalog_sport_codes", desired)
     except Exception:
         return
-
-
-def _env_bool(name: str, *, default: bool) -> bool:
-    raw = str(os.getenv(name, "") or "").strip().lower()
-    if not raw:
-        return bool(default)
-    return raw not in {"0", "false", "no", "off"}
 
 
 def _render_table(*, rows: list[dict[str, Any]], columns: list[tuple[str, str]]) -> str:
@@ -217,28 +196,14 @@ def _render_table(*, rows: list[dict[str, Any]], columns: list[tuple[str, str]])
     return "\n".join([header, sep, *body])
 
 
-def _color_enabled() -> bool:
-    return os.getenv("NO_COLOR", "").strip() == ""
-
-
-def _color(text: str, code: str) -> str:
-    if not _color_enabled():
-        return text
-    return f"\033[{code}m{text}\033[0m"
-
-
 __all__ = [
     "_runtime_from_args",
     "_int_or_none",
     "_resolve_provider_name",
-    "_parse_int_list",
     "_hotpath_order_policy_for_league",
     "_hotpath_runtime_policy_for_league",
     "_apply_env_uid_filter",
     "_build_hotpath_template_orders",
     "_scope_provider_catalog_to_league",
-    "_env_bool",
     "_render_table",
-    "_color_enabled",
-    "_color",
 ]

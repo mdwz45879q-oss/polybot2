@@ -34,7 +34,7 @@ impl OrderSubmitter {
     pub(crate) fn new(
         cfg: DispatchConfig,
         log: Arc<Mutex<LogWriter>>,
-        submit_rx: tokio_mpsc::UnboundedReceiver<SubmitWork>,
+        submit_rx: flume::Receiver<SubmitWork>,
         health: Arc<Mutex<crate::SubmitterHealth>>,
         registry: Arc<crate::TargetRegistry>,
     ) -> Self {
@@ -286,7 +286,7 @@ impl OrderSubmitter {
     }
 }
 
-pub(super) async fn sign_order_batch(
+pub(crate) async fn sign_order_batch(
     client: &SdkClient<SdkAuthenticatedState<SdkAuthNormal>>,
     signer: &super::CachedSigner,
     template: &OrderRequestData,

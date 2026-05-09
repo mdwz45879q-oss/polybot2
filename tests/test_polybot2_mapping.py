@@ -18,7 +18,7 @@ def test_load_live_trading_repo_file() -> None:
     loaded = load_live_trading_policy()
     assert loaded.policy_version
     assert loaded.policy_hash
-    assert loaded.default_provider == "kalstrop"
+    assert loaded.default_provider == "kalstrop_v1"
     assert "mlb" in loaded.live_betting_leagues
     assert "mlb" in loaded.live_betting_market_types_by_league
     assert "moneyline" in loaded.live_betting_market_types_by_league["mlb"]
@@ -119,4 +119,4 @@ def test_live_trading_default_provider_backfills_to_kalstrop_when_missing(tmp_pa
         encoding="utf-8",
     )
     loaded = load_live_trading_policy(str(policy_file))
-    assert loaded.default_provider == "kalstrop"
+    assert loaded.default_provider == "kalstrop_v1"

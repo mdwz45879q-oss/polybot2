@@ -24,9 +24,10 @@ class LinkingAdapter:
             """
             INSERT OR REPLACE INTO provider_games
             (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
-             when_raw_et, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
-             parse_reason, payload_sha256, payload_ref, payload_size_bytes, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             category_name, category_country_code,
+             when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+             parse_reason, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             rows,
         )
@@ -44,9 +45,10 @@ class LinkingAdapter:
                         """
                         INSERT OR REPLACE INTO provider_games
                         (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
-                         when_raw_et, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
-                         parse_reason, payload_sha256, payload_ref, payload_size_bytes, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         category_name, category_country_code,
+                         when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+                         parse_reason, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         """,
                         filtered[i : i + bs],
                     )
@@ -115,6 +117,7 @@ class LinkingAdapter:
         self,
         *,
         provider: str,
+        league: str = "",
         league_scope: str,
         mapping_version: str,
         mapping_hash: str,
@@ -131,14 +134,15 @@ class LinkingAdapter:
         cur = self._db.execute(
             """
             INSERT INTO link_runs
-            (run_ts, provider, league_scope, mapping_version, mapping_hash,
+            (run_ts, provider, league, league_scope, mapping_version, mapping_hash,
              n_games_seen, n_games_linked, n_games_tradeable, n_targets, n_targets_tradeable,
              gate_result, report_json)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 int(run_ts),
                 str(provider),
+                str(league or ""),
                 str(league_scope),
                 str(mapping_version),
                 str(mapping_hash),
@@ -155,16 +159,29 @@ class LinkingAdapter:
             self._db.commit()
         return int(cur.lastrowid)
 
-    def load_latest_link_run(self, *, provider: str) -> dict[str, Any] | None:
-        row = self._db.execute(
-            """
-            SELECT * FROM link_runs
-            WHERE provider = ?
-            ORDER BY run_id DESC
-            LIMIT 1
-            """,
-            (str(provider or "").strip().lower(),),
-        ).fetchone()
+    def load_latest_link_run(self, *, provider: str, league: str = "") -> dict[str, Any] | None:
+        lk = str(league or "").strip().lower()
+        p = str(provider or "").strip().lower()
+        if lk:
+            row = self._db.execute(
+                """
+                SELECT * FROM link_runs
+                WHERE provider = ? AND league = ?
+                ORDER BY run_id DESC
+                LIMIT 1
+                """,
+                (p, lk),
+            ).fetchone()
+        else:
+            row = self._db.execute(
+                """
+                SELECT * FROM link_runs
+                WHERE provider = ?
+                ORDER BY run_id DESC
+                LIMIT 1
+                """,
+                (p,),
+            ).fetchone()
         return dict(row) if row is not None else None
 
     def load_link_report_rows(self, *, provider: str) -> dict[str, Any]:
@@ -208,36 +225,12 @@ class LinkingAdapter:
             "unresolved_reason_counts": {str(r["reason_code"]): int(r["n"] or 0) for r in unresolved},
         }
 
-    def load_tradeable_targets(self, *, provider: str, provider_game_id: str) -> list[dict[str, Any]]:
-        rows = self._db.execute(
-            """
-            SELECT condition_id, outcome_index, token_id, sports_market_type, market_slug,
-                   binding_status, reason_code, is_tradeable
-            FROM link_market_bindings
-            WHERE provider = ? AND provider_game_id = ?
-            ORDER BY condition_id, outcome_index
-            """,
-            (str(provider or "").strip().lower(), str(provider_game_id or "").strip()),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def load_game_binding(self, *, provider: str, provider_game_id: str) -> dict[str, Any] | None:
-        row = self._db.execute(
-            """
-            SELECT * FROM link_game_bindings
-            WHERE provider = ? AND provider_game_id = ?
-            LIMIT 1
-            """,
-            (str(provider or "").strip().lower(), str(provider_game_id or "").strip()),
-        ).fetchone()
-        return dict(row) if row is not None else None
-
     def upsert_run_provider_games(self, rows: list[tuple[Any, ...]], *, commit: bool = True) -> None:
         self._batched_executemany(
             """
             INSERT OR REPLACE INTO link_run_provider_games
             (run_id, provider, provider_game_id, parse_status, parse_reason, game_label, sport_raw, league_raw,
-             when_raw_et, start_ts_utc, game_date_et, home_raw, away_raw,
+             when_raw, start_ts_utc, game_date_et, home_raw, away_raw,
              canonical_league, canonical_home_team, canonical_away_team, event_slug_prefix,
              binding_status, reason_code, is_tradeable, updated_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -284,6 +277,23 @@ class LinkingAdapter:
             commit=commit,
         )
 
+    def load_latest_link_run_for_league(self, *, league: str) -> dict[str, Any] | None:
+        """Find the latest link run that contains games for the given league."""
+        lk = str(league or "").strip().lower()
+        if not lk:
+            return None
+        row = self._db.execute(
+            """
+            SELECT lr.* FROM link_runs lr
+            INNER JOIN link_run_provider_games pg ON pg.run_id = lr.run_id
+            WHERE pg.canonical_league = ?
+            ORDER BY lr.run_id DESC
+            LIMIT 1
+            """,
+            (lk,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
     def load_link_run(self, *, provider: str, run_id: int | None = None) -> dict[str, Any] | None:
         p = str(provider or "").strip().lower()
         rid = None
@@ -294,12 +304,8 @@ class LinkingAdapter:
         if rid is None:
             return self.load_latest_link_run(provider=p)
         row = self._db.execute(
-            """
-            SELECT * FROM link_runs
-            WHERE provider = ? AND run_id = ?
-            LIMIT 1
-            """,
-            (p, int(rid)),
+            "SELECT * FROM link_runs WHERE run_id = ? LIMIT 1",
+            (int(rid),),
         ).fetchone()
         return dict(row) if row is not None else None
 
@@ -335,41 +341,3 @@ class LinkingAdapter:
             self._db.commit()
         return int(cur.lastrowid)
 
-    def insert_launch_audit(
-        self,
-        *,
-        run_id: int | None,
-        provider: str,
-        approved_run_id: int | None,
-        gate_result: str,
-        unresolved_games: int,
-        decision_progress: dict[str, Any],
-        force_launch: bool,
-        blocked: bool,
-        message: str,
-        created_at: int,
-        commit: bool = True,
-    ) -> int:
-        cur = self._db.execute(
-            """
-            INSERT INTO link_launch_audit
-            (run_id, provider, approved_run_id, gate_result, unresolved_games, decision_progress_json,
-             force_launch, blocked, message, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                None if run_id is None else int(run_id),
-                str(provider or "").strip().lower(),
-                None if approved_run_id is None else int(approved_run_id),
-                str(gate_result or ""),
-                int(unresolved_games or 0),
-                json.dumps(decision_progress or {}, separators=(",", ":"), sort_keys=True, default=str),
-                1 if bool(force_launch) else 0,
-                1 if bool(blocked) else 0,
-                str(message or ""),
-                int(created_at),
-            ),
-        )
-        if bool(commit):
-            self._db.commit()
-        return int(cur.lastrowid)

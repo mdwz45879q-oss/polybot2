@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from polybot2._cli.actions import dispatch
+from polybot2._cli.router import dispatch
 from polybot2._cli.link_review_ui import _build_session_renderable
 from polybot2._cli.link_review_ui import _build_card_document_lines
 from polybot2._cli.link_review_ui import _derive_game_state
@@ -28,44 +28,40 @@ def _seed_link_data(*, runtime: DataRuntimeConfig, include_unresolved: bool = Tr
     now_ts = 1_777_000_000
     provider_rows = [
         (
-            "boltodds",
+            "kalstrop_v1",
             "gid_ok",
-            "ATL Braves vs PHI Phillies, 2026-04-18",
+            "Atlanta Braves vs Philadelphia Phillies, 2026-04-18",
             "",
-            "MLB",
-            "",
+            "baseball",
+            "Major League Baseball",
+            "", "",
             "2026-04-18, 07:00 PM",
             1_776_553_200,
             "2026-04-18",
-            "ATL Braves",
-            "PHI Phillies",
+            "Atlanta Braves",
+            "Philadelphia Phillies",
             "ok",
             "",
-            "",
-            "",
-            0,
             now_ts,
         )
     ]
     if include_unresolved:
         provider_rows.append(
             (
-                "boltodds",
+                "kalstrop_v1",
                 "gid_bad",
-                "ATL Braves vs Unknown Team, 2026-04-18",
+                "Atlanta Braves vs Unknown Team, 2026-04-18",
                 "",
-                "MLB",
-                "",
+                "baseball",
+                "Major League Baseball",
+                "", "",
                 "2026-04-18, 07:15 PM",
                 1_776_553_300,
                 "2026-04-18",
-                "ATL Braves",
+                "Atlanta Braves",
                 "Unknown Team",
                 "ok",
                 "",
-                "",
-                "",
-                0,
                 now_ts,
             )
         )
@@ -116,7 +112,7 @@ def _seed_link_data(*, runtime: DataRuntimeConfig, include_unresolved: bool = Tr
             updated_ts=now_ts,
         )
         db.linking.upsert_provider_games(provider_rows)
-        result = LinkService(db=db).build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
     return int(result.run_id)
 
 
@@ -184,27 +180,25 @@ def _seed_link_data_multi_event(*, runtime: DataRuntimeConfig) -> int:
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid_multi_style",
-                    "ATL Braves vs PHI Phillies, 2026-04-18",
+                    "Atlanta Braves vs Philadelphia Phillies, 2026-04-18",
                     "",
-                    "MLB",
-                    "",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     "2026-04-18, 07:00 PM",
                     1_776_553_200,
                     "2026-04-18",
-                    "ATL Braves",
-                    "PHI Phillies",
+                    "Atlanta Braves",
+                    "Philadelphia Phillies",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
-        result = LinkService(db=db).build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
     return int(result.run_id)
 
 
@@ -214,18 +208,18 @@ def test_review_queries_summary_unresolved_and_reason_filter(tmp_path: Path) -> 
 
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        summary = review.run_summary(provider="boltodds")
+        summary = review.get_run_status(provider="kalstrop_v1", include_inactive=True)
         assert summary["run_found"] is True
         assert int(summary["run_id"]) == run_id
         assert int(summary["n_games_seen"]) == 2
         assert int(summary["n_unresolved_games"]) == 1
-        unresolved = review.unresolved_games(provider="boltodds")
+        unresolved = review.unresolved_games(provider="kalstrop_v1", include_inactive=True)
         assert len(unresolved) == 1
         assert unresolved[0]["provider_game_id"] == "gid_bad"
         assert unresolved[0]["reason_code"] == "team_alias_unmapped"
-        filtered = review.unresolved_games(provider="boltodds", reason="team_alias_unmapped")
+        filtered = review.unresolved_games(provider="kalstrop_v1", reason="team_alias_unmapped", include_inactive=True)
         assert len(filtered) == 1
-        none_rows = review.unresolved_games(provider="boltodds", reason="not_a_reason")
+        none_rows = review.unresolved_games(provider="kalstrop_v1", reason="not_a_reason", include_inactive=True)
         assert none_rows == []
 
 
@@ -235,7 +229,7 @@ def test_review_queries_matched_compact_and_game_drilldown(tmp_path: Path) -> No
 
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        rows = review.matched_games(provider="boltodds")
+        rows = review.matched_games(provider="kalstrop_v1", include_inactive=True)
         assert len(rows) == 1
         row = rows[0]
         assert row["provider_game_id"] == "gid_ok"
@@ -245,7 +239,7 @@ def test_review_queries_matched_compact_and_game_drilldown(tmp_path: Path) -> No
         assert row["market_types_csv"] == "moneyline"
         assert isinstance(row["kickoff_delta_min"], int)
 
-        drill = review.game_drilldown(provider="boltodds", provider_game_id="gid_ok")
+        drill = review.game_drilldown(provider="kalstrop_v1", provider_game_id="gid_ok")
         assert drill["game"] is not None
         assert drill["event"] is not None
         assert drill["event"]["event_id"] == "evt_1"
@@ -264,9 +258,9 @@ def test_review_queue_hides_inactive_by_default_and_can_include_it(tmp_path: Pat
         db.execute("UPDATE pm_events SET status = 'closed' WHERE event_id = ?", ("evt_1",))
         db.commit()
         review = LinkReviewService(db=db)
-        default_rows = review.get_queue(provider="boltodds", run_id=run_id, parse_status="ok", limit=20)
+        default_rows = review.get_queue(provider="kalstrop_v1", run_id=run_id, parse_status="ok", limit=20)
         full_rows = review.get_queue(
-            provider="boltodds",
+            provider="kalstrop_v1",
             run_id=run_id,
             parse_status="ok",
             limit=20,
@@ -282,7 +276,7 @@ def test_review_card_includes_semantic_market_blocks(tmp_path: Path) -> None:
     run_id = _seed_link_data(runtime=runtime, include_unresolved=False)
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        card_payload = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id="gid_ok")
+        card_payload = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_ok")
         assert bool(card_payload.get("found"))
         card = card_payload.get("card") if isinstance(card_payload.get("card"), dict) else {}
         market_bindings = card.get("market_bindings") if isinstance(card.get("market_bindings"), dict) else {}
@@ -377,29 +371,27 @@ def test_review_card_supports_multi_event_hierarchy(tmp_path: Path) -> None:
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid_multi",
-                    "ATL Braves vs PHI Phillies, 2026-04-18",
+                    "Atlanta Braves vs Philadelphia Phillies, 2026-04-18",
                     "",
-                    "MLB",
-                    "",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     "2026-04-18, 07:00 PM",
                     1_776_553_200,
                     "2026-04-18",
-                    "ATL Braves",
-                    "PHI Phillies",
+                    "Atlanta Braves",
+                    "Philadelphia Phillies",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
-        run_id = int(LinkService(db=db).build_links(provider="boltodds", mapping=mapping, league_scope="all").run_id)
+        run_id = int(LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all").run_id)
         review = LinkReviewService(db=db)
-        card_payload = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id="gid_multi")
+        card_payload = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_multi")
         assert bool(card_payload.get("found"))
         card = card_payload.get("card") if isinstance(card_payload.get("card"), dict) else {}
         event_resolution = card.get("event_resolution") if isinstance(card.get("event_resolution"), dict) else {}
@@ -413,86 +405,37 @@ def test_review_card_supports_multi_event_hierarchy(tmp_path: Path) -> None:
     assert market_event_ids == {"evt_multi_1", "evt_multi_2"}
 
 
-def test_link_review_cli_json_output(tmp_path: Path, caplog) -> None:
-    runtime = DataRuntimeConfig(db_path=str(tmp_path / "db.sqlite"))
-    run_id = _seed_link_data(runtime=runtime, include_unresolved=True)
-    parser = build_parser()
-    logger = logging.getLogger("polybot2.test.link_review_cli")
-    caplog.set_level(logging.INFO, logger=logger.name)
-
-    commands = [
-        ["link", "report", "--db", runtime.db_path, "--provider", "boltodds"],
-        [
-            "link",
-            "review",
-            "card",
-            "--db",
-            runtime.db_path,
-            "--provider",
-            "boltodds",
-            "--run-id",
-            str(run_id),
-            "--provider-game-id",
-            "gid_ok",
-            "--format",
-            "json",
-        ],
-        [
-            "link",
-            "review",
-            "candidates",
-            "--db",
-            runtime.db_path,
-            "--provider",
-            "boltodds",
-            "--run-id",
-            str(run_id),
-            "--provider-game-id",
-            "gid_ok",
-            "--format",
-            "json",
-        ],
-    ]
-
-    for cmd in commands:
-        caplog.clear()
-        args = parser.parse_args(cmd)
-        code = asyncio.run(dispatch(args, logger=logger))
-        assert code == 0
-        assert "{" in caplog.text
-
-
 def test_review_v2_decisions_and_status_progress(tmp_path: Path) -> None:
     runtime = DataRuntimeConfig(db_path=str(tmp_path / "db.sqlite"))
     run_id = _seed_link_data(runtime=runtime, include_unresolved=True)
 
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        status = review.get_run_status(provider="boltodds", run_id=run_id)
+        status = review.get_run_status(provider="kalstrop_v1", run_id=run_id, include_inactive=True)
         assert status["run_found"] is True
         assert int(status["run_id"]) == run_id
         assert bool(status["decision_progress"]["all_approved"]) is False
 
-        queue = review.get_queue(provider="boltodds", run_id=run_id, parse_status="ok", limit=20)
+        queue = review.get_queue(provider="kalstrop_v1", run_id=run_id, parse_status="ok", limit=20, include_inactive=True)
         assert len(queue) == 2
         gid_ok = "gid_ok"
-        card = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id=gid_ok)
+        card = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id=gid_ok)
         assert card["found"] is True
         assert card["card"]["event_resolution"]["selected_event_id"] == "evt_1"
         assert str(card["card"]["event_resolution"]["selected_event_status"] or "") == "open"
         assert [str(r.get("event_id") or "") for r in card["card"]["event_resolution"]["selected_events"]] == ["evt_1"]
         assert str(card["card"]["event_resolution"]["selected_events"][0].get("status") or "") == "open"
-        candidates = review.get_candidate_comparison(provider="boltodds", run_id=run_id, provider_game_id=gid_ok)
+        candidates = review.get_candidate_comparison(provider="kalstrop_v1", run_id=run_id, provider_game_id=gid_ok)
         assert isinstance(candidates, list)
 
-        review.record_decision(provider="boltodds", run_id=run_id, provider_game_id="gid_ok", decision="approve", actor="test")
-        review.record_decision(provider="boltodds", run_id=run_id, provider_game_id="gid_bad", decision="approve", actor="test")
-        progress = review.get_decision_progress(provider="boltodds", run_id=run_id)
+        review.record_decision(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_ok", decision="approve", actor="test")
+        review.record_decision(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_bad", decision="approve", actor="test")
+        progress = review.get_decision_progress(provider="kalstrop_v1", run_id=run_id, include_inactive=True)
         assert bool(progress["all_approved"]) is True
 
         # Latest-decision semantics (append-only log): newest action overrides prior action for progress.
-        review.record_decision(provider="boltodds", run_id=run_id, provider_game_id="gid_bad", decision="reject", actor="test")
-        progress2 = review.get_decision_progress(provider="boltodds", run_id=run_id)
+        review.record_decision(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_bad", decision="reject", actor="test")
+        progress2 = review.get_decision_progress(provider="kalstrop_v1", run_id=run_id, include_inactive=True)
         assert int(progress2["n_approved"]) == 1
         assert int(progress2["n_rejected"]) == 1
         assert int(progress2["n_pending"]) == 0
@@ -504,20 +447,20 @@ def test_review_queue_scope_filters(tmp_path: Path) -> None:
     run_id = _seed_link_data(runtime=runtime, include_unresolved=True)
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        all_rows = review.get_queue(provider="boltodds", run_id=run_id, scope="all", parse_status="ok", limit=50)
+        all_rows = review.get_queue(provider="kalstrop_v1", run_id=run_id, scope="all", parse_status="ok", limit=50, include_inactive=True)
         assert {str(r["provider_game_id"]) for r in all_rows} == {"gid_ok", "gid_bad"}
 
-        mapped_rows = review.get_queue(provider="boltodds", run_id=run_id, scope="mapped", parse_status="ok", limit=50)
+        mapped_rows = review.get_queue(provider="kalstrop_v1", run_id=run_id, scope="mapped", parse_status="ok", limit=50, include_inactive=True)
         assert [str(r["provider_game_id"]) for r in mapped_rows] == ["gid_ok"]
 
-        unresolved_rows = review.get_queue(provider="boltodds", run_id=run_id, scope="unresolved", parse_status="ok", limit=50)
+        unresolved_rows = review.get_queue(provider="kalstrop_v1", run_id=run_id, scope="unresolved", parse_status="ok", limit=50, include_inactive=True)
         assert [str(r["provider_game_id"]) for r in unresolved_rows] == ["gid_bad"]
 
-        mapped_pending = review.get_queue(provider="boltodds", run_id=run_id, scope="mapped_pending", parse_status="ok", limit=50)
+        mapped_pending = review.get_queue(provider="kalstrop_v1", run_id=run_id, scope="mapped_pending", parse_status="ok", limit=50, include_inactive=True)
         assert [str(r["provider_game_id"]) for r in mapped_pending] == ["gid_ok"]
 
-        review.record_decision(provider="boltodds", run_id=run_id, provider_game_id="gid_ok", decision="approve", actor="test")
-        mapped_pending_after = review.get_queue(provider="boltodds", run_id=run_id, scope="mapped_pending", parse_status="ok", limit=50)
+        review.record_decision(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_ok", decision="approve", actor="test")
+        mapped_pending_after = review.get_queue(provider="kalstrop_v1", run_id=run_id, scope="mapped_pending", parse_status="ok", limit=50, include_inactive=True)
         assert mapped_pending_after == []
 
 
@@ -530,11 +473,8 @@ def test_review_cli_session_defaults_and_key_decode(tmp_path: Path) -> None:
         [
             "link",
             "review",
-            "session",
             "--db",
             runtime.db_path,
-            "--provider",
-            "boltodds",
             "--run-id",
             "1",
         ]
@@ -566,7 +506,7 @@ def test_scrollable_renderer_clamps_offset_and_renders_multi_event_sections(tmp_
     run_id = _seed_link_data(runtime=runtime, include_unresolved=False)
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        payload = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id="gid_ok")
+        payload = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_ok")
     lines = _build_card_document_lines(
         payload,
         view_mode="card",
@@ -602,7 +542,7 @@ def test_compact_card_height_guard_single_event(tmp_path: Path) -> None:
     run_id = _seed_link_data(runtime=runtime, include_unresolved=False)
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        payload = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id="gid_ok")
+        payload = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_ok")
     lines = _build_card_document_lines(
         payload,
         view_mode="card",
@@ -610,7 +550,7 @@ def test_compact_card_height_guard_single_event(tmp_path: Path) -> None:
         show_full_ids=False,
         candidates=None,
     )
-    assert len(lines) <= 26
+    assert len(lines) <= 38
 
 
 def test_compact_card_height_guard_multi_event(tmp_path: Path) -> None:
@@ -618,7 +558,7 @@ def test_compact_card_height_guard_multi_event(tmp_path: Path) -> None:
     run_id = _seed_link_data_multi_event(runtime=runtime)
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        payload = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id="gid_multi_style")
+        payload = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_multi_style")
     lines = _build_card_document_lines(
         payload,
         view_mode="card",
@@ -626,7 +566,7 @@ def test_compact_card_height_guard_multi_event(tmp_path: Path) -> None:
         show_full_ids=False,
         candidates=None,
     )
-    assert len(lines) <= 29
+    assert len(lines) <= 41
 
 
 def test_compact_card_drilldown_regression_markets_mode_is_more_detailed(tmp_path: Path) -> None:
@@ -634,7 +574,7 @@ def test_compact_card_drilldown_regression_markets_mode_is_more_detailed(tmp_pat
     run_id = _seed_link_data(runtime=runtime, include_unresolved=False)
     with open_database(runtime) as db:
         review = LinkReviewService(db=db)
-        payload = review.get_game_card(provider="boltodds", run_id=run_id, provider_game_id="gid_ok")
+        payload = review.get_game_card(provider="kalstrop_v1", run_id=run_id, provider_game_id="gid_ok")
     card_lines = _build_card_document_lines(
         payload,
         view_mode="card",
@@ -703,7 +643,7 @@ def test_market_sort_key_semantic_order_and_line_sort() -> None:
 def test_markets_view_uses_real_types_line_display_and_unselected_toggle() -> None:
     payload = {
         "found": True,
-        "provider": "boltodds",
+        "provider": "kalstrop_v1",
         "run_id": 1,
         "provider_game_id": "gid_demo",
         "card": {
@@ -967,83 +907,20 @@ def test_styled_line_emphasizes_primary_and_resolution() -> None:
     assert any("green" in str(span.style) for span in resolution_line.spans if span.style is not None)
 
 
-def test_link_review_cli_v2_json_output_and_session_smoke(tmp_path: Path, caplog, monkeypatch) -> None:
+def test_link_review_cli_v2_session_smoke(tmp_path: Path, caplog, monkeypatch) -> None:
     runtime = DataRuntimeConfig(db_path=str(tmp_path / "db.sqlite"))
     run_id = _seed_link_data(runtime=runtime, include_unresolved=True)
     parser = build_parser()
     logger = logging.getLogger("polybot2.test.link_review_cli_v2")
     caplog.set_level(logging.INFO, logger=logger.name)
 
-    commands = [
-        ["link", "report", "--db", runtime.db_path, "--provider", "boltodds"],
-        [
-            "link",
-            "review",
-            "card",
-            "--db",
-            runtime.db_path,
-            "--provider",
-            "boltodds",
-            "--run-id",
-            str(run_id),
-            "--provider-game-id",
-            "gid_ok",
-            "--format",
-            "json",
-        ],
-        [
-            "link",
-            "review",
-            "candidates",
-            "--db",
-            runtime.db_path,
-            "--provider",
-            "boltodds",
-            "--run-id",
-            str(run_id),
-            "--provider-game-id",
-            "gid_ok",
-            "--format",
-            "json",
-        ],
-        [
-            "link",
-            "review",
-            "decide",
-            "--db",
-            runtime.db_path,
-            "--provider",
-            "boltodds",
-            "--run-id",
-            str(run_id),
-            "--provider-game-id",
-            "gid_ok",
-            "--decision",
-            "approve",
-            "--format",
-            "json",
-        ],
-    ]
-
-    for cmd in commands:
-        caplog.clear()
-        args = parser.parse_args(cmd)
-        code = asyncio.run(dispatch(args, logger=logger))
-        assert code == 0
-        assert "{" in caplog.text
-
-    # Session command smoke test with immediate quit.
-    caplog.clear()
     monkeypatch.setattr("builtins.input", lambda _prompt: "q")
     args = parser.parse_args(
         [
             "link",
             "review",
-            "session",
             "--db",
             runtime.db_path,
-            "--provider",
-            "boltodds",
             "--run-id",
             str(run_id),
         ]

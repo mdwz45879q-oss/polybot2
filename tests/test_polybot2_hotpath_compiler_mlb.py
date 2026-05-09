@@ -19,31 +19,30 @@ def _seed_run(*, runtime: DataRuntimeConfig, live_policy: LoadedLiveTradingPolic
     now_ts = 1_777_000_100
     provider_rows = [
         (
-            "boltodds",
+            "kalstrop_v1",
             "gid_mlb",
-            "ATL Braves vs PHI Phillies, 2026-04-18",
+            "Atlanta Braves vs Philadelphia Phillies, 2026-04-18",
             "",
-            "MLB",
-            "",
+            "baseball",
+            "Major League Baseball",
+            "", "",
             "2026-04-18, 07:00 PM",
             1_776_553_200,
             "2026-04-18",
-            "ATL Braves",
-            "PHI Phillies",
+            "Atlanta Braves",
+            "Philadelphia Phillies",
             "ok",
             "",
-            "",
-            "",
-            0,
             now_ts,
         ),
         (
-            "boltodds",
+            "kalstrop_v1",
             "gid_bun",
             "Hoffenheim vs Dortmund, 2026-04-18, 09",
             "",
+            "soccer",
             "Bundesliga",
-            "",
+            "", "",
             "2026-04-18, 09:00 AM",
             1_776_520_800,
             "2026-04-18",
@@ -51,9 +50,6 @@ def _seed_run(*, runtime: DataRuntimeConfig, live_policy: LoadedLiveTradingPolic
             "Dortmund",
             "ok",
             "",
-            "",
-            "",
-            0,
             now_ts,
         ),
     ]
@@ -137,7 +133,7 @@ def _seed_run(*, runtime: DataRuntimeConfig, live_policy: LoadedLiveTradingPolic
         )
         db.linking.upsert_provider_games(provider_rows)
         result = LinkService(db=db).build_links(
-            provider="boltodds",
+            provider="kalstrop_v1",
             mapping=mapping,
             live_policy=live_policy,
             league_scope="all",
@@ -145,7 +141,7 @@ def _seed_run(*, runtime: DataRuntimeConfig, live_policy: LoadedLiveTradingPolic
 
         review = LinkReviewService(db=db)
         review.record_decision(
-            provider="boltodds",
+            provider="kalstrop_v1",
             run_id=int(result.run_id),
             provider_game_id="gid_mlb",
             decision="approve",
@@ -161,23 +157,19 @@ def test_compile_requires_approval_when_not_forced(tmp_path: Path) -> None:
         review = LinkReviewService(db=db)
         # Overwrite latest decision to skip to simulate blocker.
         review.record_decision(
-            provider="boltodds",
+            provider="kalstrop_v1",
             run_id=run_id,
             provider_game_id="gid_mlb",
             decision="skip",
             actor="test",
         )
-        with pytest.raises(HotPathPlanError):
-            compile_hotpath_plan(db=db, provider="boltodds", league="mlb", run_id=run_id)
-        # Force mode compiles approved subset; here there is no approved game so it still fails.
-        with pytest.raises(HotPathPlanError):
-            compile_hotpath_plan(
-                db=db,
-                provider="boltodds",
-                league="mlb",
-                run_id=run_id,
-                require_all_approved=False,
-            )
+        # With the game skipped (not rejected), it is still eligible but has no tradeable targets
+        # because approval is no longer required — only rejection excludes.
+        # However a "skip" decision != "reject", so the game IS eligible.
+        # The game was approved in _seed_run, then overwritten to "skip" above.
+        # Since skip != reject, the game remains eligible and should compile.
+        plan = compile_hotpath_plan(db=db, provider="kalstrop_v1", league="mlb", run_id=run_id, include_inactive=True)
+        assert len(tuple(plan.games)) >= 1
 
 
 def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
@@ -188,7 +180,7 @@ def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
         with pytest.raises(HotPathPlanError):
             compile_hotpath_plan(
                 db=db,
-                provider="boltodds",
+                provider="kalstrop_v1",
                 league="mlb",
                 run_id=run_id,
                 now_ts_utc=1_776_553_200 - (26 * 3600),
@@ -198,7 +190,7 @@ def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
         # Just before kickoff stays in-window.
         plan = compile_hotpath_plan(
             db=db,
-            provider="boltodds",
+            provider="kalstrop_v1",
             league="mlb",
             run_id=run_id,
             now_ts_utc=1_776_553_200 - 1800,
@@ -206,13 +198,13 @@ def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
         )
         assert len(tuple(plan.games)) >= 1
 
-        # Already-started/live games remain eligible (lower-bound no longer excludes).
+        # Already-started/live games remain eligible (within 6h of kickoff).
         plan_live = compile_hotpath_plan(
             db=db,
-            provider="boltodds",
+            provider="kalstrop_v1",
             league="mlb",
             run_id=run_id,
-            now_ts_utc=1_776_553_200 + (26 * 3600),
+            now_ts_utc=1_776_553_200 + (3 * 3600),
             plan_horizon_hours=24,
         )
         assert len(tuple(plan_live.games)) >= 1
@@ -225,28 +217,31 @@ def test_compile_hotpath_plan_stays_pinned_to_selected_run_id(tmp_path: Path) ->
     assert pending_run_id > approved_run_id
 
     with open_database(runtime) as db:
-        # Remove approval decision for the newer run to make it ineligible.
-        db.execute(
-            """
-            DELETE FROM link_review_decisions
-            WHERE run_id = ? AND provider = ? AND provider_game_id = ?
-            """,
-            (int(pending_run_id), "boltodds", "gid_mlb"),
+        # Explicitly reject the game in the newer run to exclude it.
+        from polybot2.linking import LinkReviewService
+        review = LinkReviewService(db=db)
+        review.record_decision(
+            provider="kalstrop_v1",
+            run_id=int(pending_run_id),
+            provider_game_id="gid_mlb",
+            decision="reject",
+            actor="test",
         )
-        db.commit()
+        # Rejected game means no eligible games → no tradeable targets → blocked.
         with pytest.raises(HotPathPlanError):
             compile_hotpath_plan(
                 db=db,
-                provider="boltodds",
+                provider="kalstrop_v1",
                 league="mlb",
                 run_id=int(pending_run_id),
-                require_all_approved=True,
+                include_inactive=True,
             )
+        # The older run still has approval → eligible → compiles fine.
         approved_plan = compile_hotpath_plan(
             db=db,
-            provider="boltodds",
+            provider="kalstrop_v1",
             league="mlb",
             run_id=int(approved_run_id),
-            require_all_approved=True,
+            include_inactive=True,
         )
         assert int(approved_plan.run_id) == int(approved_run_id)

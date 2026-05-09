@@ -4,18 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import hashlib
-import json
 import os
 from typing import Any
 
 from zoneinfo import ZoneInfo
 
 from polybot2.data.storage.database import Database
-from polybot2.linking.mapping_loader import load_mapping
 from polybot2.sports.boltodds import BoltOddsProvider, BoltOddsProviderConfig
 from polybot2.sports.factory import resolve_kalstrop_credentials_from_env
-from polybot2.sports.kalstrop import KalstropProvider, KalstropProviderConfig
+from polybot2.sports.kalstrop_v1 import KalstropV1Provider, KalstropV1ProviderConfig
 
 _ET = ZoneInfo("America/New_York")
 _UTC = ZoneInfo("UTC")
@@ -72,7 +69,7 @@ def _derive_start_ts_and_game_date_et(*, provider_start_ts_utc: int | None, when
     """Return canonical kickoff timestamp/date for provider row persistence.
 
     We intentionally prefer the provider adapter's parsed `start_ts_utc` because:
-    - Kalstrop `when_raw_et` storage field contains provider-raw UTC text.
+    - Kalstrop `when_raw` storage field contains provider-raw UTC text.
     - BoltOdds raw time text can be ET-formatted.
     Using canonical parsed kickoff avoids coupling runtime logic to raw text semantics.
     """
@@ -82,7 +79,7 @@ def _derive_start_ts_and_game_date_et(*, provider_start_ts_utc: int | None, when
     return _parse_when_to_utc_and_date_et(when_raw)
 
 
-def _resolve_kalstrop_catalog_sport_codes(*, loaded_mapping: Any) -> tuple[str, ...]:
+def _resolve_kalstrop_catalog_sport_codes() -> tuple[str, ...]:
     env_value = str(os.getenv("KALSTROP_CATALOG_SPORT_CODES", "") or "").strip()
     if env_value:
         parsed = {
@@ -92,30 +89,21 @@ def _resolve_kalstrop_catalog_sport_codes(*, loaded_mapping: Any) -> tuple[str, 
         }
         if parsed:
             return tuple(sorted(parsed))
+    return ("baseball", "soccer")
 
-    sport_codes: set[str] = set()
-    leagues = getattr(loaded_mapping, "leagues", None)
-    if isinstance(leagues, dict):
-        for meta in leagues.values():
-            if not isinstance(meta, dict):
-                continue
-            sport_family = str(meta.get("sport_family") or "").strip().lower().replace("-", "_")
-            if sport_family:
-                sport_codes.add(sport_family)
-    if not sport_codes:
-        sport_codes = {"baseball", "soccer", "basketball", "hockey", "american_football", "tennis"}
-    return tuple(sorted(sport_codes))
 
 
 def sync_provider_games(
     *,
     db: Database,
     provider: str,
-    payload_ref: str = "",
 ) -> ProviderSyncResult:
     p = str(provider or "").strip().lower()
     now_ts = int(datetime.now(tz=_UTC).timestamp())
-    if p not in {"boltodds", "kalstrop"}:
+    # Normalize legacy "kalstrop" to "kalstrop_v1"
+    if p == "kalstrop":
+        p = "kalstrop_v1"
+    if p not in {"boltodds", "kalstrop_v1", "kalstrop_v2"}:
         return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="unsupported_provider")
 
     client: Any
@@ -124,30 +112,42 @@ def sync_provider_games(
         if not api_key:
             return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_BOLTODDS_API_KEY")
         client = BoltOddsProvider(config=BoltOddsProviderConfig(api_key=api_key))
-    else:
+    elif p == "kalstrop_v1":
         client_id, shared_secret_raw, _source = resolve_kalstrop_credentials_from_env()
         if not client_id or not shared_secret_raw:
             return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_kalstrop_credentials")
         http_base = str(os.getenv("KALSTROP_BASE_URL") or "https://sportsapi.kalstropservice.com/odds_v1/v1").strip()
-        ws_url = str(os.getenv("KALSTROP_WS_URL") or "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws").strip()
-        loaded_mapping = load_mapping()
-        sport_codes = _resolve_kalstrop_catalog_sport_codes(loaded_mapping=loaded_mapping)
-        client = KalstropProvider(
-            config=KalstropProviderConfig(
+        sport_codes = _resolve_kalstrop_catalog_sport_codes()
+        client = KalstropV1Provider(
+            config=KalstropV1ProviderConfig(
                 client_id=client_id,
                 shared_secret_raw=shared_secret_raw,
                 http_base=http_base,
-                ws_url=ws_url,
                 catalog_sport_codes=sport_codes,
-                catalog_types=("live", "upcoming"),
-                catalog_first=6,
+                catalog_types=("live", "upcoming", "popular"),
+                catalog_first=10,
                 catalog_fixture_first=10,
             )
         )
+    else:
+        from polybot2.sports.kalstrop_v2 import KalstropV2Provider, KalstropV2ProviderConfig
+        client = KalstropV2Provider(config=KalstropV2ProviderConfig())
     try:
         records = client.load_game_catalog()
+    except Exception as exc:
+        try:
+            client.close()
+        except Exception:
+            pass
+        return ProviderSyncResult(provider=p, n_rows=0, status="error", reason=f"catalog_fetch_failed:{exc}")
     finally:
-        client.close()
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    if not records:
+        return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="empty_catalog")
 
     rows: list[tuple[Any, ...]] = []
     for rec in records:
@@ -155,8 +155,6 @@ def sync_provider_games(
             provider_start_ts_utc=(None if rec.start_ts_utc is None else int(rec.start_ts_utc)),
             when_raw=str(rec.when_raw or ""),
         )
-        payload_json = json.dumps(rec.raw_payload or {}, separators=(",", ":"), sort_keys=True, default=str)
-        payload_sha = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
         rows.append(
             (
                 p,
@@ -165,6 +163,8 @@ def sync_provider_games(
                 str(rec.orig_teams or ""),
                 str(rec.sport_raw or ""),
                 str(rec.league_raw or ""),
+                str(rec.category_name or ""),
+                str(rec.category_country_code or ""),
                 str(rec.when_raw or ""),
                 start_ts_utc,
                 str(game_date_et or ""),
@@ -172,9 +172,6 @@ def sync_provider_games(
                 str(rec.away_team_raw or ""),
                 str(rec.parse_status or ""),
                 str(rec.parse_reason or ""),
-                payload_sha,
-                str(payload_ref or ""),
-                int(len(payload_json.encode("utf-8"))),
                 now_ts,
             )
         )

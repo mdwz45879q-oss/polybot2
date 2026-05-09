@@ -22,17 +22,17 @@ def test_deterministic_linking_flow(tmp_path: Path) -> None:
                 (
                     "246254",
                     "Will Arizona Diamondbacks win on 2026-04-18?",
+                    "",
                     "mlb-ari-atl-2026-04-18",
                     "mlb-ari-atl-2026-04-18",
                     "",
                     "mlb",
+                    None,
                     "2026-04-18",
                     None,
                     None,
+                    None,
                     "open",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -48,14 +48,13 @@ def test_deterministic_linking_flow(tmp_path: Path) -> None:
                     "mlb-ari-atl-2026-04-18-ari",
                     "moneyline",
                     None,
+                    None,
+                    None,
                     0,
                     None,
                     0.0,
                     "",
                     None,
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -67,40 +66,35 @@ def test_deterministic_linking_flow(tmp_path: Path) -> None:
             ]
         )
 
-        # Provider game row with BoltOdds-style league signal in sport_raw only.
+        # Provider game row with kalstrop_v1-style league signal.
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid1",
-                    "ARI Diamondbacks vs ATL Braves, 2026-04-18, 01",
+                    "Arizona Diamondbacks vs Atlanta Braves, 2026-04-18, 01",
                     "",
-                    "MLB",
-                    "",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     "2026-04-18, 01:10 PM",
                     None,
                     "2026-04-18",
-                    "ARI Diamondbacks",
-                    "ATL Braves",
+                    "Arizona Diamondbacks",
+                    "Atlanta Braves",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
 
         svc = LinkService(db=db)
-        result = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         assert result.n_games_seen == 1
         assert result.n_games_linked == 1
         assert result.n_targets_tradeable >= 1
 
-        rep = svc.report(provider="boltodds")
-        assert rep["latest_run"] is not None
-        assert "parent_status_counts" in rep["quality"]
 
 
 def test_league_normalization_fallback_links_kalstrop_without_provider_alias(tmp_path: Path) -> None:
@@ -115,17 +109,17 @@ def test_league_normalization_fallback_links_kalstrop_without_provider_alias(tmp
                 (
                     "evt_kal_1",
                     "Arizona Diamondbacks vs Atlanta Braves",
+                    "",
                     "mlb-ari-atl-2026-04-18",
                     "mlb-ari-atl-2026-04-18",
                     "",
                     "mlb",
+                    None,
                     "2026-04-18",
+                    1_776_553_200,
                     1_776_553_200,
                     1_776_639_600,
                     "open",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -155,9 +149,6 @@ def test_league_normalization_fallback_links_kalstrop_without_provider_alias(tmp
                     0.0,
                     "",
                     None,
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -171,12 +162,13 @@ def test_league_normalization_fallback_links_kalstrop_without_provider_alias(tmp
         db.linking.upsert_provider_games(
             [
                 (
-                    "kalstrop",
+                    "kalstrop_v1",
                     "gid_kal_1",
                     "Arizona Diamondbacks vs Atlanta Braves",
                     "",
                     "baseball",
                     "Major League Baseball",
+                    "", "",
                     "2026-04-18T23:00:00Z",
                     1_776_553_200,
                     "2026-04-18",
@@ -184,14 +176,11 @@ def test_league_normalization_fallback_links_kalstrop_without_provider_alias(tmp
                     "Atlanta Braves",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
-        result = LinkService(db=db).build_links(provider="kalstrop", mapping=mapping, league_scope="all")
+        result = LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
 
     assert result.n_games_seen == 1
     assert result.n_games_linked == 1
@@ -219,9 +208,6 @@ def test_bundesliga_uses_polymarket_league_code_for_candidate_lookup(tmp_path: P
                     kickoff_ts,
                     kickoff_ts + 86_400,
                     "open",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -249,9 +235,6 @@ def test_bundesliga_uses_polymarket_league_code_for_candidate_lookup(tmp_path: P
                     0.0,
                     "",
                     None,
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -266,36 +249,34 @@ def test_bundesliga_uses_polymarket_league_code_for_candidate_lookup(tmp_path: P
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid_bun_1",
-                    "Hoffenheim vs Dortmund, 2026-04-18, 09",
+                    "TSG 1899 Hoffenheim vs BV Borussia 09 Dortmund",
                     "",
+                    "soccer",
                     "Bundesliga",
-                    "",
+                    "", "",
                     "2026-04-18, 09:00 AM",
                     kickoff_ts,
                     "2026-04-18",
-                    "Hoffenheim",
-                    "Dortmund",
+                    "TSG 1899 Hoffenheim",
+                    "BV Borussia 09 Dortmund",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
 
         svc = LinkService(db=db)
-        result = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         row = db.execute(
             """
             SELECT binding_status, reason_code, is_tradeable
             FROM link_game_bindings
             WHERE provider = ? AND provider_game_id = ?
             """,
-            ("boltodds", "gid_bun_1"),
+            ("kalstrop_v1", "gid_bun_1"),
         ).fetchone()
         event_row = db.execute(
             """
@@ -303,7 +284,7 @@ def test_bundesliga_uses_polymarket_league_code_for_candidate_lookup(tmp_path: P
             FROM link_event_bindings
             WHERE provider = ? AND provider_game_id = ?
             """,
-            ("boltodds", "gid_bun_1"),
+            ("kalstrop_v1", "gid_bun_1"),
         ).fetchone()
 
     assert result.n_games_seen == 1
@@ -338,9 +319,6 @@ def test_live_policy_market_type_filter_applies_per_league(tmp_path: Path) -> No
                     kickoff_ts,
                     kickoff_ts + 86_400,
                     "open",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
@@ -370,9 +348,6 @@ def test_live_policy_market_type_filter_applies_per_league(tmp_path: Path) -> No
                     0.0,
                     "",
                     None,
-                    "",
-                    "",
-                    0,
                     now_ts,
                 ),
                 (
@@ -391,9 +366,6 @@ def test_live_policy_market_type_filter_applies_per_league(tmp_path: Path) -> No
                     0.0,
                     "",
                     None,
-                    "",
-                    "",
-                    0,
                     now_ts,
                 ),
             ]
@@ -409,29 +381,27 @@ def test_live_policy_market_type_filter_applies_per_league(tmp_path: Path) -> No
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid_mlb_filter",
-                    "ARI Diamondbacks vs ATL Braves, 2026-04-18, 01",
+                    "Arizona Diamondbacks vs Atlanta Braves, 2026-04-18, 01",
                     "",
-                    "MLB",
-                    "mlb",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     "2026-04-18, 01:10 PM",
                     kickoff_ts,
                     "2026-04-18",
-                    "ARI Diamondbacks",
-                    "ATL Braves",
+                    "Arizona Diamondbacks",
+                    "Atlanta Braves",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     now_ts,
                 )
             ]
         )
 
         svc = LinkService(db=db)
-        result = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         target_rows = db.execute(
             """
             SELECT condition_id
@@ -439,7 +409,7 @@ def test_live_policy_market_type_filter_applies_per_league(tmp_path: Path) -> No
             WHERE provider = ? AND provider_game_id = ?
             ORDER BY condition_id, outcome_index
             """,
-            ("boltodds", "gid_mlb_filter"),
+            ("kalstrop_v1", "gid_mlb_filter"),
         ).fetchall()
 
     assert result.n_games_seen == 1
@@ -455,33 +425,35 @@ def test_build_links_fails_when_policy_market_type_not_in_reference_table(tmp_pa
         path="test_policy.py",
         policy_version="v1",
         policy_hash="h",
-        default_provider="kalstrop",
+        default_provider="kalstrop_v1",
         live_betting_leagues={"mlb"},
         live_betting_market_types_by_league={"mlb": {"moneyline", "not_real_type"}},
         live_betting_market_types={"moneyline", "not_real_type"},
     )
 
     with open_database(runtime) as db:
-        db.markets.replace_pm_sports_market_types_ref([("moneyline", 1_777_000_000)])
+        db.execute(
+            "INSERT INTO pm_sports_market_types_ref (market_type, synced_at) VALUES (?, ?)",
+            ("moneyline", 1_777_000_000),
+        )
+        db.commit()
         db.linking.upsert_provider_games(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "gid_validation",
-                    "ARI Diamondbacks vs ATL Braves, 2026-04-18, 01",
+                    "Arizona Diamondbacks vs Atlanta Braves, 2026-04-18, 01",
                     "",
-                    "MLB",
-                    "mlb",
+                    "baseball",
+                    "Major League Baseball",
+                    "", "",
                     "2026-04-18, 01:10 PM",
                     None,
                     "2026-04-18",
-                    "ARI Diamondbacks",
-                    "ATL Braves",
+                    "Arizona Diamondbacks",
+                    "Atlanta Braves",
                     "ok",
                     "",
-                    "",
-                    "",
-                    0,
                     1_777_000_000,
                 )
             ]
@@ -489,7 +461,7 @@ def test_build_links_fails_when_policy_market_type_not_in_reference_table(tmp_pa
         svc = LinkService(db=db)
         with pytest.raises(MappingValidationError, match="unknown market type"):
             svc.build_links(
-                provider="boltodds",
+                provider="kalstrop_v1",
                 mapping=mapping,
                 live_policy=bad_policy,
                 league_scope="all",

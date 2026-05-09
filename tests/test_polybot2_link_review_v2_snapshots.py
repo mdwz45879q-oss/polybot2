@@ -42,44 +42,40 @@ def _seed_fixture(db, *, include_unresolved: bool) -> None:
     )
     provider_rows = [
         (
-            "boltodds",
+            "kalstrop_v1",
             "gid_ok",
-            "ATL Braves vs PHI Phillies, 2026-04-18",
+            "Atlanta Braves vs Philadelphia Phillies, 2026-04-18",
             "",
-            "MLB",
-            "",
+            "baseball",
+            "Major League Baseball",
+            "", "",
             "2026-04-18, 07:00 PM",
             1_776_553_200,
             "2026-04-18",
-            "ATL Braves",
-            "PHI Phillies",
+            "Atlanta Braves",
+            "Philadelphia Phillies",
             "ok",
             "",
-            "",
-            "",
-            0,
             now_ts,
         )
     ]
     if include_unresolved:
         provider_rows.append(
             (
-                "boltodds",
+                "kalstrop_v1",
                 "gid_bad",
-                "ATL Braves vs Unknown Team, 2026-04-18",
+                "Atlanta Braves vs Unknown Team, 2026-04-18",
                 "",
-                "MLB",
-                "",
+                "baseball",
+                "Major League Baseball",
+                "", "",
                 "2026-04-18, 07:15 PM",
                 1_776_553_300,
                 "2026-04-18",
-                "ATL Braves",
+                "Atlanta Braves",
                 "Unknown Team",
                 "ok",
                 "",
-                "",
-                "",
-                0,
                 now_ts,
             )
         )
@@ -91,7 +87,7 @@ def test_link_build_writes_v2_snapshot_rows(tmp_path: Path) -> None:
     mapping = load_mapping()
     with open_database(runtime) as db:
         _seed_fixture(db, include_unresolved=True)
-        result = LinkService(db=db).build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         run_id = int(result.run_id)
         n_provider = int(
             db.execute("SELECT COUNT(*) AS n FROM link_run_provider_games WHERE run_id = ?", (run_id,)).fetchone()["n"]
@@ -112,7 +108,7 @@ def test_link_build_writes_v2_snapshot_rows(tmp_path: Path) -> None:
             WHERE run_id = ? AND provider = ? AND provider_game_id = ?
             ORDER BY candidate_rank
             """,
-            (run_id, "boltodds", "gid_ok"),
+            (run_id, "kalstrop_v1", "gid_ok"),
         ).fetchall()
 
     assert n_provider == 2
@@ -128,7 +124,7 @@ def test_link_build_snapshot_transaction_rollback(tmp_path: Path, monkeypatch: p
     mapping = load_mapping()
     with open_database(runtime) as db:
         _seed_fixture(db, include_unresolved=False)
-        first = LinkService(db=db).build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        first = LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         first_run = int(first.run_id)
 
         original = db.linking.upsert_run_game_reviews
@@ -139,15 +135,15 @@ def test_link_build_snapshot_transaction_rollback(tmp_path: Path, monkeypatch: p
 
         monkeypatch.setattr(db.linking, "upsert_run_game_reviews", _boom)
         with pytest.raises(RuntimeError, match="snapshot_insert_failed"):
-            LinkService(db=db).build_links(provider="boltodds", mapping=mapping, league_scope="all")
+            LinkService(db=db).build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         monkeypatch.setattr(db.linking, "upsert_run_game_reviews", original)
 
-        latest = db.linking.load_latest_link_run(provider="boltodds")
+        latest = db.linking.load_latest_link_run(provider="kalstrop_v1")
         n_rows_after = int(
             db.execute("SELECT COUNT(*) AS n FROM link_run_provider_games WHERE run_id = ?", (first_run,)).fetchone()["n"]
         )
         newer = int(
-            db.execute("SELECT COUNT(*) AS n FROM link_runs WHERE provider = ? AND run_id > ?", ("boltodds", first_run)).fetchone()["n"]
+            db.execute("SELECT COUNT(*) AS n FROM link_runs WHERE provider = ? AND run_id > ?", ("kalstrop_v1", first_run)).fetchone()["n"]
         )
 
     assert latest is not None

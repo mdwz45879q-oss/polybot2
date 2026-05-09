@@ -10,19 +10,13 @@ def normalize_text(value: str) -> str:
 def normalize_league_key(raw: str) -> str:
     text = normalize_text(raw)
     aliases = {
-        "champions league": "ucl",
-        "uefa champions league": "ucl",
-        "nba": "nba",
         "mlb": "mlb",
         "major league baseball": "mlb",
-        "nhl": "nhl",
         "epl": "epl",
-        "premier league": "epl",
+        "english premier league": "epl",
+        "champions league": "ucl",
+        "uefa champions league": "ucl",
         "bundesliga": "bundesliga",
-        "la liga": "laliga",
-        "laliga": "laliga",
-        "world cup": "fifa-world-cup",
-        "fifa world cup": "fifa-world-cup",
     }
     return aliases.get(text, text.replace(" ", "-"))
 
@@ -30,13 +24,9 @@ def normalize_league_key(raw: str) -> str:
 def sport_key_for_league(league_key: str) -> str:
     lk = normalize_text(league_key)
     mapping = {
-        "nba": "basketball",
         "mlb": "baseball",
-        "nhl": "hockey",
         "ucl": "soccer",
-        "fifa-world-cup": "soccer",
         "epl": "soccer",
         "bundesliga": "soccer",
-        "laliga": "soccer",
     }
     return mapping.get(lk, "")

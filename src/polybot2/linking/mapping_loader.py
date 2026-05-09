@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ class LoadedMapping:
     mapping_hash: str
     leagues: dict[str, Any]
     provider_league_aliases: dict[str, Any]
+    provider_league_country: dict[str, Any]
     team_map: dict[str, Any]
     pm_league_orderings: dict[str, str]
     market_mappings: dict[str, Any]
@@ -65,6 +67,11 @@ def _load_module(*, path_like: str, module_name: str) -> tuple[Any, str]:
     path = Path(str(path_like)).expanduser().resolve()
     if not path.exists():
         raise MappingValidationError(f"config file not found: {path}")
+    # Add the config file's directory to sys.path so sibling imports
+    # (e.g., `from baseball_mappings import ...` in mappings.py) resolve.
+    config_dir = str(path.parent)
+    if config_dir not in sys.path:
+        sys.path.insert(0, config_dir)
     spec = importlib.util.spec_from_file_location(module_name, str(path))
     if spec is None or spec.loader is None:
         raise MappingValidationError(f"unable to load config module: {path}")
@@ -85,6 +92,7 @@ def load_mapping(mapping_file: str | None = None) -> LoadedMapping:
 
     leagues = getattr(module, "LEAGUES", None)
     provider_league_aliases = getattr(module, "PROVIDER_LEAGUE_ALIASES", None)
+    provider_league_country = getattr(module, "PROVIDER_LEAGUE_COUNTRY", None)
     team_map = getattr(module, "TEAM_MAP", None)
     pm_league_orderings = getattr(module, "PM_LEAGUE_ORDERINGS", None)
     market_mappings = getattr(module, "MARKET_MAPPINGS", None)
@@ -94,6 +102,10 @@ def load_mapping(mapping_file: str | None = None) -> LoadedMapping:
         raise MappingValidationError("LEAGUES must be a non-empty dict")
     if not isinstance(provider_league_aliases, dict):
         raise MappingValidationError("PROVIDER_LEAGUE_ALIASES must be a dict")
+    if provider_league_country is None:
+        provider_league_country = {}
+    if not isinstance(provider_league_country, dict):
+        raise MappingValidationError("PROVIDER_LEAGUE_COUNTRY must be a dict")
     if not isinstance(team_map, dict):
         raise MappingValidationError("TEAM_MAP must be a dict")
     if pm_league_orderings is None:
@@ -117,6 +129,7 @@ def load_mapping(mapping_file: str | None = None) -> LoadedMapping:
         "MAPPING_VERSION": mapping_version,
         "LEAGUES": leagues,
         "PROVIDER_LEAGUE_ALIASES": provider_league_aliases,
+        "PROVIDER_LEAGUE_COUNTRY": provider_league_country,
         "TEAM_MAP": team_map,
         "PM_LEAGUE_ORDERINGS": norm_orderings,
         "MARKET_MAPPINGS": norm_market_mappings,
@@ -132,6 +145,7 @@ def load_mapping(mapping_file: str | None = None) -> LoadedMapping:
         mapping_hash=mapping_hash,
         leagues=leagues,
         provider_league_aliases=provider_league_aliases,
+        provider_league_country=provider_league_country,
         team_map=team_map,
         pm_league_orderings=norm_orderings,
         market_mappings=norm_market_mappings,
@@ -153,7 +167,7 @@ def load_live_trading_policy(policy_file: str | None = None) -> LoadedLiveTradin
         raise MappingValidationError("LIVE_TRADING_VERSION must be non-empty")
     default_provider = _norm(str(getattr(module, "DEFAULT_PROVIDER", "") or ""))
     if not default_provider:
-        default_provider = "kalstrop"
+        default_provider = "kalstrop_v1"
 
     live_betting_leagues = getattr(module, "LIVE_BETTING_LEAGUES", None)
     if not isinstance(live_betting_leagues, (set, list, tuple)):
@@ -206,9 +220,9 @@ def load_live_trading_policy(policy_file: str | None = None) -> LoadedLiveTradin
         hotpath_runtime_by_league[lk] = {
             "plan_horizon_hours": int(cfg.get("plan_horizon_hours", 24)),
             "subscribe_lead_minutes": int(cfg.get("subscribe_lead_minutes", 90)),
-            "unsubscribe_grace_minutes": int(cfg.get("unsubscribe_grace_minutes", 15)),
             "reload_interval_seconds": int(cfg.get("reload_interval_seconds", 120)),
             "provider_catalog_max_age_seconds": int(cfg.get("provider_catalog_max_age_seconds", 600)),
+            "refresh_interval_seconds": int(cfg.get("refresh_interval_seconds", 300)),
         }
 
     canonical_repr = {
@@ -337,7 +351,9 @@ def validate_loaded_mapping(mapping: LoadedMapping) -> None:
 
     for league, cfg in league_match_rules.items():
         lk = _norm(league)
-        if lk not in leagues:
+        if lk == "default":
+            pass
+        elif lk not in leagues:
             raise MappingValidationError(f"LEAGUE_MATCH_RULES league not in LEAGUES: {league!r}")
         if not isinstance(cfg, dict):
             raise MappingValidationError(f"LEAGUE_MATCH_RULES[{league!r}] must be dict")
@@ -363,8 +379,8 @@ def validate_loaded_mapping(mapping: LoadedMapping) -> None:
 
 
 def validate_loaded_live_trading_policy(policy: LoadedLiveTradingPolicy) -> None:
-    if str(policy.default_provider) not in {"boltodds", "kalstrop"}:
-        raise MappingValidationError("DEFAULT_PROVIDER must be one of {'boltodds','kalstrop'}")
+    if str(policy.default_provider) not in {"boltodds", "kalstrop", "kalstrop_v1", "kalstrop_v2"}:
+        raise MappingValidationError("DEFAULT_PROVIDER must be one of {'boltodds','kalstrop_v1','kalstrop_v2'}")
     if not policy.live_betting_leagues:
         raise MappingValidationError("LIVE_BETTING_LEAGUES must not be empty")
     if not policy.live_betting_market_types_by_league:
@@ -426,9 +442,9 @@ def validate_loaded_live_trading_policy(policy: LoadedLiveTradingPolicy) -> None
         for key in (
             "plan_horizon_hours",
             "subscribe_lead_minutes",
-            "unsubscribe_grace_minutes",
             "reload_interval_seconds",
             "provider_catalog_max_age_seconds",
+            "refresh_interval_seconds",
         ):
             if key not in cfg:
                 raise MappingValidationError(f"HOTPATH_RUNTIME_POLICY[{league!r}] missing {key}")

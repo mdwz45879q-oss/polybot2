@@ -44,9 +44,6 @@ def _seed_event(
                 kickoff_ts_utc - 1000,
                 kickoff_ts_utc + 86_400,
                 "open",
-                "",
-                "",
-                0,
                 now_ts,
             )
         ]
@@ -76,9 +73,6 @@ def _seed_event(
                 0.0,
                 "",
                 kickoff_ts_utc + 86_400,
-                "",
-                "",
-                0,
                 now_ts,
             )
         ]
@@ -104,12 +98,13 @@ def _seed_provider_game(
     db.linking.upsert_provider_games(
         [
             (
-                "boltodds",
+                "kalstrop_v1",
                 provider_game_id,
                 f"{home_raw} vs {away_raw}",
                 "",
-                "MLB",
-                "mlb",
+                "baseball",
+                "Major League Baseball",
+                "", "",
                 f"{game_date_et}, 09:00 PM",
                 start_ts_utc,
                 game_date_et,
@@ -117,9 +112,6 @@ def _seed_provider_game(
                 away_raw,
                 "ok",
                 "",
-                "",
-                "",
-                0,
                 now_ts,
             )
         ]
@@ -146,16 +138,16 @@ def test_team_order_invariance_provider_swap_still_matches(tmp_path: Path) -> No
             db,
             provider_game_id="gid_swap",
             game_date_et=game_date,
-            home_raw="SD Padres",
-            away_raw="LA Angels",
+            home_raw="San Diego Padres",
+            away_raw="Los Angeles Angels",
             start_ts_utc=_et_ts(game_date, 21, 30),
             now_ts=now_ts,
         )
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         row = db.execute(
             "SELECT binding_status, reason_code FROM link_game_bindings WHERE provider = ? AND provider_game_id = ?",
-            ("boltodds", "gid_swap"),
+            ("kalstrop_v1", "gid_swap"),
         ).fetchone()
     assert res.n_games_seen == 1
     assert res.n_games_linked == 1
@@ -184,16 +176,16 @@ def test_pm_away_first_ordering_does_not_block_match(tmp_path: Path) -> None:
             db,
             provider_game_id="gid_ordering",
             game_date_et=game_date,
-            home_raw="LA Angels",
-            away_raw="SD Padres",
+            home_raw="Los Angeles Angels",
+            away_raw="San Diego Padres",
             start_ts_utc=_et_ts(game_date, 21, 35),
             now_ts=now_ts,
         )
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         ev = db.execute(
             "SELECT event_id FROM link_event_bindings WHERE provider = ? AND provider_game_id = ?",
-            ("boltodds", "gid_ordering"),
+            ("kalstrop_v1", "gid_ordering"),
         ).fetchone()
     assert res.n_games_linked == 1
     assert ev is not None
@@ -231,13 +223,13 @@ def test_same_cluster_sibling_events_resolve_as_multi_event(tmp_path: Path) -> N
             db,
             provider_game_id="gid_amb",
             game_date_et=game_date,
-            home_raw="ARI Diamondbacks",
-            away_raw="TOR Blue Jays",
+            home_raw="Arizona Diamondbacks",
+            away_raw="Toronto Blue Jays",
             start_ts_utc=kickoff,
             now_ts=now_ts,
         )
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         bindings = db.execute(
             """
             SELECT event_id
@@ -245,7 +237,7 @@ def test_same_cluster_sibling_events_resolve_as_multi_event(tmp_path: Path) -> N
             WHERE provider = ? AND provider_game_id = ?
             ORDER BY event_id
             """,
-            ("boltodds", "gid_amb"),
+            ("kalstrop_v1", "gid_amb"),
         ).fetchall()
         selected_count = int(
             db.execute(
@@ -254,7 +246,7 @@ def test_same_cluster_sibling_events_resolve_as_multi_event(tmp_path: Path) -> N
                 FROM link_run_event_candidates
                 WHERE run_id = ? AND provider = ? AND provider_game_id = ? AND is_selected = 1
                 """,
-                (int(res.run_id), "boltodds", "gid_amb"),
+                (int(res.run_id), "kalstrop_v1", "gid_amb"),
             ).fetchone()["n"]
         )
     assert res.n_games_seen == 1
@@ -294,16 +286,16 @@ def test_ambiguous_event_match_when_top_tie_spans_multiple_clusters(tmp_path: Pa
             db,
             provider_game_id="gid_amb",
             game_date_et=game_date,
-            home_raw="ARI Diamondbacks",
-            away_raw="TOR Blue Jays",
+            home_raw="Arizona Diamondbacks",
+            away_raw="Toronto Blue Jays",
             start_ts_utc=kickoff,
             now_ts=now_ts,
         )
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         row = db.execute(
             "SELECT binding_status, reason_code FROM link_game_bindings WHERE provider = ? AND provider_game_id = ?",
-            ("boltodds", "gid_amb"),
+            ("kalstrop_v1", "gid_amb"),
         ).fetchone()
     assert res.n_games_seen == 1
     assert res.n_games_linked == 0
@@ -345,13 +337,13 @@ def test_market_type_filter_applies_after_multi_event_selection(tmp_path: Path) 
             db,
             provider_game_id="gid_market_filter",
             game_date_et=game_date,
-            home_raw="ARI Diamondbacks",
-            away_raw="TOR Blue Jays",
+            home_raw="Arizona Diamondbacks",
+            away_raw="Toronto Blue Jays",
             start_ts_utc=kickoff,
             now_ts=now_ts,
         )
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         bindings = db.execute(
             """
             SELECT event_id
@@ -359,7 +351,7 @@ def test_market_type_filter_applies_after_multi_event_selection(tmp_path: Path) 
             WHERE provider = ? AND provider_game_id = ?
             ORDER BY event_id
             """,
-            ("boltodds", "gid_market_filter"),
+            ("kalstrop_v1", "gid_market_filter"),
         ).fetchall()
         targets = db.execute(
             """
@@ -368,7 +360,7 @@ def test_market_type_filter_applies_after_multi_event_selection(tmp_path: Path) 
             WHERE provider = ? AND provider_game_id = ?
             ORDER BY condition_id, outcome_index
             """,
-            ("boltodds", "gid_market_filter"),
+            ("kalstrop_v1", "gid_market_filter"),
         ).fetchall()
 
     assert res.n_games_seen == 1
@@ -398,16 +390,16 @@ def test_kickoff_out_of_tolerance_is_unresolved(tmp_path: Path) -> None:
             db,
             provider_game_id="gid_kickoff",
             game_date_et=game_date,
-            home_raw="PHI Phillies",
-            away_raw="ATL Braves",
+            home_raw="Philadelphia Phillies",
+            away_raw="Atlanta Braves",
             start_ts_utc=_et_ts(game_date, 1, 0),
             now_ts=now_ts,
         )
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         row = db.execute(
             "SELECT binding_status, reason_code FROM link_game_bindings WHERE provider = ? AND provider_game_id = ?",
-            ("boltodds", "gid_kickoff"),
+            ("kalstrop_v1", "gid_kickoff"),
         ).fetchone()
     assert res.n_games_seen == 1
     assert res.n_games_linked == 0

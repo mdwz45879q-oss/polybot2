@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 
-CANONICAL_MARKET_TYPES = {"totals", "nrfi", "moneyline", "spread", "other"}
+CANONICAL_MARKET_TYPES = {
+    "totals", "nrfi", "moneyline", "spread",
+    "both_teams_to_score", "soccer_halftime_result",
+    "soccer_exact_score", "total_corners",
+    "other",
+}
 
 
 def _norm(text: Any) -> str:
@@ -24,6 +29,14 @@ def normalize_sports_market_type(value: Any) -> str:
         return "spread"
     if raw in {"moneyline", "game", "child_moneyline", "first_half_moneyline"}:
         return "moneyline"
+    if raw in {"btts", "both_teams_to_score"}:
+        return "both_teams_to_score"
+    if raw in {"soccer_halftime_result", "halftime_result", "ht_result"}:
+        return "soccer_halftime_result"
+    if raw in {"soccer_exact_score", "exact_score", "correct_score"}:
+        return "soccer_exact_score"
+    if raw in {"total_corners", "corners"}:
+        return "total_corners"
     return raw if raw in CANONICAL_MARKET_TYPES else "other"
 
 

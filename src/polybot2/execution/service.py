@@ -15,5 +15,9 @@ class FastExecutionService:
     def __init__(self, *, config: FastExecutionConfig | None = None):
         self._config = config or FastExecutionConfig.from_env()
 
+    @property
+    def config(self) -> FastExecutionConfig:
+        return self._config
+
 
 __all__ = ["FastExecutionService"]

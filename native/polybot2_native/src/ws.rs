@@ -126,7 +126,7 @@ fn apply_worker_command(cmd: LiveWorkerCommand, candidate_subs: &mut Vec<String>
 
 async fn sleep_with_command_poll(
     reconnect_sleep_s: f64,
-    command_rx: &mut tokio_mpsc::UnboundedReceiver<LiveWorkerCommand>,
+    command_rx: &flume::Receiver<LiveWorkerCommand>,
     candidate_subs: &mut Vec<String>,
 ) -> (bool, bool) {
     let duration = Duration::from_secs_f64(reconnect_sleep_s.max(0.01));
@@ -141,8 +141,8 @@ async fn sleep_with_command_poll(
                 }
                 changed |= candidate_changed;
             }
-            Err(tokio_mpsc::error::TryRecvError::Empty) => {}
-            Err(tokio_mpsc::error::TryRecvError::Disconnected) => return (true, changed),
+            Err(flume::TryRecvError::Empty) => {}
+            Err(flume::TryRecvError::Disconnected) => return (true, changed),
         }
         tokio_sleep(Duration::from_millis(20)).await;
     }
@@ -150,7 +150,7 @@ async fn sleep_with_command_poll(
 }
 
 async fn refresh_active_subscriptions(
-    engine: &NativeMlbEngine,
+    engine: &SportEngine,
     cfg: &RuntimeStartConfig,
     subscriptions: &Arc<RwLock<Vec<String>>>,
     candidate_subs: &[String],
@@ -181,15 +181,53 @@ where
     }
 }
 
+pub(crate) fn apply_pending_patches(
+    engine: &mut SportEngine,
+    dispatch_handle: &mut DispatchHandle,
+    patch_rx: &flume::Receiver<crate::PatchPayload>,
+    health: &Arc<Mutex<RuntimeHealth>>,
+    log: &Arc<Mutex<LogWriter>>,
+) {
+    while let Ok(mut patch) = patch_rx.try_recv() {
+        match engine.merge_plan(&patch.plan_json) {
+            Ok(result) => {
+                if result.new_targets > 0 || result.new_tokens > 0 {
+                    dispatch_handle.extend_for_patch(
+                        &mut patch.new_templates,
+                        &mut patch.new_presigned,
+                        engine.tokens(),
+                    );
+                    let new_registry = Arc::new(crate::TargetRegistry {
+                        tokens: engine.tokens().to_vec(),
+                        targets: engine.target_slots().to_vec(),
+                    });
+                    engine.set_registry(Some(Arc::clone(&new_registry)));
+                    dispatch_handle.replace_registry(Arc::clone(&new_registry));
+                    dispatch_handle.send_registry_update(new_registry);
+                    if let Ok(mut g) = log.lock() {
+                        g.log_patch(result.new_tokens, result.new_targets);
+                    }
+                }
+            }
+            Err(err) => {
+                with_health(health, |h| {
+                    h.last_error = format!("merge_plan_failed:{}", err);
+                });
+            }
+        }
+    }
+}
+
 pub(crate) async fn run_live_worker_async(
-    engine: &mut NativeMlbEngine,
+    engine: &mut SportEngine,
     cfg: RuntimeStartConfig,
     mut dispatch_handle: DispatchHandle,
     subscriptions: Arc<RwLock<Vec<String>>>,
     health: Arc<Mutex<RuntimeHealth>>,
     initial_candidate_subs: Vec<String>,
     initial_active_subs: Vec<String>,
-    mut command_rx: tokio_mpsc::UnboundedReceiver<LiveWorkerCommand>,
+    command_rx: flume::Receiver<LiveWorkerCommand>,
+    patch_rx: flume::Receiver<crate::PatchPayload>,
     log: Arc<Mutex<LogWriter>>,
 ) {
     let reconnect_sleep_s = cfg.reconnect_sleep_seconds.unwrap_or(0.2).max(0.01);
@@ -218,6 +256,7 @@ pub(crate) async fn run_live_worker_async(
             }
             candidate_changed |= changed;
         }
+        apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
         if candidate_changed || Instant::now() >= next_subscription_refresh {
             next_subscription_refresh = Instant::now() + subscription_refresh_interval;
             if let Err(e) = refresh_active_subscriptions(
@@ -243,7 +282,7 @@ pub(crate) async fn run_live_worker_async(
                 h.last_error.clear();
             });
             let (stop, changed) =
-                sleep_with_command_poll(reconnect_sleep_s, &mut command_rx, &mut candidate_subs)
+                sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs)
                     .await;
             if stop {
                 with_health(&health, |h| h.running = false);
@@ -263,7 +302,7 @@ pub(crate) async fn run_live_worker_async(
                 });
                 let (stop, changed) = sleep_with_command_poll(
                     reconnect_sleep_s,
-                    &mut command_rx,
+                    &command_rx,
                     &mut candidate_subs,
                 )
                 .await;
@@ -287,7 +326,7 @@ pub(crate) async fn run_live_worker_async(
                 });
                 let (stop, changed) = sleep_with_command_poll(
                     reconnect_sleep_s,
-                    &mut command_rx,
+                    &command_rx,
                     &mut candidate_subs,
                 )
                 .await;
@@ -307,7 +346,7 @@ pub(crate) async fn run_live_worker_async(
                 h.last_error = format!("ws_subscribe: {}", e);
             });
             let (stop, changed) =
-                sleep_with_command_poll(reconnect_sleep_s, &mut command_rx, &mut candidate_subs)
+                sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs)
                     .await;
             if stop {
                 with_health(&health, |h| h.running = false);
@@ -340,13 +379,14 @@ pub(crate) async fn run_live_worker_async(
                         }
                         candidate_changed_inner |= changed;
                     }
-                    Err(tokio_mpsc::error::TryRecvError::Empty) => break,
-                    Err(tokio_mpsc::error::TryRecvError::Disconnected) => {
+                    Err(flume::TryRecvError::Empty) => break,
+                    Err(flume::TryRecvError::Disconnected) => {
                         with_health(&health, |h| h.running = false);
                         return;
                     }
                 }
             }
+            apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
             let mut active_changed = false;
             if candidate_changed_inner || Instant::now() >= next_subscription_refresh {
                 next_subscription_refresh = Instant::now() + subscription_refresh_interval;
@@ -434,13 +474,18 @@ pub(crate) async fn run_live_worker_async(
                     _ => continue,
                 };
 
-                crate::replay::process_decoded_frame_sync(
-                    engine,
-                    frame_text,
-                    source_recv_ns,
-                    &mut dispatch_handle,
-                    &log,
-                );
+                match engine {
+                    SportEngine::Baseball(e) => {
+                        crate::baseball::frame_pipeline::process_decoded_frame_sync(
+                            e, frame_text, source_recv_ns, &mut dispatch_handle, &log,
+                        );
+                    }
+                    SportEngine::Soccer(e) => {
+                        crate::soccer::frame_pipeline::process_decoded_frame_sync(
+                            e, frame_text, source_recv_ns, &mut dispatch_handle, &log,
+                        );
+                    }
+                }
             }
             if let Ok(mut g) = log.lock() {
                 g.flush();
@@ -456,6 +501,7 @@ pub(crate) async fn run_live_worker_async(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::baseball::types::*;
 
     #[test]
     fn apply_worker_command_stop() {
@@ -502,7 +548,7 @@ mod tests {
 
     #[test]
     fn scheduler_activation_respects_lead_and_completion() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1);
+        let mut engine = NativeMlbEngine::new();
         let now = crate::dispatch::now_unix_s();
         register_game(&mut engine, "g_past", Some(now - 30));
         register_game(&mut engine, "g_future", Some(now + 600));
@@ -528,11 +574,12 @@ mod tests {
 
     #[test]
     fn refresh_active_subscriptions_changes_only_on_transition() {
-        let mut engine = NativeMlbEngine::new(2.0, 0.5, 0.1);
+        let mut engine = NativeMlbEngine::new();
         let now = crate::dispatch::now_unix_s();
         register_game(&mut engine, "g1", Some(now - 60));
         let gi = engine.game_id_to_idx["g1"].0 as usize;
         engine.token_ids_by_game[gi] = vec!["tok_1".to_string(), "tok_1".to_string()];
+        let sport_engine = SportEngine::Baseball(engine);
         let cfg = RuntimeStartConfig {
             subscribe_lead_minutes: Some(5),
             ..RuntimeStartConfig::default()
@@ -546,7 +593,7 @@ mod tests {
             .expect("tokio runtime");
         let changed = rt
             .block_on(refresh_active_subscriptions(
-                &engine,
+                &sport_engine,
                 &cfg,
                 &subscriptions,
                 candidates.as_slice(),
@@ -557,7 +604,7 @@ mod tests {
         assert_eq!(active_subs, vec!["g1".to_string()]);
         let unchanged = rt
             .block_on(refresh_active_subscriptions(
-                &engine,
+                &sport_engine,
                 &cfg,
                 &subscriptions,
                 candidates.as_slice(),

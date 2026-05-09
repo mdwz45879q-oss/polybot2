@@ -10,7 +10,7 @@ from polybot2.linking.mapping_loader import (
 )
 from polybot2.linking.review import LinkReviewService
 from polybot2.linking.service import LinkService
-from polybot2.linking.snapshot import BindingResolver, SnapshotBuilder
+from polybot2.linking.snapshot import BindingResolver
 
 __all__ = [
     "BindingResolver",
@@ -23,7 +23,6 @@ __all__ = [
     "LoadedLiveTradingPolicy",
     "LoadedMapping",
     "MappingValidationError",
-    "SnapshotBuilder",
     "load_live_trading_policy",
     "load_mapping",
     "validate_loaded_live_trading_policy",

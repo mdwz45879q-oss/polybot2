@@ -24,17 +24,17 @@ def _seed_mlb_fixture(
             (
                 event_id,
                 "Will Arizona Diamondbacks win?",
+                "",
                 slug_prefix,
                 slug_prefix,
                 "",
                 "mlb",
+                None,
                 game_date_et,
                 None,
                 None,
+                None,
                 "open",
-                "",
-                "",
-                0,
                 now_ts,
             )
         ]
@@ -50,14 +50,13 @@ def _seed_mlb_fixture(
                 f"{slug_prefix}-ari",
                 "moneyline",
                 None,
+                None,
+                None,
                 0,
                 None,
                 0.0,
                 "",
                 None,
-                "",
-                "",
-                0,
                 now_ts,
             )
         ]
@@ -73,22 +72,20 @@ def _seed_mlb_fixture(
     db.linking.upsert_provider_games(
         [
             (
-                "boltodds",
+                "kalstrop_v1",
                 provider_game_id,
-                "ARI Diamondbacks vs ATL Braves, 2026-04-18, 01",
+                "Arizona Diamondbacks vs Atlanta Braves, 2026-04-18, 01",
                 "",
-                "MLB",
-                "mlb",
+                "baseball",
+                "Major League Baseball",
+                "", "",
                 "2026-04-18, 01:10 PM",
                 None,
                 game_date_et,
-                "ARI Diamondbacks",
-                "ATL Braves",
+                "Arizona Diamondbacks",
+                "Atlanta Braves",
                 "ok",
                 "",
-                "",
-                "",
-                0,
                 now_ts,
             )
         ]
@@ -101,7 +98,7 @@ def test_link_build_requires_tradeable_targets_for_gate_pass(tmp_path: Path) -> 
     with open_database(runtime) as db:
         _seed_mlb_fixture(db, provider_game_id="gid_no_tokens", with_tokens=False)
         svc = LinkService(db=db)
-        result = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
 
     assert result.n_games_linked == 1
     assert result.n_targets_tradeable == 0
@@ -114,14 +111,14 @@ def test_link_build_marks_unresolved_when_no_tradeable_targets(tmp_path: Path) -
     with open_database(runtime) as db:
         _seed_mlb_fixture(db, provider_game_id="gid_no_tokens", with_tokens=False)
         svc = LinkService(db=db)
-        result = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        result = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         row = db.execute(
             """
             SELECT binding_status, reason_code, is_tradeable
             FROM link_game_bindings
             WHERE provider = ? AND provider_game_id = ?
             """,
-            ("boltodds", "gid_no_tokens"),
+            ("kalstrop_v1", "gid_no_tokens"),
         ).fetchone()
 
     assert result.n_games_tradeable == 0
@@ -138,7 +135,7 @@ def test_link_build_atomic_rollback_on_persist_failure(tmp_path: Path, monkeypat
         db.linking.upsert_game_bindings(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "old_gid",
                     "mlb",
                     "arizona diamondbacks",
@@ -157,7 +154,7 @@ def test_link_build_atomic_rollback_on_persist_failure(tmp_path: Path, monkeypat
         db.linking.upsert_market_bindings(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "old_gid",
                     "old_c1",
                     0,
@@ -185,7 +182,7 @@ def test_link_build_atomic_rollback_on_persist_failure(tmp_path: Path, monkeypat
         monkeypatch.setattr(db.linking, "upsert_event_bindings", _boom)
         svc = LinkService(db=db)
         with pytest.raises(RuntimeError, match="simulated_persist_failure"):
-            svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+            svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
         monkeypatch.setattr(db.linking, "upsert_event_bindings", original)
 
         rows = db.execute(
@@ -195,7 +192,7 @@ def test_link_build_atomic_rollback_on_persist_failure(tmp_path: Path, monkeypat
             WHERE provider = ?
             ORDER BY provider_game_id
             """,
-            ("boltodds",),
+            ("kalstrop_v1",),
         ).fetchall()
         market_rows = db.execute(
             """
@@ -204,7 +201,7 @@ def test_link_build_atomic_rollback_on_persist_failure(tmp_path: Path, monkeypat
             WHERE provider = ?
             ORDER BY provider_game_id, condition_id, outcome_index
             """,
-            ("boltodds",),
+            ("kalstrop_v1",),
         ).fetchall()
 
     assert [tuple(r) for r in rows] == [("old_gid", "exact")]
@@ -218,7 +215,7 @@ def test_link_build_atomic_success_replaces_provider_state_and_stamps_run_id(tmp
         db.linking.upsert_game_bindings(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "old_gid",
                     "mlb",
                     "arizona diamondbacks",
@@ -237,7 +234,7 @@ def test_link_build_atomic_success_replaces_provider_state_and_stamps_run_id(tmp
         db.linking.upsert_market_bindings(
             [
                 (
-                    "boltodds",
+                    "kalstrop_v1",
                     "old_gid",
                     "old_c1",
                     0,
@@ -256,7 +253,7 @@ def test_link_build_atomic_success_replaces_provider_state_and_stamps_run_id(tmp
         )
         _seed_mlb_fixture(db, provider_game_id="new_gid", condition_id="new_c1", with_tokens=True)
         svc = LinkService(db=db)
-        res = svc.build_links(provider="boltodds", mapping=mapping, league_scope="all")
+        res = svc.build_links(provider="kalstrop_v1", mapping=mapping, league_scope="all")
 
         game_rows = db.execute(
             """
@@ -265,7 +262,7 @@ def test_link_build_atomic_success_replaces_provider_state_and_stamps_run_id(tmp
             WHERE provider = ?
             ORDER BY provider_game_id
             """,
-            ("boltodds",),
+            ("kalstrop_v1",),
         ).fetchall()
         market_rows = db.execute(
             """
@@ -274,9 +271,9 @@ def test_link_build_atomic_success_replaces_provider_state_and_stamps_run_id(tmp
             WHERE provider = ?
             ORDER BY provider_game_id, condition_id, outcome_index
             """,
-            ("boltodds",),
+            ("kalstrop_v1",),
         ).fetchall()
-        latest_run = db.linking.load_latest_link_run(provider="boltodds")
+        latest_run = db.linking.load_latest_link_run(provider="kalstrop_v1")
 
     assert [r["provider_game_id"] for r in game_rows] == ["new_gid"]
     assert all(int(r["run_id"] or 0) == int(res.run_id) for r in game_rows)

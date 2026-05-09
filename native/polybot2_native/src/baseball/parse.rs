@@ -1,13 +1,15 @@
-use super::*;
+use crate::*;
+use crate::baseball::types::*;
 use crate::kalstrop_types::KalstropUpdate;
 
 // ---------------------------------------------------------------------------
 // Zero-copy Kalstrop parse (live WS path)
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub(crate) fn parse_tick_from_kalstrop_update(
     update: &KalstropUpdate<'_>,
-    recv_monotonic_ns: i64,
+    _recv_monotonic_ns: i64,
 ) -> Tick {
     let summary = update.match_summary.as_ref();
     let free_text = summary
@@ -17,8 +19,6 @@ pub(crate) fn parse_tick_from_kalstrop_update(
 
     Tick {
         universal_id: update.fixture_id.to_owned(),
-        action: "sportsMatchStateUpdatedV2",
-        recv_monotonic_ns,
         goals_home: summary
             .and_then(|s| s.home_score)
             .and_then(|s| s.parse().ok()),
@@ -40,23 +40,17 @@ pub(crate) fn parse_tick_from_kalstrop_update(
 // PyO3 parse paths (Python callers — not the live WS hot path)
 // ---------------------------------------------------------------------------
 
-pub(crate) fn parse_tick_any(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -> Tick {
+pub(crate) fn parse_tick_any(event: &Bound<'_, PyAny>, _recv_monotonic_ns: i64) -> Tick {
     if let Ok(as_dict) = event.downcast::<PyDict>() {
-        return parse_tick_from_dict(as_dict, recv_monotonic_ns);
+        return parse_tick_from_dict(as_dict);
     }
-    parse_tick_from_event(event, recv_monotonic_ns)
+    parse_tick_from_event(event)
 }
 
-pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>, recv_monotonic_ns: i64) -> Tick {
+pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>) -> Tick {
     let inning_half_str = get_str(event, "inning_half");
     Tick {
         universal_id: get_str(event, "universal_id"),
-        action: "sportsMatchStateUpdatedV2",
-        recv_monotonic_ns: if recv_monotonic_ns > 0 {
-            recv_monotonic_ns
-        } else {
-            get_i64_opt(event, "recv_monotonic_ns").unwrap_or(0)
-        },
         goals_home: get_i64_opt(event, "goals_home"),
         goals_away: get_i64_opt(event, "goals_away"),
         inning_number: get_i64_opt(event, "inning_number"),
@@ -66,12 +60,10 @@ pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>, recv_monotonic_ns:
     }
 }
 
-fn parse_tick_from_event(event: &Bound<'_, PyAny>, recv_monotonic_ns: i64) -> Tick {
+fn parse_tick_from_event(event: &Bound<'_, PyAny>) -> Tick {
     let match_completed = get_attr_bool_opt(event, "match_completed");
     Tick {
         universal_id: get_attr_str(event, "universal_id"),
-        action: "sportsMatchStateUpdatedV2",
-        recv_monotonic_ns,
         goals_home: get_attr_i64_opt(event, "home_score"),
         goals_away: get_attr_i64_opt(event, "away_score"),
         inning_number: None,
@@ -99,11 +91,29 @@ pub(crate) fn parse_period(text: &str) -> (Option<i64>, &'static str) {
         return (None, "");
     }
 
-    // TODO: Handle extra innings. Kalstrop's exact freeText format for extras
-    // is unknown. Guard: if "extra" appears anywhere, return None to avoid
-    // misidentifying it as inning 1.
-    if contains_ascii_ci(s, "extra") {
-        return (None, "");
+    // "Break top 3 bottom 3", "Break top EI bottom 9", "Break top EI bottom EI"
+    // Check breaks first — extra-inning breaks use "EI" (not "extra").
+    if s.len() >= 5 && s.as_bytes()[..5].eq_ignore_ascii_case(b"break") {
+        if contains_ascii_ci(s, " EI") {
+            // Extra-inning break: sentinel inning 10 so walkoff (>= 9) works.
+            return (Some(10), "break");
+        }
+        let number = extract_first_number_fast(s.as_bytes());
+        return (number, "break");
+    }
+
+    // "Extra inning top", "Extra inning bottom"
+    // The freeText is identical regardless of which extra inning (10th, 11th, etc.).
+    // Use inning_number = 10 as a sentinel so walkoff (inning >= 9) fires correctly.
+    if contains_ascii_ci(s, "extra") && contains_ascii_ci(s, "inning") {
+        let half = if contains_ascii_ci(s, "top") {
+            "top"
+        } else if contains_ascii_ci(s, "bottom") {
+            "bottom"
+        } else {
+            ""
+        };
+        return (Some(10), half);
     }
 
     // "4th inning top" / "4th inning bottom"
@@ -117,12 +127,6 @@ pub(crate) fn parse_period(text: &str) -> (Option<i64>, &'static str) {
         };
         let number = extract_first_number_fast(s.as_bytes());
         return (number, half);
-    }
-
-    // "Break top 3 bottom 3"
-    if s.len() >= 5 && s.as_bytes()[..5].eq_ignore_ascii_case(b"break") {
-        let number = extract_first_number_fast(s.as_bytes());
-        return (number, "break");
     }
 
     (None, "")
@@ -173,7 +177,7 @@ fn map_inning_half(s: &str) -> &'static str {
 
 /// Detect game completion from `matchStatusDisplay[0].freeText`.
 /// Kalstrop sends "Ended" when a game finishes.
-fn is_completed_free_text(free_text: &str) -> bool {
+pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
     let s = free_text.trim();
     s.eq_ignore_ascii_case("Ended")
         || s.eq_ignore_ascii_case("Final")
@@ -388,13 +392,33 @@ mod tests {
     }
 
     #[test]
-    fn parse_period_extra_innings_guard() {
-        let (num, half) = parse_period("1st Extra inning top");
-        assert_eq!(
-            num, None,
-            "extra innings must not be misidentified as inning 1"
-        );
-        assert_eq!(half, "");
+    fn parse_period_extra_inning_top() {
+        let (num, half) = parse_period("Extra inning top");
+        assert_eq!(num, Some(10));
+        assert_eq!(half, "top");
+    }
+
+    #[test]
+    fn parse_period_extra_inning_bottom() {
+        let (num, half) = parse_period("Extra inning bottom");
+        assert_eq!(num, Some(10));
+        assert_eq!(half, "bottom");
+    }
+
+    #[test]
+    fn parse_period_break_into_extras() {
+        // Break between bottom 9th and top of first extra inning
+        let (num, half) = parse_period("Break top EI bottom 9");
+        assert_eq!(num, Some(10));
+        assert_eq!(half, "break");
+    }
+
+    #[test]
+    fn parse_period_break_within_extras() {
+        // Break between top and bottom of an extra inning
+        let (num, half) = parse_period("Break top EI bottom EI");
+        assert_eq!(num, Some(10));
+        assert_eq!(half, "break");
     }
 
     #[test]

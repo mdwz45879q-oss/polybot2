@@ -1,11 +1,11 @@
 # Polybot2 Terminal Commands (Practical Reference)
 
-This is a copy-paste command guide for day-to-day `polybot2` work.
+Copy-paste command guide for day-to-day `polybot2` work.
 
-## 1) One-Time Setup
+## 1) Setup
 
 ```bash
-pip install -e "/Users/reda/polymarket_bot/polybot2[dev]"
+pip install -e ".[dev]"
 ```
 
 Build the Rust native module (required for hotpath):
@@ -16,239 +16,186 @@ env -u CONDA_PREFIX maturin build --release --manifest-path native/polybot2_nati
 pip install --force-reinstall native/polybot2_native/target/wheels/polybot2_native-*.whl
 
 # Linux / clean virtualenv:
-maturin develop --manifest-path native/polybot2_native/Cargo.toml
+maturin develop --release --manifest-path native/polybot2_native/Cargo.toml
 ```
 
 Load environment variables (required for most commands; `hotpath live` auto-loads `.env`):
 
-```bash 
+```bash
 set -a; source .env; set +a
 ```
 
-If you prefer module execution without relying on the console script:
+### Rebuild After Pull (EC2)
 
 ```bash
-export PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src
-python -m polybot2 --help
-```
-
-Optional helper alias:
-
-```bash
-alias pb='PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src python -m polybot2'
+maturin build --release --manifest-path native/polybot2_native/Cargo.toml && \
+pip install --force-reinstall native/polybot2_native/target/wheels/polybot2_native-*.whl && \
+pip install -e ".[dev]"
 ```
 
 ## 2) Environment Variables
 
 ```bash
-export POLYBOT2_DB_PATH=/Users/reda/polymarket_bot/polybot2/data/prediction_markets.db
-export POLYBOT2_LOG_DIR=/Users/reda/polymarket_bot/polybot2/logs
-export KALSTROP_CLIENT_ID='YOUR_CLIENT_ID'
-export KALSTROP_SHARED_SECRET_RAW='YOUR_SHARED_SECRET'
+export POLYBOT2_DB_PATH=data/prediction_markets.db
+export POLYBOT2_LOG_DIR=logs
+export KALSTROP_CLIENT_ID='...'
+export KALSTROP_SHARED_SECRET_RAW='...'
+export BOLTODDS_API_KEY='...'
 ```
 
 - `POLYBOT2_DB_PATH`: default DB path for all commands.
 - `POLYBOT2_LOG_DIR`: directory for hotpath JSONL log files (default: current directory).
-- Default provider is Kalstrop via policy (`config/live_trading.py`).
-- Kalstrop creds are required unless you explicitly override `--provider boltodds`.
+- Kalstrop creds required for `kalstrop_v1` provider. BoltOdds key required for `boltodds` provider.
+- Provider per league is derived from `config/mappings.py` — not passed as a CLI flag.
 
-## 3) Core Data + Linking Flow
+## 3) Prerequisite Pipeline
+
+Run these in order before launching the hotpath:
+
+```bash
+polybot2 market sync
+polybot2 provider sync
+polybot2 link build
+polybot2 link review --run-id <N>
+```
 
 ### Sync Polymarket metadata
 
 ```bash
-polybot2 data sync --markets
+polybot2 market sync              # open markets only (default)
+polybot2 market sync --all        # include resolved/closed markets
 ```
 
-What it does:
-- Syncs events, markets, tokens, tags, and sports reference tables into SQLite.
+Optional tuning flags: `--batch-size`, `--concurrency`, `--max-rps`, `--open-max-pages`, `--fast-mode`.
 
 ### Sync provider games
 
 ```bash
-polybot2 provider sync
+polybot2 provider sync                          # sync all configured providers
+polybot2 provider sync --provider kalstrop_v1   # sync a single provider
+polybot2 provider sync --provider boltodds
+polybot2 provider sync --provider kalstrop_v2
 ```
-
-What it does:
-- Pulls provider catalog rows into `provider_games`.
-
-### Validate config files
-
-```bash
-polybot2 mapping validate
-```
-
-What it does:
-- Validates hardcoded config modules:
-  - `/Users/reda/polymarket_bot/polybot2/config/mappings.py`
-  - `/Users/reda/polymarket_bot/polybot2/config/live_trading.py`
 
 ### Build links
 
 ```bash
-polybot2 link build --league-scope live
+polybot2 link build                      # live leagues only (default)
+polybot2 link build --league-scope all   # include non-live leagues
 ```
 
-What it does:
-- Builds deterministic provider-to-Polymarket links.
-- Writes latest-state bindings and immutable per-run review snapshot rows.
+Processes all (league, provider) pairs from config in one `run_id`.
 
-### Show link run report
+### Review links
+
+Review is opt-out: all linked games enter the plan unless explicitly rejected.
 
 ```bash
-polybot2 link report
+polybot2 link review --run-id <N>                          # interactive session (mapped_pending scope)
+polybot2 link review --run-id <N> --scope all              # review all games
+polybot2 link review --run-id <N> --scope mapped           # only mapped games
+polybot2 link review --run-id <N> --include-inactive       # include inactive markets
+polybot2 link review --run-id <N> --limit 100              # cap number of items
 ```
 
-What it does:
-- Prints high-level link quality summary for the latest run.
+## 4) Hotpath
 
-## 4) Link Review Commands
-
-### 90% Workflow (Recommended)
-One-game deep dive:
+### Launch (one process per league)
 
 ```bash
-polybot2 link review card --run-id 123 --provider-game-id 2f8d1e1462ce
-```
-
-Record decision directly:
-
-```bash
-polybot2 link review decide --run-id 123 --provider-game-id 2f8d1e1462ce --decision approve --note "checked manually"
-```
-
-Interactive operator loop:
-
-```bash
-polybot2 link review session --run-id 123
-```
-
-What it does:
-- Opens single-key review workflow over mapped pending cards by default.
-
-### Advanced Diagnostics
-
-Candidate-level comparison for one game:
-
-```bash
-polybot2 link review candidates --run-id 123 --provider-game-id 2f8d1e1462ce
-```
-
-## 5) Hotpath Launch (Scoped)
-
-```bash
-polybot2 hotpath run --league mlb --link-run-id 123
-```
-
-What it does:
-- Runs league-scoped hotpath using compiled plan from the approved run.
-- Fails fast if review gate/preflight requirements are not met.
-
-Break-glass override:
-
-```bash
-polybot2 hotpath run --league mlb --link-run-id 123 --force-launch
+polybot2 hotpath live --league mlb --execution-mode live
+polybot2 hotpath live --league epl --execution-mode live
 ```
 
 Paper trading:
-```bash
-polybot2 hotpath run --league mlb --link-run-id 123  --execution-mode paper
-```
-
-Optional subscription intersection filter:
 
 ```bash
-export POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS='2f8d1e1462ce,36354015caf6'
-polybot2 hotpath run --league mlb --link-run-id 123
+polybot2 hotpath live --league mlb --execution-mode paper
 ```
 
-### Live observer (in-place terminal scoreboard)
+With explicit link run and refresh interval:
+
+```bash
+polybot2 hotpath live --league mlb --execution-mode live --link-run-id <N> --refresh-interval 300
+```
+
+Optional subscription filter:
+
+```bash
+export POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS='game_label_1,game_label_2'
+polybot2 hotpath live --league epl --execution-mode paper
+```
+
+### Live observer (terminal scoreboard)
 
 In a separate terminal while the hotpath is running:
 
 ```bash
 # Auto-discover latest log file:
-polybot2 hotpath observe --run-id 1 --link-run-id 1 --league mlb 
+polybot2 hotpath observe --run-id <N> --league mlb
 
-# Or specify the log file directly:
-polybot2 hotpath observe --log-file logs/hotpath_123_20260426T183200Z.jsonl
+# Specify the log file directly:
+polybot2 hotpath observe --log-file logs/hotpath_1_20260504T183200Z.jsonl
 
-# With team name resolution (requires --link-run-id + --db):
-polybot2 hotpath observe --log-file logs/hotpath_123_*.jsonl --link-run-id 123 --league mlb
+# With team name resolution:
+polybot2 hotpath observe --run-id <N> --link-run-id <N> --league epl
 ```
-
-What it does:
-- Reads the JSONL log file with tail -f semantics.
-- Renders a fixed-position terminal scoreboard that redraws in place (no scrolling).
-- Shows game scores, innings, bet outcomes, and order history.
-- Team abbreviations use Polymarket codes (LAA, BOS, etc.).
 
 ### Inspect log files with jq
 
 ```bash
 # All order events:
-jq 'select(.ev == "order")' logs/hotpath_123_*.jsonl
+jq 'select(.ev == "order")' logs/hotpath_*.jsonl
 
 # Failed orders only:
-jq 'select(.ev == "order" and .ok == false)' logs/hotpath_123_*.jsonl
+jq 'select(.ev == "order" and .ok == false)' logs/hotpath_*.jsonl
 
 # Score progression for one game:
-jq 'select(.ev == "tick" and .gid == "85c66fa4-...")' logs/hotpath_123_*.jsonl
+jq 'select(.ev == "tick" and .gid == "Chelsea vs Arsenal, 2026-05-04, 15")' logs/hotpath_*.jsonl
 
 # Tail live:
-tail -f logs/hotpath_123_*.jsonl | jq --unbuffered 'select(.ev == "order")'
+tail -f logs/hotpath_*.jsonl | jq --unbuffered 'select(.ev == "order")'
 ```
 
-## 6) Raw Score Frame Capture
+## 5) Raw Score Frame Capture
 
-Capture all of today's games for a league:
+Standalone scripts in `scripts/` (not part of the CLI):
 
 ```bash
-polybot2 provider capture --league mlb --today --out ./captures
+# Multi-provider comparison capture:
+python scripts/capture_multi.py --games-file games.json --out ./captures --duration 14400
+
+# Single Kalstrop V1 fixture:
+python scripts/capture_kalstrop_v1.py --fixture-id <UUID> --out ./captures --duration 7200
+
+# Single BoltOdds capture:
+python scripts/capture_boltodds.py --games-file games.json --out ./captures --duration 7200
+
+# Kalstrop V2 capture:
+python scripts/capture_kalstrop_v2.py --fixture-id <EVENT_ID> --out ./captures --duration 7200
 ```
 
-Capture specific fixture(s):
+## 6) Tests
 
 ```bash
-polybot2 provider capture \
-  --universal-id "f325c377-f1cb-44db-b615-dad9961d2317" \
-  --league mlb \
-  --out ./captures \
-  --max-duration-seconds 21600
+# Rust tests:
+cargo test --manifest-path native/polybot2_native/Cargo.toml
+
+# Python full suite (excluding live tests):
+pytest tests/ --ignore=tests/live -q
+
+# Single test:
+pytest tests/test_polybot2_hotpath_observe.py -k "heartbeat"
 ```
 
-What it does:
-- Connects to Kalstrop V1 WS scores stream only (no odds, no parsing).
-- Writes raw WS frames to a single JSONL file: `capture_{league}_{timestamp}.jsonl`.
-- Each line: `{"ts": <epoch_float>, "frame": <raw WS JSON>}`.
-- Stops on Ctrl+C or `--max-duration-seconds`.
-
-Override date for `--today`:
-
-```bash
-polybot2 provider capture --league mlb --today --date-et 2026-04-28 --out ./captures
-```
-
-## 6b) Hotpath Live (Production Orchestrator)
-
-```bash
-polybot2 hotpath live --league mlb --link-run-id 123 --execution-mode live --refresh-interval 300
-```
-
-What it does:
-- Runs the hotpath with periodic stop/restart for plan refresh.
-- Each cycle: data sync → provider sync → link build → auto-approve → compile plan → start hotpath.
-- Automatically loads `.env` from the working directory.
-- Excludes already-fired strategy keys from new plans (reads prior JSONL logs).
-- Resolves the latest `run_id` after each `link build` (handles incrementing IDs).
-
-## 7) Useful DB/Run-ID Inspection Commands
+## 7) DB Inspection
 
 List recent link runs:
 
 ```bash
 sqlite3 "$POLYBOT2_DB_PATH" "
-SELECT run_id, provider, league_scope, gate_result, n_games_seen, n_games_linked, n_targets_tradeable,
+SELECT run_id, provider, league, league_scope, gate_result,
+       n_games_seen, n_games_linked, n_targets_tradeable,
        datetime(run_ts, 'unixepoch') AS run_utc
 FROM link_runs
 ORDER BY run_id DESC
@@ -256,14 +203,14 @@ LIMIT 20;
 "
 ```
 
-See decisions for one run:
+See review decisions for a run:
 
 ```bash
 sqlite3 "$POLYBOT2_DB_PATH" "
-SELECT provider_game_id, decision, actor, datetime(created_at,'unixepoch') AS ts_utc
+SELECT provider_game_id, decision, actor, datetime(decided_at,'unixepoch') AS ts_utc
 FROM link_review_decisions
-WHERE run_id = 123 AND provider = 'boltodds'
-ORDER BY created_at DESC
+WHERE run_id = <N>
+ORDER BY decided_at DESC
 LIMIT 100;
 "
 ```
@@ -278,36 +225,10 @@ DELETE FROM link_run_event_candidates;
 DELETE FROM link_run_game_reviews;
 DELETE FROM link_run_provider_games;
 DELETE FROM link_review_decisions;
-DELETE FROM link_launch_audit;
 DELETE FROM link_runs;
 DELETE FROM sqlite_sequence
- WHERE name IN ('link_runs','link_review_decisions','link_launch_audit');
+ WHERE name IN ('link_runs','link_review_decisions');
 COMMIT;
 VACUUM;
 "
-```
-## 8) Test Commands
-
-Rust tests:
-
-```bash
-cargo test --manifest-path native/polybot2_native/Cargo.toml
-```
-
-Python full suite:
-
-```bash
-PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src pytest -q polybot2/tests
-```
-
-Run focused capture tests:
-
-```bash
-PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src pytest -q polybot2/tests/test_polybot2_provider_capture.py
-```
-
-Run focused linking tests:
-
-```bash
-PYTHONPATH=/Users/reda/polymarket_bot/polybot2/src pytest -q polybot2/tests/test_polybot2_linking_v2_matching.py
 ```

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check *)",
+      "Bash(cargo test *)",
+      "Bash(cargo info *)",
+      "Bash(cargo search *)",
+      "Bash(python -m pytest *)",
+      "Bash(pytest *)",
+      "Bash(python -m polybot2 *)",
+      "Bash(python -c *)",
+      "Bash(python3 -c *)",
+      "Bash(sqlite3 *)",
+      "Bash(pip install *)",
+      "Bash(maturin build *)",
+      "Bash(env -u CONDA_PREFIX maturin build *)",
+      "Bash(polybot2 *)"
+    ]
+  }
+}

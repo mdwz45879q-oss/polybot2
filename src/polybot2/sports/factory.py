@@ -7,8 +7,7 @@ import os
 
 from polybot2.sports.base import SportsDataProviderBase
 from polybot2.sports.boltodds import BoltOddsProvider, BoltOddsProviderConfig
-from polybot2.sports.kalstrop import KalstropProvider, KalstropProviderConfig
-from polybot2.sports.recorder import RawFrameRecorder, UpdateRecorder
+from polybot2.sports.kalstrop_v1 import KalstropV1Provider, KalstropV1ProviderConfig
 
 
 def resolve_kalstrop_credentials_from_env() -> tuple[str, str, str]:
@@ -27,8 +26,6 @@ def resolve_kalstrop_credentials_from_env() -> tuple[str, str, str]:
 def build_sports_provider(
     *,
     provider_name: str,
-    recorder: UpdateRecorder | None = None,
-    raw_frame_recorder: RawFrameRecorder | None = None,
     logger: logging.Logger | None = None,
 ) -> SportsDataProviderBase:
     p = str(provider_name or "").strip().lower()
@@ -38,43 +35,33 @@ def build_sports_provider(
             raise ValueError("missing_BOLTODDS_API_KEY")
         return BoltOddsProvider(
             config=BoltOddsProviderConfig(api_key=api_key),
-            recorder=recorder,
-            raw_frame_recorder=raw_frame_recorder,
         )
 
-    if p == "kalstrop":
+    if p in ("kalstrop", "kalstrop_v1"):
         client_id, shared_secret_raw, source = resolve_kalstrop_credentials_from_env()
         if not client_id or not shared_secret_raw:
             raise ValueError("missing_kalstrop_credentials")
         if logger is not None:
-            logger.info("Kalstrop credentials source=%s", source)
+            logger.info("Kalstrop V1 credentials source=%s", source)
         http_base = str(os.getenv("KALSTROP_BASE_URL") or "https://sportsapi.kalstropservice.com/odds_v1/v1").strip()
-        ws_url = str(os.getenv("KALSTROP_WS_URL") or "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws").strip()
-        return KalstropProvider(
-            config=KalstropProviderConfig(
+        return KalstropV1Provider(
+            config=KalstropV1ProviderConfig(
                 client_id=client_id,
                 shared_secret_raw=shared_secret_raw,
                 http_base=http_base,
-                ws_url=ws_url,
             ),
-            recorder=recorder,
-            raw_frame_recorder=raw_frame_recorder,
+        )
+
+    if p == "kalstrop_v2":
+        from polybot2.sports.kalstrop_v2 import KalstropV2Provider, KalstropV2ProviderConfig
+        return KalstropV2Provider(
+            config=KalstropV2ProviderConfig(),
         )
 
     raise ValueError(f"unsupported_provider:{p}")
 
 
-def capture_stream_profile(provider_name: str) -> dict[str, bool]:
-    p = str(provider_name or "").strip().lower()
-    if p == "boltodds":
-        return {"scores": True, "odds": False, "playbyplay": True}
-    if p == "kalstrop":
-        return {"scores": True, "odds": True, "playbyplay": False}
-    return {"scores": False, "odds": False, "playbyplay": False}
-
-
 __all__ = [
     "build_sports_provider",
-    "capture_stream_profile",
     "resolve_kalstrop_credentials_from_env",
 ]

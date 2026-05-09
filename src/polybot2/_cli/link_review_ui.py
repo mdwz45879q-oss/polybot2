@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import base64
-from dataclasses import replace
 from datetime import datetime, timezone
 import io
 import json
+import logging
 import os
 import select
 import sys
@@ -15,7 +14,7 @@ import time
 from typing import Any
 import tty
 
-from polybot2._cli.common import _int_or_none
+from polybot2._cli.common import _int_or_none, _render_table
 
 try:  # optional dependency in local env
     from rich import box
@@ -29,6 +28,10 @@ try:  # optional dependency in local env
     _RICH_AVAILABLE = True
 except Exception:  # pragma: no cover - fallback if rich is absent
     _RICH_AVAILABLE = False
+
+_PROVIDER_TIMEZONE = {"boltodds": "ET", "kalstrop_v1": "UTC", "kalstrop_v2": "UTC"}
+_PROVIDER_ID_LABEL = {"boltodds": "universal_id", "kalstrop_v1": "fixture_id", "kalstrop_v2": "event_id"}
+
 
 def _resolution_style(state: str) -> str:
     s = str(state or "").upper()
@@ -362,66 +365,124 @@ def _build_game_card_renderable(
     if filters_text:
         header.append(f"   {filters_text}", style="dim")
 
+    # Provider Game panel
+    rich_provider_name = str(provider_game.get("provider") or payload.get("provider") or "")
+    rich_id_label = _PROVIDER_ID_LABEL.get(rich_provider_name, "ID")
+    rich_game_id = str(provider_game.get("provider_game_id") or "")
+    rich_tz_label = _PROVIDER_TIMEZONE.get(rich_provider_name, "UTC")
+    rich_when_raw = str(provider_game.get("when_raw") or "")
+
+    if rich_provider_name == "kalstrop_v2":
+        rich_id_display = f"{rich_game_id} (streaming resolution pending)"
+    else:
+        rich_id_display = rich_game_id
+
+    provider_kv_rows = [
+        ("Provider", rich_provider_name),
+        (rich_id_label, rich_id_display),
+    ]
+    if rich_provider_name == "boltodds":
+        provider_kv_rows.append(("Game label", provider_game.get("game_label")))
+    provider_kv_rows.extend([
+        ("Sport raw", provider_game.get("sport_raw")),
+        ("League raw", provider_game.get("league_raw")),
+        ("When", f"{rich_when_raw} ({rich_tz_label})" if rich_when_raw else ""),
+        ("Home raw", provider_game.get("home_raw")),
+        ("Away raw", provider_game.get("away_raw")),
+        ("Game state", game_state),
+        ("Parse status", provider_game.get("parse_status")),
+    ])
+
     provider_section = Panel(
-        _kv_table(
-            [
-                ("ID", provider_game.get("provider_game_id")),
-                ("Provider league", provider_game.get("league_raw")),
-                ("Provider sport", provider_game.get("sport_raw")),
-                ("Teams raw", f"{provider_game.get('away_raw') or ''} @ {provider_game.get('home_raw') or ''}".strip()),
-                ("Game date ET", provider_game.get("game_date_et")),
-                ("Kickoff UTC", _fmt_ts_utc(provider_game.get("kickoff_ts_utc"))),
-                ("Game state", game_state),
-                ("Parse status", provider_game.get("parse_status")),
-                ("Label", provider_game.get("game_label")),
-            ]
-        ),
+        _kv_table(provider_kv_rows),
         title="Provider Game",
         border_style="cyan",
     )
+
+    # Canonicalization panel with team mapping trace
+    rich_home_raw = str(provider_game.get("home_raw") or "")
+    rich_away_raw = str(provider_game.get("away_raw") or "")
+    rich_canonical_home = str(canonical.get("canonical_home_team") or "")
+    rich_canonical_away = str(canonical.get("canonical_away_team") or "")
+
+    home_trace = f'"{rich_home_raw}" -> {rich_canonical_home}' if rich_canonical_home else f'"{rich_home_raw}" -> (unmapped)'
+    away_trace = f'"{rich_away_raw}" -> {rich_canonical_away}' if rich_canonical_away else f'"{rich_away_raw}" -> (unmapped)'
+
+    canonical_kv_rows: list[tuple[str, Any]] = [
+        ("League", canonical.get("canonical_league")),
+        ("Home", home_trace),
+        ("Away", away_trace),
+        ("Slug hint", canonical.get("event_slug_prefix")),
+    ]
+
+    # Kickoff UTC
+    rich_kickoff_ts = provider_game.get("kickoff_ts_utc")
+    if rich_kickoff_ts:
+        rich_kickoff_iv = _int_or_none(rich_kickoff_ts)
+        if rich_kickoff_iv is not None:
+            rich_kickoff_str = datetime.fromtimestamp(rich_kickoff_iv, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            canonical_kv_rows.append(("Kickoff UTC", rich_kickoff_str))
+
+    # Kickoff delta
+    rich_delta_sec = event_resolution.get("kickoff_delta_sec") if event_resolution else None
+    if rich_delta_sec is not None:
+        rich_delta_iv = _int_or_none(rich_delta_sec)
+        if rich_delta_iv is not None:
+            canonical_kv_rows.append(("Kickoff delta", f"{rich_delta_iv // 60} min"))
+
     canonical_section = Panel(
-        _kv_table(
-            [
-                ("League", canonical.get("canonical_league")),
-                ("Home", canonical.get("canonical_home_team")),
-                ("Away", canonical.get("canonical_away_team")),
-                ("Team set", "{" + ", ".join(sorted([str(canonical.get("canonical_home_team") or ""), str(canonical.get("canonical_away_team") or "")])) + "}"),
-                ("Slug hint", canonical.get("event_slug_prefix")),
-            ]
-        ),
+        _kv_table(canonical_kv_rows),
         title="Canonicalization",
         border_style="cyan",
     )
-    event_section = Panel(
-        _kv_table(
-            [
-                ("Reason code", event_resolution.get("reason_code")),
-                ("Selected event", event_resolution.get("selected_event_id")),
-                (
-                    "Selected events",
-                    ",".join(
-                        [
-                            str(ev.get("event_id") or "")
-                            for ev in (
-                                event_resolution.get("selected_events")
-                                if isinstance(event_resolution.get("selected_events"), list)
-                                else []
-                            )
-                            if str(ev.get("event_id") or "")
-                        ]
-                    ),
-                ),
-                ("Selected slug", event_resolution.get("selected_event_slug")),
-                ("Title", event_resolution.get("selected_event_title")),
-                ("Kickoff UTC", _fmt_ts_utc(event_resolution.get("selected_event_kickoff_ts_utc"))),
-                ("Kickoff delta (sec)", event_resolution.get("kickoff_delta_sec")),
-                ("Kickoff tolerance (min)", event_resolution.get("kickoff_tolerance_minutes")),
-                ("Score tuple", event_resolution.get("score_tuple") or []),
-                ("Slug fallback used", event_resolution.get("used_slug_fallback")),
-            ]
+    # Event Resolution panel with unresolved warning
+    rich_resolution_state = str(event_resolution.get("resolution_state") or "")
+    rich_reason_code = str(event_resolution.get("reason_code") or "")
+    _rich_resolved_states = {"MATCHED_CLEAN", "MATCHED_WITH_WARNINGS"}
+
+    event_kv_rows: list[tuple[str, Any]] = []
+    if rich_resolution_state and rich_resolution_state.upper() not in _rich_resolved_states:
+        # Prominent unresolved state
+        unresolved_detail = ""
+        if "team_alias_unmapped" in rich_reason_code:
+            if not rich_canonical_home:
+                unresolved_detail = f'"{rich_home_raw}" has no alias for {rich_provider_name} in league {canonical.get("canonical_league") or "?"}'
+            elif not rich_canonical_away:
+                unresolved_detail = f'"{rich_away_raw}" has no alias for {rich_provider_name} in league {canonical.get("canonical_league") or "?"}'
+        event_kv_rows.append(("State", f"UNRESOLVED: {rich_reason_code}"))
+        if unresolved_detail:
+            event_kv_rows.append(("Detail", unresolved_detail))
+    else:
+        event_kv_rows.append(("Reason code", rich_reason_code))
+
+    event_kv_rows.extend([
+        ("Selected event", event_resolution.get("selected_event_id")),
+        (
+            "Selected events",
+            ",".join(
+                [
+                    str(ev.get("event_id") or "")
+                    for ev in (
+                        event_resolution.get("selected_events")
+                        if isinstance(event_resolution.get("selected_events"), list)
+                        else []
+                    )
+                    if str(ev.get("event_id") or "")
+                ]
+            ),
         ),
+        ("Selected slug", event_resolution.get("selected_event_slug")),
+        ("Title", event_resolution.get("selected_event_title")),
+        ("Kickoff UTC", _fmt_ts_utc(event_resolution.get("selected_event_kickoff_ts_utc"))),
+        ("Score tuple", event_resolution.get("score_tuple") or []),
+        ("Slug fallback used", event_resolution.get("used_slug_fallback")),
+    ])
+
+    event_border = "red" if (rich_resolution_state and rich_resolution_state.upper() not in _rich_resolved_states) else "cyan"
+    event_section = Panel(
+        _kv_table(event_kv_rows),
         title="Event Resolution",
-        border_style="cyan",
+        border_style=event_border,
     )
     market_summary_section = Panel(
         _kv_table(
@@ -648,38 +709,96 @@ def _build_card_document_lines(
     mode = str(view_mode or "card").strip().lower()
 
     lines: list[str] = []
+
+    # Provider Game section
+    provider_name = str(provider_game.get("provider") or payload.get("provider") or "")
+    id_label = _PROVIDER_ID_LABEL.get(provider_name, "id")
+    game_id = str(provider_game.get("provider_game_id") or "")
+    tz_label = _PROVIDER_TIMEZONE.get(provider_name, "UTC")
+    when_raw = str(provider_game.get("when_raw") or "")
+
     lines.append("Provider Game")
-    lines.append(
-        "  id={gid}  date_et={date}  kickoff_utc={kickoff}".format(
-            gid=str(provider_game.get("provider_game_id") or ""),
-            date=str(provider_game.get("game_date_et") or ""),
-            kickoff=_fmt_ts_utc(provider_game.get("kickoff_ts_utc")),
-        )
-    )
-    lines.append(
-        "  raw={away} @ {home}  parse={parse}".format(
-            away=str(provider_game.get("away_raw") or ""),
-            home=str(provider_game.get("home_raw") or ""),
-            parse=str(provider_game.get("parse_status") or ""),
-        )
-    )
+    lines.append(f"  provider={provider_name}")
+
+    # Provider-specific ID display
+    if provider_name == "boltodds":
+        lines.append(f"  {id_label}={game_id}")
+        lines.append(f"  game_label={str(provider_game.get('game_label') or '')}")
+    elif provider_name == "kalstrop_v2":
+        lines.append(f"  {id_label}={game_id} (streaming resolution pending)")
+    else:
+        lines.append(f"  {id_label}={game_id}")
+
+    lines.append(f"  sport_raw={str(provider_game.get('sport_raw') or '')}")
+    lines.append(f"  league_raw={str(provider_game.get('league_raw') or '')}")
+    lines.append(f"  when={when_raw} ({tz_label})" if when_raw else "  when=")
+    lines.append(f"  home_raw={str(provider_game.get('home_raw') or '')}")
+    lines.append(f"  away_raw={str(provider_game.get('away_raw') or '')}")
+    lines.append(f"  parse={str(provider_game.get('parse_status') or '')}")
     lines.append("")
+
+    # Canonicalization section
+    home_raw = str(provider_game.get("home_raw") or "")
+    away_raw = str(provider_game.get("away_raw") or "")
+    canonical_home = str(canonical.get("canonical_home_team") or "")
+    canonical_away = str(canonical.get("canonical_away_team") or "")
+
     lines.append("Canonicalization")
-    lines.append(
-        "  league={league}  home={home}  away={away}".format(
-            league=str(canonical.get("canonical_league") or ""),
-            home=str(canonical.get("canonical_home_team") or ""),
-            away=str(canonical.get("canonical_away_team") or ""),
-        )
-    )
+    lines.append(f"  league={str(canonical.get('canonical_league') or '')}")
+    if canonical_home:
+        lines.append(f'  home="{home_raw}" → {canonical_home}')
+    else:
+        lines.append(f'  home="{home_raw}" → (unmapped)')
+    if canonical_away:
+        lines.append(f'  away="{away_raw}" → {canonical_away}')
+    else:
+        lines.append(f'  away="{away_raw}" → (unmapped)')
     lines.append(f"  slug_hint={str(canonical.get('event_slug_prefix') or '')}")
+
+    # Kickoff UTC (moved from provider game)
+    kickoff_ts = provider_game.get("kickoff_ts_utc")
+    if kickoff_ts:
+        kickoff_iv = _int_or_none(kickoff_ts)
+        if kickoff_iv is not None:
+            kickoff_str = datetime.fromtimestamp(kickoff_iv, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            lines.append(f"  kickoff_utc={kickoff_str}")
+
+    # Kickoff delta
+    delta_sec = event_resolution.get("kickoff_delta_sec") if event_resolution else None
+    if delta_sec is not None:
+        delta_iv = _int_or_none(delta_sec)
+        if delta_iv is not None:
+            delta_min = delta_iv // 60
+            lines.append(f"  kickoff_delta={delta_min} min")
+
     lines.append("")
     lines.append("Event Resolution")
+    resolution_state = str(event_resolution.get("resolution_state") or "")
+    reason_code = str(event_resolution.get("reason_code") or "")
+    _resolved_states = {"MATCHED_CLEAN", "MATCHED_WITH_WARNINGS"}
+
+    # Prominent unresolved warning
+    if resolution_state and resolution_state.upper() not in _resolved_states:
+        detail = ""
+        if "team_alias_unmapped" in reason_code:
+            if not canonical_home:
+                detail = f'"{home_raw}" has no alias for {provider_name} in league {canonical.get("canonical_league") or "?"}'
+            elif not canonical_away:
+                detail = f'"{away_raw}" has no alias for {provider_name} in league {canonical.get("canonical_league") or "?"}'
+        lines.append(f"  state=UNRESOLVED: {reason_code}")
+        if detail:
+            lines.append(f"    {detail}")
+    else:
+        lines.append(
+            "  game_state={game_state}  state={state}  reason={reason}".format(
+                game_state=game_state,
+                state=resolution_state,
+                reason=reason_code,
+            )
+        )
+
     lines.append(
-        "  game_state={game_state}  state={state}  reason={reason}  selected_events={n}  tradeable_targets={tt}/{t}  markets={sm}/{tm}".format(
-            game_state=game_state,
-            state=str(event_resolution.get("resolution_state") or ""),
-            reason=str(event_resolution.get("reason_code") or ""),
+        "  selected_events={n}  tradeable_targets={tt}/{t}  markets={sm}/{tm}".format(
             n=len(selected_events),
             tt=int(markets.get("n_tradeable_targets") or 0),
             t=int(markets.get("n_targets") or 0),
@@ -688,10 +807,9 @@ def _build_card_document_lines(
         )
     )
     lines.append(
-        "  primary_event={eid}  score={score}  kickoff_delta_sec={delta}".format(
+        "  primary_event={eid}  score={score}".format(
             eid=str(event_resolution.get("selected_event_id") or ""),
             score=_fmt_value(event_resolution.get("score_tuple") or []),
-            delta=_fmt_value(event_resolution.get("kickoff_delta_sec")),
         )
     )
     lines.append("")
@@ -1324,7 +1442,6 @@ __all__ = [
     "_derive_game_state",
     "_kv_value_style",
     "_styled_card_line",
-    "_render_game_card_text",
     "_interactive_session_available",
     "_run_session_line_input_fallback",
     "_run_session_interactive",

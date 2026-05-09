@@ -1,6 +1,6 @@
 """polybot2 package: Polymarket/provider linking + execution/hotpath."""
 
-from polybot2.data import DataRuntimeConfig, DataSyncConfigs, Database, MarketSync, open_database
+from polybot2.data import DataRuntimeConfig, Database, MarketSync, open_database
 from polybot2.execution import (
     CancelRequest,
     FastExecutionConfig,
@@ -23,11 +23,9 @@ from polybot2.providers import ProviderSyncResult, sync_provider_games
 from polybot2.sports import (
     BoltOddsProvider,
     BoltOddsProviderConfig,
-    KalstropProvider,
-    KalstropProviderConfig,
+    KalstropV1Provider,
+    KalstropV1ProviderConfig,
     ProviderGameRecord,
-    ScoreUpdateEvent,
-    OddsUpdateEvent,
     SportsDataProviderBase,
     build_sports_provider,
 )
@@ -35,11 +33,10 @@ from polybot2.sports import (
 __all__ = [
     "BoltOddsProvider",
     "BoltOddsProviderConfig",
-    "KalstropProvider",
-    "KalstropProviderConfig",
+    "KalstropV1Provider",
+    "KalstropV1ProviderConfig",
     "CancelRequest",
     "DataRuntimeConfig",
-    "DataSyncConfigs",
     "Database",
     "FastExecutionConfig",
     "FastExecutionService",
@@ -48,13 +45,11 @@ __all__ = [
     "LinkReviewService",
     "MarketSync",
     "MatchDeltaEvent",
-    "OddsUpdateEvent",
     "OrderIntent",
     "OrderRequest",
     "ProviderGameRecord",
     "ProviderSyncResult",
     "ReplaceRequest",
-    "ScoreUpdateEvent",
     "SportsDataProviderBase",
     "build_sports_provider",
     "BindingResolver",
