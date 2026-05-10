@@ -1,9 +1,0 @@
-{"ts":1778360616724,"ev":"startup","run_id":1,"games":14,"tokens":160,"mode":"noop"}
-{"ts":1778360616949,"ev":"ws_connect","subs":["4b38aada-b1c3-491b-a4d1-3d8a7563f1cf","90031ddf-614d-4f5b-b9f7-bc172802dccb","ad770a2b-26ca-4e63-b96b-16287d669828","cde025b1-2643-475d-860e-2d448538c55b"]}
-{"ts":1778360618316,"ev":"tick","gid":"90031ddf-614d-4f5b-b9f7-bc172802dccb","h":0,"a":4,"inn":3,"half":"bottom","gs":"LIVE"}
-{"ts":1778360622390,"ev":"tick","gid":"ad770a2b-26ca-4e63-b96b-16287d669828","h":0,"a":4,"inn":3,"half":"bottom","gs":"LIVE"}
-{"ts":1778360624968,"ev":"tick","gid":"4b38aada-b1c3-491b-a4d1-3d8a7563f1cf","h":0,"a":0,"inn":4,"half":"bottom","gs":"LIVE"}
-{"ts":1778360628423,"ev":"tick","gid":"cde025b1-2643-475d-860e-2d448538c55b","h":8,"a":0,"inn":6,"half":"bottom","gs":"LIVE"}
-{"ts":1778360834571,"ev":"tick","gid":"4b38aada-b1c3-491b-a4d1-3d8a7563f1cf","h":0,"a":0,"inn":5,"half":"break","gs":"LIVE"}
-{"ts":1778360904363,"ev":"tick","gid":"90031ddf-614d-4f5b-b9f7-bc172802dccb","h":0,"a":4,"inn":4,"half":"break","gs":"LIVE"}
-{"ts":1778360909579,"ev":"tick","gid":"ad770a2b-26ca-4e63-b96b-16287d669828","h":0,"a":4,"inn":4,"half":"break","gs":"LIVE"}
