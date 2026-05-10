@@ -9,7 +9,9 @@ pub(crate) struct LogWriter {
 
 fn write_opt_i64(buf: &mut String, v: Option<i64>) {
     match v {
-        Some(n) => { let _ = write!(buf, "{}", n); }
+        Some(n) => {
+            let _ = write!(buf, "{}", n);
+        }
         None => buf.push_str("null"),
     }
 }
@@ -114,7 +116,9 @@ impl LogWriter {
         let _ = write!(
             self.buf,
             r#"{{"ts":{},"ev":"patch","new_tokens":{},"new_targets":{}}}"#,
-            now_unix_ms(), new_tokens, new_targets
+            now_unix_ms(),
+            new_tokens,
+            new_targets
         );
         self.flush_buf();
     }
@@ -124,7 +128,10 @@ impl LogWriter {
         let _ = write!(
             self.buf,
             r#"{{"ts":{},"ev":"startup","run_id":{},"games":{},"tokens":{},"mode":""#,
-            now_unix_ms(), run_id, games, tokens
+            now_unix_ms(),
+            run_id,
+            games,
+            tokens
         );
         write_json_escape(&mut self.buf, mode);
         self.buf.push_str(r#""}"#);
@@ -133,7 +140,11 @@ impl LogWriter {
 
     pub fn log_ws_connect(&mut self, subs: &[String]) {
         self.buf.clear();
-        let _ = write!(self.buf, r#"{{"ts":{},"ev":"ws_connect","subs":["#, now_unix_ms());
+        let _ = write!(
+            self.buf,
+            r#"{{"ts":{},"ev":"ws_connect","subs":["#,
+            now_unix_ms()
+        );
         for (i, s) in subs.iter().enumerate() {
             if i > 0 {
                 self.buf.push(',');

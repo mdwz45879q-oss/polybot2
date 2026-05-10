@@ -109,11 +109,9 @@ pub(crate) async fn run_boltodds_worker_async(
                 // Expect the first frame to contain "socket_connected"
                 text.contains("socket_connected")
             }
-            Ok(Some(Ok(Message::Binary(bytes)))) => {
-                std::str::from_utf8(bytes.as_ref())
-                    .map(|s| s.contains("socket_connected"))
-                    .unwrap_or(false)
-            }
+            Ok(Some(Ok(Message::Binary(bytes)))) => std::str::from_utf8(bytes.as_ref())
+                .map(|s| s.contains("socket_connected"))
+                .unwrap_or(false),
             _ => false,
         };
         if !handshake_ok {
@@ -265,7 +263,15 @@ pub(crate) async fn run_boltodds_worker_async(
                                 .get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str())
                                 .unwrap_or("_");
-                            g.log_tick(gid, tl.state.home, tl.state.away, None, tl.half, tl.game_state, tl.state.total_corners);
+                            g.log_tick(
+                                gid,
+                                tl.state.home,
+                                tl.state.away,
+                                None,
+                                tl.half,
+                                tl.game_state,
+                                tl.state.total_corners,
+                            );
                         }
                     }
                 }
@@ -279,7 +285,11 @@ pub(crate) async fn run_boltodds_worker_async(
         }
 
         // Disconnected — log and reconnect
-        let reconnects = if let Ok(h) = health.lock() { h.reconnects } else { 0 };
+        let reconnects = if let Ok(h) = health.lock() {
+            h.reconnects
+        } else {
+            0
+        };
         if let Ok(mut g) = log.lock() {
             g.log_ws_disconnect(&reconn_reason, reconnects);
         }

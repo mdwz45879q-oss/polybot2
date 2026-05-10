@@ -2,8 +2,10 @@
 //! TargetRegistry, OverLine, SpreadSide, Intent, RawIntent,
 //! etc.) live in the crate root (lib.rs).
 
-use crate::{GameIdx, TargetIdx, TokenIdx, TokenSlot, TargetSlot, TargetRegistry,
-            OverLine, SpreadSide, Intent, InlineStr};
+use crate::{
+    GameIdx, InlineStr, Intent, OverLine, SpreadSide, TargetIdx, TargetRegistry, TargetSlot,
+    TokenIdx, TokenSlot,
+};
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::sync::Arc;

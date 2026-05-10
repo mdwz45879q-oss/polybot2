@@ -281,8 +281,7 @@ pub(crate) async fn run_live_worker_async(
                 h.last_error.clear();
             });
             let (stop, changed) =
-                sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs)
-                    .await;
+                sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs).await;
             if stop {
                 with_health(&health, |h| h.running = false);
                 return;
@@ -299,12 +298,9 @@ pub(crate) async fn run_live_worker_async(
                 with_health(&health, |h| {
                     h.last_error = "missing_kalstrop_ws_credentials".to_string();
                 });
-                let (stop, changed) = sleep_with_command_poll(
-                    reconnect_sleep_s,
-                    &command_rx,
-                    &mut candidate_subs,
-                )
-                .await;
+                let (stop, changed) =
+                    sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs)
+                        .await;
                 if stop {
                     with_health(&health, |h| h.running = false);
                     return;
@@ -323,12 +319,9 @@ pub(crate) async fn run_live_worker_async(
                     h.reconnects += 1;
                     h.last_error = format!("ws_connect: {}", e);
                 });
-                let (stop, changed) = sleep_with_command_poll(
-                    reconnect_sleep_s,
-                    &command_rx,
-                    &mut candidate_subs,
-                )
-                .await;
+                let (stop, changed) =
+                    sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs)
+                        .await;
                 if stop {
                     with_health(&health, |h| h.running = false);
                     return;
@@ -345,8 +338,7 @@ pub(crate) async fn run_live_worker_async(
                 h.last_error = format!("ws_subscribe: {}", e);
             });
             let (stop, changed) =
-                sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs)
-                    .await;
+                sleep_with_command_poll(reconnect_sleep_s, &command_rx, &mut candidate_subs).await;
             if stop {
                 with_health(&health, |h| h.running = false);
                 return;
@@ -476,12 +468,20 @@ pub(crate) async fn run_live_worker_async(
                 match engine {
                     SportEngine::Baseball(e) => {
                         crate::baseball::frame_pipeline::process_decoded_frame_sync(
-                            e, frame_text, source_recv_ns, &mut dispatch_handle, &log,
+                            e,
+                            frame_text,
+                            source_recv_ns,
+                            &mut dispatch_handle,
+                            &log,
                         );
                     }
                     SportEngine::Soccer(e) => {
                         crate::soccer::frame_pipeline::process_decoded_frame_sync(
-                            e, frame_text, source_recv_ns, &mut dispatch_handle, &log,
+                            e,
+                            frame_text,
+                            source_recv_ns,
+                            &mut dispatch_handle,
+                            &log,
                         );
                     }
                 }
@@ -490,7 +490,11 @@ pub(crate) async fn run_live_worker_async(
                 g.flush();
             }
         }
-        let reconnects = if let Ok(h) = health.lock() { h.reconnects } else { 0 };
+        let reconnects = if let Ok(h) = health.lock() {
+            h.reconnects
+        } else {
+            0
+        };
         if let Ok(mut g) = log.lock() {
             g.log_ws_disconnect(&reconn_reason, reconnects);
         }

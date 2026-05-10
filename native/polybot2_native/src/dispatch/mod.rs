@@ -10,21 +10,31 @@ use polymarket_client_sdk_v2::clob::types::{
     SignatureType as SdkSignatureType, SignedOrder as SdkSignedOrder,
 };
 use polymarket_client_sdk_v2::clob::{Client as SdkClient, Config as SdkConfig};
-use polymarket_client_sdk_v2::types::{Address as SdkAddress, Decimal as SdkDecimal, U256 as SdkU256};
+use polymarket_client_sdk_v2::types::{
+    Address as SdkAddress, Decimal as SdkDecimal, U256 as SdkU256,
+};
 use std::str::FromStr;
 
+mod fast_submit_client;
 mod flow;
 mod presign_pool;
 pub(crate) mod sdk_exec;
 mod submitter;
 mod types;
 
+pub(crate) use fast_submit_client::{build_orders_body_from_slices, FastClobSubmitClient};
+#[cfg(any(test, feature = "bench-support"))]
+#[allow(unused_imports)]
+pub(crate) use presign_pool::prepare_payload_from_signed;
 pub(crate) use presign_pool::warm_presign_startup_into;
 pub(crate) use submitter::run_submitter_async;
-pub(crate) use types::{DispatchHandle, OrderSubmitter, PresignTemplateData, SubmitBatch, SubmitWork};
 pub(crate) use types::OrderRequestData;
-pub(crate) use types::SharedRegistry;
 pub(super) use types::PolymarketSdkRuntime;
+pub(crate) use types::SharedRegistry;
+pub(crate) use types::{
+    DispatchHandle, OrderSubmitter, PreparedOrderPayload, PresignTemplateData, SubmitBatch,
+    SubmitWork,
+};
 
 #[cfg(any(test, feature = "bench-support"))]
 pub(crate) async fn simulate_chunk_parallelism_for_test(
@@ -33,7 +43,8 @@ pub(crate) async fn simulate_chunk_parallelism_for_test(
     permit_count: usize,
     delay: std::time::Duration,
 ) -> (std::time::Duration, usize) {
-    submitter::simulate_chunk_parallelism_for_test(total_orders, max_batch, permit_count, delay).await
+    submitter::simulate_chunk_parallelism_for_test(total_orders, max_batch, permit_count, delay)
+        .await
 }
 
 #[cfg(any(test, feature = "bench-support"))]
@@ -137,7 +148,11 @@ pub(super) fn normalize_side(side: &str) -> String {
 
 pub(super) fn parse_time_in_force(tif: &str) -> Result<OrderTimeInForce, String> {
     let raw = tif.trim().to_uppercase();
-    let raw = if raw.is_empty() { "FAK".to_string() } else { raw };
+    let raw = if raw.is_empty() {
+        "FAK".to_string()
+    } else {
+        raw
+    };
     match raw.as_str() {
         "FAK" => Ok(OrderTimeInForce::FAK),
         "FOK" => Ok(OrderTimeInForce::FOK),

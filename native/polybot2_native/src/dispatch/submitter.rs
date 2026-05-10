@@ -1,16 +1,11 @@
-use super::*;
 use super::sdk_exec::map_post_response;
+use super::*;
 use crate::log_writer::LogWriter;
 use futures_util::future::join_all;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 const MAX_CONCURRENT_SUBMITS: usize = 3;
 const MAX_CLOB_BATCH: usize = 15;
-
-fn duration_ns_u64(d: std::time::Duration) -> u64 {
-    d.as_nanos().min(u64::MAX as u128) as u64
-}
 
 fn with_submitter_health<F>(health: &Arc<Mutex<crate::SubmitterHealth>>, mut f: F)
 where
@@ -32,21 +27,6 @@ fn set_init_error(health: &Arc<Mutex<crate::SubmitterHealth>>, err: &str) {
     });
 }
 
-fn record_outcome(
-    health: &Arc<Mutex<crate::SubmitterHealth>>,
-    outcome: &Result<String, String>,
-) {
-    with_submitter_health(health, |h| {
-        match outcome {
-            Ok(_) => h.posted_ok += 1,
-            Err(e) => {
-                h.posted_err += 1;
-                h.last_error = e.clone();
-            }
-        }
-    });
-}
-
 /// Submitter loop: receives frame batches from the WS thread and processes
 /// them inline (strict serialized queue). Global HTTP backpressure is still
 /// enforced with a semaphore, and oversized batches still parallelize chunk
@@ -54,6 +34,7 @@ fn record_outcome(
 pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
     set_running(&sub.health, true);
 
+    let mut fast_client: Option<Arc<FastClobSubmitClient>> = None;
     if matches!(sub.cfg.mode, DispatchMode::Http) {
         if let Err(err) = sub.ensure_sdk_runtime_async().await {
             set_init_error(&sub.health, &err);
@@ -63,41 +44,56 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             drain_channel_with_error(&mut sub, &err).await;
             return;
         }
+        let signer_address = match sub.signer_ref() {
+            Ok(signer) => signer.address().to_checksum(None),
+            Err(err) => {
+                set_init_error(&sub.health, &err);
+                if let Ok(mut g) = sub.log.lock() {
+                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err));
+                }
+                drain_channel_with_error(&mut sub, &err).await;
+                return;
+            }
+        };
+        match FastClobSubmitClient::new(&sub.cfg, signer_address) {
+            Ok(client) => fast_client = Some(Arc::new(client)),
+            Err(err) => {
+                set_init_error(&sub.health, &err);
+                if let Ok(mut g) = sub.log.lock() {
+                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err));
+                }
+                drain_channel_with_error(&mut sub, &err).await;
+                return;
+            }
+        }
     }
 
-    let sdk_client = sub.sdk_runtime.take().map(|r| r.client);
+    let submit_client = fast_client;
     let log = sub.log;
     let health = sub.health.clone();
     let mut submit_rx = sub.submit_rx;
     let shared_registry = sub.shared_registry;
-    let submit_notify = sub.submit_notify;
     let stop_flag = sub.stop_flag;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SUBMITS));
 
     'outer: loop {
-        submit_notify.notified().await;
+        let mut had_work = false;
         while let Ok(work) = submit_rx.pop() {
+            had_work = true;
             match work {
                 SubmitWork::Stop => break 'outer,
                 SubmitWork::Batch(batch) => {
-                    let popped_at = Instant::now();
-                    let client = sdk_client.clone();
+                    let client = submit_client.clone();
                     let reg = shared_registry.load_full();
-                    submit_batch_task(
-                        batch,
-                        client,
-                        reg,
-                        &log,
-                        &health,
-                        Arc::clone(&semaphore),
-                        popped_at,
-                    )
-                    .await;
+                    submit_batch_task(batch, client, reg, &log, Arc::clone(&semaphore)).await;
                 }
             }
         }
         if stop_flag.load(std::sync::atomic::Ordering::Acquire) {
             break;
+        }
+        if !had_work {
+            std::hint::spin_loop();
         }
     }
     set_running(&health, false);
@@ -105,8 +101,9 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
 
 async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
     loop {
-        sub.submit_notify.notified().await;
+        let mut had_work = false;
         while let Ok(work) = sub.submit_rx.pop() {
+            had_work = true;
             match work {
                 SubmitWork::Stop => return,
                 SubmitWork::Batch(b) => {
@@ -120,76 +117,45 @@ async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
         if sub.stop_flag.load(std::sync::atomic::Ordering::Acquire) {
             return;
         }
+        if !had_work {
+            std::hint::spin_loop();
+        }
     }
 }
 
 async fn submit_batch_task(
     batch: SubmitBatch,
-    client: Option<SdkClient<SdkAuthenticatedState<SdkAuthNormal>>>,
+    client: Option<Arc<FastClobSubmitClient>>,
     registry: Arc<crate::TargetRegistry>,
     log: &Arc<Mutex<LogWriter>>,
-    health: &Arc<Mutex<crate::SubmitterHealth>>,
     semaphore: Arc<tokio::sync::Semaphore>,
-    popped_at: Instant,
 ) {
     let batch_len = batch.len();
     if batch_len == 0 {
         return;
     }
-    let task_start = Instant::now();
-    with_submitter_health(health, |h| {
-        h.record_pop_to_task_start_ns(
-            batch_len,
-            duration_ns_u64(task_start.saturating_duration_since(popped_at)),
-        )
-    });
 
-    let Some(ref client_ref) = client else {
+    let Some(client_ref) = client else {
         return;
     };
 
-    let batch_start = Instant::now();
-    let prep_start = Instant::now();
-
     if batch_len == 1 {
-        let (target_idx, signed) = batch.into_iter().next().expect("len==1");
-        with_submitter_health(health, |h| {
-            h.record_task_prep_ns(batch_len, duration_ns_u64(prep_start.elapsed()))
-        });
+        let (target_idx, prepared) = batch.into_iter().next().expect("len==1");
 
-        let permit_wait_start = Instant::now();
         let permit = match Arc::clone(&semaphore).acquire_owned().await {
             Ok(p) => p,
-            Err(_) => {
-                with_submitter_health(health, |h| {
-                    h.record_permit_wait_ns(batch_len, duration_ns_u64(permit_wait_start.elapsed()));
-                    h.record_batch_total_ns(batch_len, duration_ns_u64(batch_start.elapsed()));
-                });
-                return;
-            }
+            Err(_) => return,
         };
-        with_submitter_health(health, |h| {
-            h.record_permit_wait_ns(batch_len, duration_ns_u64(permit_wait_start.elapsed()))
-        });
 
-        let sdk_start = Instant::now();
-        let outcome = match client_ref.post_order(*signed).await {
+        let payload = *prepared;
+        let outcome = match client_ref.post_order_bytes_single(payload.order_json).await {
             Ok(resp) => {
                 map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
             }
             Err(e) => Err(format!("submit_failed:{}", e)),
         };
-        let sdk_call_total_ns = duration_ns_u64(sdk_start.elapsed());
         drop(permit);
-        with_submitter_health(health, |h| {
-            h.record_sdk_call_total_ns(batch_len, sdk_call_total_ns);
-            h.record_chunk_sdk_call_total_ns(1, sdk_call_total_ns);
-        });
-        record_outcome(health, &outcome);
         log_outcome_idx(log, &registry, target_idx, &outcome);
-        with_submitter_health(health, |h| {
-            h.record_batch_total_ns(batch_len, duration_ns_u64(batch_start.elapsed()))
-        });
         return;
     }
 
@@ -197,29 +163,20 @@ async fn submit_batch_task(
         // 2..=15 path: one post_orders call (no chunk fan-out).
         let target_idxs: smallvec::SmallVec<[crate::TargetIdx; 4]> =
             batch.iter().map(|(idx, _)| *idx).collect();
-        let chunk_orders: Vec<SdkSignedOrder> = batch.into_iter().map(|(_, s)| *s).collect();
-        with_submitter_health(health, |h| {
-            h.record_task_prep_ns(batch_len, duration_ns_u64(prep_start.elapsed()))
-        });
+        let mut order_jsons: Vec<Vec<u8>> = Vec::with_capacity(batch_len);
+        for (_, prepared) in batch {
+            order_jsons.push(prepared.order_json);
+        }
+        let slices: Vec<&[u8]> = order_jsons.iter().map(|b| b.as_slice()).collect();
+        let chunk_body = build_orders_body_from_slices(slices.as_slice());
 
-        let permit_wait_start = Instant::now();
         let permit = match Arc::clone(&semaphore).acquire_owned().await {
             Ok(p) => p,
-            Err(_) => {
-                with_submitter_health(health, |h| {
-                    h.record_permit_wait_ns(batch_len, duration_ns_u64(permit_wait_start.elapsed()));
-                    h.record_batch_total_ns(batch_len, duration_ns_u64(batch_start.elapsed()));
-                });
-                return;
-            }
+            Err(_) => return,
         };
-        with_submitter_health(health, |h| {
-            h.record_permit_wait_ns(batch_len, duration_ns_u64(permit_wait_start.elapsed()))
-        });
 
-        let sdk_start = Instant::now();
         let outcomes: Vec<(crate::TargetIdx, Result<String, String>)> =
-            match client_ref.post_orders(chunk_orders).await {
+            match client_ref.post_orders_bytes(chunk_body).await {
                 Ok(responses) => {
                     let resp_len = responses.len();
                     let mut out = Vec::with_capacity(target_idxs.len());
@@ -254,60 +211,47 @@ async fn submit_batch_task(
                         .collect()
                 }
             };
-        let sdk_call_total_ns = duration_ns_u64(sdk_start.elapsed());
         drop(permit);
-        with_submitter_health(health, |h| {
-            h.record_sdk_call_total_ns(batch_len, sdk_call_total_ns);
-            h.record_chunk_sdk_call_total_ns(batch_len, sdk_call_total_ns);
-        });
         for (target_idx, outcome) in outcomes {
-            record_outcome(health, &outcome);
             log_outcome_idx(log, &registry, target_idx, &outcome);
         }
-        with_submitter_health(health, |h| {
-            h.record_batch_total_ns(batch_len, duration_ns_u64(batch_start.elapsed()))
-        });
         return;
     }
 
     // Large multi-order: post_orders with chunking at CLOB limit, posted concurrently.
     let target_idxs: smallvec::SmallVec<[crate::TargetIdx; 4]> =
         batch.iter().map(|(idx, _)| *idx).collect();
-    let mut signed: Vec<SdkSignedOrder> = batch.into_iter().map(|(_, s)| *s).collect();
-    let mut chunk_jobs: Vec<(Vec<crate::TargetIdx>, Vec<SdkSignedOrder>)> = Vec::new();
+    let mut prepared_orders: Vec<Vec<u8>> = batch
+        .into_iter()
+        .map(|(_, prepared)| prepared.order_json)
+        .collect();
+    let mut chunk_jobs: Vec<(Vec<crate::TargetIdx>, Vec<u8>)> = Vec::new();
 
     let mut offset = 0usize;
-    while !signed.is_empty() {
-        let chunk_len = signed.len().min(MAX_CLOB_BATCH);
-        let chunk_orders: Vec<SdkSignedOrder> = signed.drain(..chunk_len).collect();
+    while !prepared_orders.is_empty() {
+        let chunk_len = prepared_orders.len().min(MAX_CLOB_BATCH);
+        let chunk_orders: Vec<Vec<u8>> = prepared_orders.drain(..chunk_len).collect();
+        let chunk_slices: Vec<&[u8]> = chunk_orders.iter().map(|b| b.as_slice()).collect();
+        let chunk_body = build_orders_body_from_slices(chunk_slices.as_slice());
         let chunk_idxs = target_idxs[offset..offset + chunk_len].to_vec();
-        chunk_jobs.push((chunk_idxs, chunk_orders));
+        chunk_jobs.push((chunk_idxs, chunk_body));
         offset += chunk_len;
     }
-    with_submitter_health(health, |h| {
-        h.record_task_prep_ns(batch_len, duration_ns_u64(prep_start.elapsed()))
-    });
 
-    let client_owned = client_ref.clone();
-    let futures = chunk_jobs.into_iter().map(|(chunk_idxs, chunk_orders)| {
-        let chunk_len = chunk_orders.len();
+    let futures = chunk_jobs.into_iter().map(|(chunk_idxs, chunk_body)| {
+        let chunk_len = chunk_idxs.len();
         let sem = Arc::clone(&semaphore);
-        let client = client_owned.clone();
+        let client = Arc::clone(&client_ref);
         async move {
-            let permit_wait_start = Instant::now();
             let permit = sem.acquire_owned().await;
-            let permit_wait_ns = duration_ns_u64(permit_wait_start.elapsed());
 
             let mut outcomes: Vec<(crate::TargetIdx, Result<String, String>)> =
                 Vec::with_capacity(chunk_len);
-            let mut sdk_call_total_ns = 0u64;
 
             match permit {
                 Ok(permit) => {
-                    let sdk_start = Instant::now();
-                    match client.post_orders(chunk_orders).await {
+                    match client.post_orders_bytes(chunk_body).await {
                         Ok(responses) => {
-                            sdk_call_total_ns = duration_ns_u64(sdk_start.elapsed());
                             let resp_len = responses.len();
                             for (tidx, resp) in chunk_idxs.iter().zip(&responses) {
                                 outcomes.push((
@@ -332,7 +276,6 @@ async fn submit_batch_task(
                             }
                         }
                         Err(e) => {
-                            sdk_call_total_ns = duration_ns_u64(sdk_start.elapsed());
                             let err = format!("batch_submit_failed:{}", e);
                             for tidx in &chunk_idxs {
                                 outcomes.push((*tidx, Err(err.clone())));
@@ -349,25 +292,16 @@ async fn submit_batch_task(
                 }
             }
 
-            (chunk_len, permit_wait_ns, sdk_call_total_ns, outcomes)
+            outcomes
         }
     });
 
     let chunk_results = join_all(futures).await;
-    for (chunk_len, permit_wait_ns, sdk_call_total_ns, outcomes) in chunk_results {
-        with_submitter_health(health, |h| {
-            h.record_permit_wait_ns(batch_len, permit_wait_ns);
-            h.record_sdk_call_total_ns(batch_len, sdk_call_total_ns);
-            h.record_chunk_sdk_call_total_ns(chunk_len, sdk_call_total_ns);
-        });
+    for outcomes in chunk_results {
         for (target_idx, outcome) in outcomes {
-            record_outcome(health, &outcome);
             log_outcome_idx(log, &registry, target_idx, &outcome);
         }
     }
-    with_submitter_health(health, |h| {
-        h.record_batch_total_ns(batch_len, duration_ns_u64(batch_start.elapsed()))
-    });
 }
 
 #[cfg(any(test, feature = "bench-support"))]
@@ -400,12 +334,7 @@ pub(crate) async fn simulate_chunk_parallelism_for_test(
             let current = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             let mut prev = max_seen.load(Ordering::SeqCst);
             while current > prev {
-                match max_seen.compare_exchange(
-                    prev,
-                    current,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                ) {
+                match max_seen.compare_exchange(prev, current, Ordering::SeqCst, Ordering::SeqCst) {
                     Ok(_) => break,
                     Err(v) => prev = v,
                 }
@@ -416,7 +345,10 @@ pub(crate) async fn simulate_chunk_parallelism_for_test(
         }
     });
     join_all(futures).await;
-    (start.elapsed(), max_inflight.load(std::sync::atomic::Ordering::SeqCst))
+    (
+        start.elapsed(),
+        max_inflight.load(std::sync::atomic::Ordering::SeqCst),
+    )
 }
 
 #[cfg(any(test, feature = "bench-support"))]
@@ -433,12 +365,7 @@ pub(crate) async fn simulate_submitter_serial_queue_for_test(
         let current = inflight.fetch_add(1, Ordering::SeqCst) + 1;
         let mut prev = max_inflight.load(Ordering::SeqCst);
         while current > prev {
-            match max_inflight.compare_exchange(
-                prev,
-                current,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
+            match max_inflight.compare_exchange(prev, current, Ordering::SeqCst, Ordering::SeqCst) {
                 Ok(_) => break,
                 Err(v) => prev = v,
             }

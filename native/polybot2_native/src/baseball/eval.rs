@@ -1,5 +1,5 @@
-use crate::*;
 use crate::baseball::types::*;
+use crate::*;
 
 fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 4]>) {
     if let Some(tidx) = slot {
@@ -48,7 +48,9 @@ impl NativeMlbEngine {
                         break; // sorted — no more can match
                     }
                     if ol.half_int >= prev {
-                        out.push(Intent { target_idx: ol.target_idx });
+                        out.push(Intent {
+                            target_idx: ol.target_idx,
+                        });
                     }
                 }
                 // Tie guarantee: a tied game must produce at least one more run,
@@ -58,7 +60,9 @@ impl NativeMlbEngine {
                         let tied_half_int = total_now as u16;
                         for ol in &targets.over_lines {
                             if ol.half_int == tied_half_int {
-                                out.push(Intent { target_idx: ol.target_idx });
+                                out.push(Intent {
+                                    target_idx: ol.target_idx,
+                                });
                                 break;
                             }
                         }
@@ -67,14 +71,14 @@ impl NativeMlbEngine {
             }
         }
 
-        if state.match_completed.unwrap_or(false)
-            && !self.totals_final_under_emitted[gi]
-        {
+        if state.match_completed.unwrap_or(false) && !self.totals_final_under_emitted[gi] {
             self.totals_final_under_emitted[gi] = true;
             let total = total_now as u16;
             for ol in &targets.under_lines {
                 if ol.half_int >= total {
-                    out.push(Intent { target_idx: ol.target_idx });
+                    out.push(Intent {
+                        target_idx: ol.target_idx,
+                    });
                 }
             }
         }
@@ -209,7 +213,6 @@ impl NativeMlbEngine {
 
         self.final_resolved_games[gi] = true;
     }
-
 }
 
 #[cfg(test)]
@@ -220,7 +223,12 @@ impl NativeMlbEngine {
         out.into_vec()
     }
 
-    pub(crate) fn evaluate_nrfi(&mut self, gidx: GameIdx, state: &GameState, delta: &DeltaEvent) -> Vec<Intent> {
+    pub(crate) fn evaluate_nrfi(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        delta: &DeltaEvent,
+    ) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_nrfi_into(gidx, state, delta, &mut out);
         out.into_vec()

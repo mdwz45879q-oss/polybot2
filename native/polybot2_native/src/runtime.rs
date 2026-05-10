@@ -130,20 +130,16 @@ impl NativeHotPathRuntime {
                 .as_ref()
                 .ok_or_else(|| PyValueError::new_err("engine unavailable"))?
                 .clone_registry()
-                .ok_or_else(|| {
-                    PyValueError::new_err("registry_not_built_after_load_plan")
-                })?;
-            let shared_registry: crate::dispatch::SharedRegistry = Arc::new(
-                arc_swap::ArcSwap::new(Arc::clone(&registry)),
-            );
+                .ok_or_else(|| PyValueError::new_err("registry_not_built_after_load_plan"))?;
+            let shared_registry: crate::dispatch::SharedRegistry =
+                Arc::new(arc_swap::ArcSwap::new(Arc::clone(&registry)));
 
             // Build the WS-thread half: presign pool, no submit_tx yet.
-            let mut dispatch_handle =
-                DispatchHandle::new(
-                    dispatch_cfg.clone(),
-                    Arc::clone(&registry),
-                    Arc::clone(&shared_registry),
-                );
+            let mut dispatch_handle = DispatchHandle::new(
+                dispatch_cfg.clone(),
+                Arc::clone(&registry),
+                Arc::clone(&shared_registry),
+            );
             dispatch_handle.set_presign_templates(self.presign_templates.as_slice());
             dispatch_handle.activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
 
@@ -174,7 +170,6 @@ impl NativeHotPathRuntime {
             // runtime and run presign warmup using its client/signer references.
             let (submit_producer, submit_consumer) =
                 rtrb::RingBuffer::<crate::dispatch::SubmitWork>::new(64);
-            let submit_notify = Arc::new(tokio::sync::Notify::new());
             let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let submitter_log_arc = Arc::clone(&log_arc);
             let submitter_health = Arc::new(Mutex::new(SubmitterHealth::default()));
@@ -182,69 +177,67 @@ impl NativeHotPathRuntime {
                 dispatch_cfg.clone(),
                 submitter_log_arc,
                 submit_consumer,
-                Arc::clone(&submit_notify),
                 Arc::clone(&stop_flag),
                 Arc::clone(&submitter_health),
                 Arc::clone(&shared_registry),
             );
 
-            let submitter_handle: Option<SubmitterHandle> = if matches!(
-                dispatch_cfg.mode,
-                DispatchMode::Http
-            ) {
-                if dispatch_cfg.presign_enabled && !all_plan_tokens.is_empty() {
-                    let warm_result = py.allow_threads(|| {
-                        match TokioBuilder::new_multi_thread().enable_all().build() {
-                            Ok(rt) => rt.block_on(async {
-                                submitter.ensure_sdk_runtime_async().await?;
-                                let client = submitter.sdk_client_ref()?.clone();
-                                let signer = submitter.signer_ref()?.clone();
-                                let (templates, pool) = dispatch_handle.templates_and_pool_mut();
-                                warm_presign_startup_into(
-                                    &dispatch_cfg,
-                                    &client,
-                                    &signer,
-                                    templates,
-                                    pool,
-                                )
-                                .await
-                            }),
-                            Err(e) => Err(format!("tokio_runtime_create_failed:{}", e)),
+            let submitter_handle: Option<SubmitterHandle> =
+                if matches!(dispatch_cfg.mode, DispatchMode::Http) {
+                    if dispatch_cfg.presign_enabled && !all_plan_tokens.is_empty() {
+                        let warm_result =
+                            py.allow_threads(|| {
+                                match TokioBuilder::new_multi_thread().enable_all().build() {
+                                    Ok(rt) => rt.block_on(async {
+                                        submitter.ensure_sdk_runtime_async().await?;
+                                        let client = submitter.sdk_client_ref()?.clone();
+                                        let signer = submitter.signer_ref()?.clone();
+                                        let (templates, pool) =
+                                            dispatch_handle.templates_and_pool_mut();
+                                        warm_presign_startup_into(
+                                            &dispatch_cfg,
+                                            &client,
+                                            &signer,
+                                            templates,
+                                            pool,
+                                        )
+                                        .await
+                                    }),
+                                    Err(e) => Err(format!("tokio_runtime_create_failed:{}", e)),
+                                }
+                            });
+                        if let Err(err) = warm_result {
+                            return Err(PyValueError::new_err(format!(
+                                "presign_startup_warm_failed:{}",
+                                err
+                            )));
+                        }
+                        self.cached_sdk_client = submitter.sdk_client_ref().ok().map(|c| c.clone());
+                        self.cached_signer = submitter.signer_ref().ok().map(|s| s.clone());
+                    }
+
+                    dispatch_handle.install_submit_tx(submit_producer);
+
+                    let submit_join = thread::spawn(move || {
+                        if let Ok(rt) = TokioBuilder::new_current_thread().enable_all().build() {
+                            rt.block_on(run_submitter_async(submitter));
                         }
                     });
-                    if let Err(err) = warm_result {
-                        return Err(PyValueError::new_err(format!(
-                            "presign_startup_warm_failed:{}",
-                            err
-                        )));
-                    }
-                    self.cached_sdk_client = submitter.sdk_client_ref().ok().map(|c| c.clone());
-                    self.cached_signer = submitter.signer_ref().ok().map(|s| s.clone());
-                }
 
-                dispatch_handle.install_submit_tx(submit_producer, Arc::clone(&submit_notify));
-
-                let submit_join = thread::spawn(move || {
-                    if let Ok(rt) = TokioBuilder::new_current_thread().enable_all().build() {
-                        rt.block_on(run_submitter_async(submitter));
-                    }
-                });
-
-                Some(SubmitterHandle {
-                    submit_notify,
-                    stop_flag,
-                    join: Some(submit_join),
-                    health: submitter_health,
-                })
-            } else {
-                // Noop mode: no submitter spawned. The send-channel sender is
-                // dropped; DispatchHandle::dispatch_intent short-circuits to
-                // log "noop" inline and never reaches the channel.
-                drop(submitter);
-                drop(submit_producer);
-                drop(submitter_health);
-                None
-            };
+                    Some(SubmitterHandle {
+                        stop_flag,
+                        join: Some(submit_join),
+                        health: submitter_health,
+                    })
+                } else {
+                    // Noop mode: no submitter spawned. The send-channel sender is
+                    // dropped; DispatchHandle::dispatch_intent short-circuits to
+                    // log "noop" inline and never reaches the channel.
+                    drop(submitter);
+                    drop(submit_producer);
+                    drop(submitter_health);
+                    None
+                };
 
             // Clone the engine for the worker thread.
             let worker_engine = self
@@ -273,17 +266,13 @@ impl NativeHotPathRuntime {
                         .boltodds_ws_url
                         .clone()
                         .unwrap_or_else(|| "wss://spro.agency/api/livescores".to_string());
-                    let bo_cfg = crate::ws_boltodds::BoltOddsWorkerConfig {
-                        ws_url,
-                        api_key,
-                    };
+                    let bo_cfg = crate::ws_boltodds::BoltOddsWorkerConfig { ws_url, api_key };
                     // For BoltOdds, game_labels come from the engine's game_ids
                     // (which are universal_ids set at plan load time).
                     let game_labels: Vec<String> = worker_engine.game_ids().to_vec();
 
                     thread::spawn(move || {
-                        if let Ok(runtime) =
-                            TokioBuilder::new_current_thread().enable_all().build()
+                        if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build()
                         {
                             runtime.block_on(crate::ws_boltodds::run_boltodds_worker_async(
                                 &mut worker_engine,
@@ -307,8 +296,7 @@ impl NativeHotPathRuntime {
                 _ => {
                     // Default: Kalstrop V1 worker
                     thread::spawn(move || {
-                        if let Ok(runtime) =
-                            TokioBuilder::new_current_thread().enable_all().build()
+                        if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build()
                         {
                             runtime.block_on(crate::ws::run_live_worker_async(
                                 &mut worker_engine,
@@ -356,8 +344,8 @@ impl NativeHotPathRuntime {
         }
         self.live_worker = None;
         if let Some(sub) = self.submitter.as_mut() {
-            sub.stop_flag.store(true, std::sync::atomic::Ordering::Release);
-            sub.submit_notify.notify_one();
+            sub.stop_flag
+                .store(true, std::sync::atomic::Ordering::Release);
             if let Some(join) = sub.join.take() {
                 let _ = join.join();
             }
@@ -396,21 +384,27 @@ impl NativeHotPathRuntime {
         plan_json: String,
         templates_json: String,
     ) -> PyResult<usize> {
-        let worker = self.live_worker.as_ref().ok_or_else(|| {
-            PyValueError::new_err("patch_plan_requires_running_live_worker")
-        })?;
+        let worker = self
+            .live_worker
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("patch_plan_requires_running_live_worker"))?;
         let patch_tx = worker.patch_tx.clone();
-        let client = self.cached_sdk_client.as_ref().ok_or_else(|| {
-            PyValueError::new_err("patch_plan_requires_cached_sdk_client")
-        })?.clone();
-        let signer = self.cached_signer.as_ref().ok_or_else(|| {
-            PyValueError::new_err("patch_plan_requires_cached_signer")
-        })?.clone();
+        let client = self
+            .cached_sdk_client
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("patch_plan_requires_cached_sdk_client"))?
+            .clone();
+        let signer = self
+            .cached_signer
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("patch_plan_requires_cached_signer"))?
+            .clone();
         let dispatch_cfg = self.dispatch_cfg.clone();
 
         let templates: Vec<crate::dispatch::PresignTemplateData> =
-            serde_json::from_str(&templates_json)
-                .map_err(|e| PyValueError::new_err(format!("patch_plan_invalid_templates:{}", e)))?;
+            serde_json::from_str(&templates_json).map_err(|e| {
+                PyValueError::new_err(format!("patch_plan_invalid_templates:{}", e))
+            })?;
         let mut template_map: std::collections::HashMap<String, crate::dispatch::OrderRequestData> =
             std::collections::HashMap::new();
         for tpl in &templates {
@@ -422,41 +416,46 @@ impl NativeHotPathRuntime {
         let plan_json_owned = plan_json;
         let template_map_clone = template_map.clone();
 
-        let sign_result = py.allow_threads(move || -> Result<std::collections::HashMap<String, SdkSignedOrder>, String> {
-            if !dispatch_cfg.presign_enabled || template_map_clone.is_empty() {
-                return Ok(std::collections::HashMap::new());
-            }
-            let rt = TokioBuilder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| format!("patch_tokio_rt:{}", e))?;
-            rt.block_on(async {
-                let handles: Vec<_> = template_map_clone
-                    .into_iter()
-                    .map(|(token_id, request)| {
-                        let c = client.clone();
-                        let s = signer.clone();
-                        tokio::spawn(async move {
-                            let result =
-                                crate::dispatch::sdk_exec::sign_order_batch(&c, &s, &request, 1)
-                                    .await;
-                            (token_id, result)
-                        })
-                    })
-                    .collect();
-                let mut signed = std::collections::HashMap::new();
-                for handle in handles {
-                    let (token_id, result) =
-                        handle.await.map_err(|e| format!("patch_sign_task:{}", e))?;
-                    let orders =
-                        result.map_err(|e| format!("patch_sign:{}:{}", token_id, e))?;
-                    if let Some(order) = orders.into_iter().next() {
-                        signed.insert(token_id, order);
+        let sign_result = py
+            .allow_threads(
+                move || -> Result<std::collections::HashMap<String, SdkSignedOrder>, String> {
+                    if !dispatch_cfg.presign_enabled || template_map_clone.is_empty() {
+                        return Ok(std::collections::HashMap::new());
                     }
-                }
-                Ok(signed)
-            })
-        }).map_err(|e| PyValueError::new_err(format!("patch_plan_sign_error:{}", e)))?;
+                    let rt = TokioBuilder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| format!("patch_tokio_rt:{}", e))?;
+                    rt.block_on(async {
+                        let handles: Vec<_> = template_map_clone
+                            .into_iter()
+                            .map(|(token_id, request)| {
+                                let c = client.clone();
+                                let s = signer.clone();
+                                tokio::spawn(async move {
+                                    let result = crate::dispatch::sdk_exec::sign_order_batch(
+                                        &c, &s, &request, 1,
+                                    )
+                                    .await;
+                                    (token_id, result)
+                                })
+                            })
+                            .collect();
+                        let mut signed = std::collections::HashMap::new();
+                        for handle in handles {
+                            let (token_id, result) =
+                                handle.await.map_err(|e| format!("patch_sign_task:{}", e))?;
+                            let orders =
+                                result.map_err(|e| format!("patch_sign:{}:{}", token_id, e))?;
+                            if let Some(order) = orders.into_iter().next() {
+                                signed.insert(token_id, order);
+                            }
+                        }
+                        Ok(signed)
+                    })
+                },
+            )
+            .map_err(|e| PyValueError::new_err(format!("patch_plan_sign_error:{}", e)))?;
 
         let new_count = sign_result.len();
         let payload = PatchPayload {
@@ -464,9 +463,9 @@ impl NativeHotPathRuntime {
             new_presigned: sign_result,
             new_templates: template_map,
         };
-        patch_tx.send(payload).map_err(|_| {
-            PyValueError::new_err("patch_plan_channel_closed")
-        })?;
+        patch_tx
+            .send(payload)
+            .map_err(|_| PyValueError::new_err("patch_plan_channel_closed"))?;
 
         Ok(new_count)
     }
@@ -489,25 +488,11 @@ impl NativeHotPathRuntime {
         let mut submitter_present = false;
         let mut submitter_running = false;
         let mut submitter_last_error = String::new();
-        let mut posted_ok = 0i64;
-        let mut posted_err = 0i64;
-        let mut latency_metrics = json!({
-            "window": 0,
-            "buckets": {
-                "n1": {},
-                "n2_15": {},
-                "n16_plus": {},
-            },
-            "chunk_len": {},
-        });
         if let Some(sub) = self.submitter.as_ref() {
             submitter_present = true;
             if let Ok(h) = sub.health.lock() {
                 submitter_running = h.running;
                 submitter_last_error = h.last_error.clone();
-                posted_ok = h.posted_ok;
-                posted_err = h.posted_err;
-                latency_metrics = h.latency_metrics_snapshot_json();
             }
         }
         let payload = json!({
@@ -519,9 +504,6 @@ impl NativeHotPathRuntime {
                 "present": submitter_present,
                 "running": submitter_running,
                 "last_error": submitter_last_error,
-                "posted_ok": posted_ok,
-                "posted_err": posted_err,
-                "latency_metrics": latency_metrics,
             },
         });
         crate::baseball::engine::serde_value_to_py(py, &payload)

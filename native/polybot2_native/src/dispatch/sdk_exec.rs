@@ -2,10 +2,6 @@ use super::*;
 use crate::log_writer::LogWriter;
 use std::sync::{Arc, Mutex};
 
-// Chunking constant retained for live tests that call submit_signed_chunked_async.
-#[allow(dead_code)]
-const MAX_BATCH_SIZE: usize = 15;
-
 /// Map a CLOB response triple to a Result. Treats `success: true` with an
 /// empty `order_id` as a failure — the CLOB has been observed to return that
 /// shape for silently rejected orders, and counting them as successes leads
@@ -35,7 +31,6 @@ impl OrderSubmitter {
         cfg: DispatchConfig,
         log: Arc<Mutex<LogWriter>>,
         submit_rx: rtrb::Consumer<SubmitWork>,
-        submit_notify: Arc<tokio::sync::Notify>,
         stop_flag: Arc<std::sync::atomic::AtomicBool>,
         health: Arc<Mutex<crate::SubmitterHealth>>,
         shared_registry: SharedRegistry,
@@ -46,7 +41,6 @@ impl OrderSubmitter {
             sdk_runtime: None,
             cached_signer: None,
             submit_rx,
-            submit_notify,
             stop_flag,
             log,
             health,
@@ -117,96 +111,6 @@ impl OrderSubmitter {
         Ok(())
     }
 
-    /// Used by live tests and presign-warmup helper paths.
-    #[allow(dead_code)]
-    pub(crate) async fn build_signed_order_async(
-        &mut self,
-        request: &OrderRequestData,
-    ) -> Result<SdkSignedOrder, String> {
-        self.ensure_sdk_runtime_async().await?;
-        let sdk = self
-            .sdk_runtime
-            .as_ref()
-            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
-        let token_id = parse_sdk_token_id(request.token_id.as_str())?;
-        let side = map_sdk_side(request.side.as_str())?;
-        let order_type = map_sdk_order_type(request.time_in_force);
-        let signer = self
-            .cached_signer
-            .clone()
-            .ok_or_else(|| "cached_signer_missing:call_ensure_sdk_runtime_first".to_string())?;
-
-        let signable = if request.time_in_force.is_market_order() {
-            let amount_usdc =
-                parse_decimal_from_f64(request.amount_usdc, 6, "amount_usdc")?;
-            let limit_price =
-                parse_decimal_from_f64(request.limit_price, 6, "limit_price")?;
-            sdk.client
-                .market_order()
-                .token_id(token_id)
-                .amount(
-                    SdkAmount::usdc(amount_usdc)
-                        .map_err(|e| format!("invalid_market_amount:{}", e))?,
-                )
-                .side(side)
-                .order_type(order_type)
-                .price(limit_price)
-                .build()
-                .await
-                .map_err(|e| format!("submit_failed:{}", e))?
-        } else {
-            let size = parse_decimal_from_f64(request.size_shares, 2, "size_shares")?;
-            let limit_price =
-                parse_decimal_from_f64(request.limit_price, 6, "limit_price")?.normalize();
-            let builder = sdk
-                .client
-                .limit_order()
-                .token_id(token_id)
-                .size(size)
-                .side(side)
-                .order_type(order_type)
-                .price(limit_price);
-            builder
-                .build()
-                .await
-                .map_err(|e| format!("submit_failed:{}", e))?
-        };
-
-        sdk.client
-            .sign(&signer, signable)
-            .await
-            .map_err(|e| format!("submit_failed:{}", e))
-    }
-
-    /// Post a signed order and return the exchange order ID.
-    pub(crate) async fn post_signed_order_async(
-        &mut self,
-        signed: SdkSignedOrder,
-    ) -> Result<String, String> {
-        self.ensure_sdk_runtime_async().await?;
-        let sdk = self
-            .sdk_runtime
-            .as_ref()
-            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
-        let resp = sdk
-            .client
-            .post_order(signed)
-            .await
-            .map_err(|e| format!("submit_failed:{}", e))?;
-        map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
-    }
-
-    /// Build, sign, and submit an order. Used by live tests; the WS hot path
-    /// uses presigned orders and never goes through this method.
-    #[allow(dead_code)]
-    pub(crate) async fn submit_order_async(
-        &mut self,
-        request: &OrderRequestData,
-    ) -> Result<String, String> {
-        let signed = self.build_signed_order_async(request).await?;
-        self.post_signed_order_async(signed).await
-    }
-
     pub(crate) fn sdk_client_ref(
         &self,
     ) -> Result<&SdkClient<SdkAuthenticatedState<SdkAuthNormal>>, String> {
@@ -222,72 +126,6 @@ impl OrderSubmitter {
             .ok_or_else(|| "cached_signer_missing".to_string())
     }
 
-    #[allow(dead_code)]
-    async fn post_signed_orders_batch_async(
-        &mut self,
-        signed_orders: Vec<SdkSignedOrder>,
-    ) -> Result<Vec<Result<String, String>>, String> {
-        if signed_orders.is_empty() {
-            return Ok(Vec::new());
-        }
-        self.ensure_sdk_runtime_async().await?;
-        let sdk = self
-            .sdk_runtime
-            .as_ref()
-            .ok_or_else(|| "sdk_runtime_missing".to_string())?;
-        let count = signed_orders.len();
-        let responses = sdk
-            .client
-            .post_orders(signed_orders)
-            .await
-            .map_err(|e| format!("batch_submit_failed:{}", e))?;
-        if responses.len() != count {
-            return Err(format!(
-                "batch_response_count_mismatch:expected={},got={}",
-                count,
-                responses.len()
-            ));
-        }
-        Ok(responses
-            .into_iter()
-            .map(|resp| {
-                map_post_response(
-                    resp.success,
-                    resp.order_id,
-                    resp.error_msg,
-                    "batch_submit_failed",
-                )
-            })
-            .collect())
-    }
-
-    /// Submit a vector of signed orders, chunking into batches of MAX_BATCH_SIZE.
-    /// Returns one Result per input, in order. Used by live tests.
-    #[allow(dead_code)]
-    pub(crate) async fn submit_signed_chunked_async(
-        &mut self,
-        mut signed: Vec<SdkSignedOrder>,
-    ) -> Vec<Result<String, String>> {
-        let total = signed.len();
-        if total == 0 {
-            return Vec::new();
-        }
-        let mut out: Vec<Result<String, String>> = Vec::with_capacity(total);
-        while !signed.is_empty() {
-            let chunk_len = signed.len().min(MAX_BATCH_SIZE);
-            let chunk: Vec<SdkSignedOrder> = signed.drain(..chunk_len).collect();
-            let chunk_count = chunk.len();
-            match self.post_signed_orders_batch_async(chunk).await {
-                Ok(results) => out.extend(results),
-                Err(transport_err) => {
-                    for _ in 0..chunk_count {
-                        out.push(Err(transport_err.clone()));
-                    }
-                }
-            }
-        }
-        out
-    }
 }
 
 pub(crate) async fn sign_order_batch(
@@ -304,10 +142,8 @@ pub(crate) async fn sign_order_batch(
     let mut results = Vec::with_capacity(count);
     for _ in 0..count {
         let signable = if is_market {
-            let amount_usdc =
-                parse_decimal_from_f64(template.amount_usdc, 6, "amount_usdc")?;
-            let limit_price =
-                parse_decimal_from_f64(template.limit_price, 6, "limit_price")?;
+            let amount_usdc = parse_decimal_from_f64(template.amount_usdc, 6, "amount_usdc")?;
+            let limit_price = parse_decimal_from_f64(template.limit_price, 6, "limit_price")?;
             client
                 .market_order()
                 .token_id(token_id)
@@ -322,8 +158,7 @@ pub(crate) async fn sign_order_batch(
                 .await
                 .map_err(|e| format!("sign_batch_build_failed:{}", e))?
         } else {
-            let size =
-                parse_decimal_from_f64(template.size_shares, 2, "size_shares")?;
+            let size = parse_decimal_from_f64(template.size_shares, 2, "size_shares")?;
             let limit_price =
                 parse_decimal_from_f64(template.limit_price, 6, "limit_price")?.normalize();
             let builder = client

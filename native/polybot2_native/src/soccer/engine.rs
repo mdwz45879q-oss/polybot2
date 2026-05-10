@@ -1,8 +1,8 @@
 //! Soccer engine: plan loading, game state management, zero-alloc live tick path.
 
-use crate::*;
 use crate::soccer::types::*;
 use crate::InlineStr;
+use crate::*;
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 
@@ -90,7 +90,9 @@ impl NativeSoccerEngine {
 
     fn is_game_completed(&self, id: &str) -> bool {
         if let Some(&gidx) = self.game_id_to_idx.get(id) {
-            self.game_states[gidx.0 as usize].match_completed.unwrap_or(false)
+            self.game_states[gidx.0 as usize]
+                .match_completed
+                .unwrap_or(false)
         } else {
             false
         }
@@ -133,8 +135,8 @@ impl NativeSoccerEngine {
         self.has_halftime.clear();
         self.has_exact_score.clear();
 
-        let plan_value: serde_json::Value = serde_json::from_str(plan_json)
-            .map_err(|e| format!("load_plan_json_parse:{}", e))?;
+        let plan_value: serde_json::Value =
+            serde_json::from_str(plan_json).map_err(|e| format!("load_plan_json_parse:{}", e))?;
         let games = plan_value
             .get("games")
             .and_then(|v| v.as_array())
@@ -186,7 +188,10 @@ impl NativeSoccerEngine {
 
             for market_val in markets {
                 let sports_market_type = canonical_soccer_market_type(
-                    market_val.get("sports_market_type").and_then(|v| v.as_str()).unwrap_or(""),
+                    market_val
+                        .get("sports_market_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
                 );
                 let line = market_val.get("line").and_then(|v| v.as_f64());
                 let targets_arr = match market_val.get("targets").and_then(|v| v.as_array()) {
@@ -196,18 +201,29 @@ impl NativeSoccerEngine {
 
                 for target_val in targets_arr {
                     let semantic = norm(
-                        target_val.get("outcome_semantic").and_then(|v| v.as_str()).unwrap_or(""),
+                        target_val
+                            .get("outcome_semantic")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
                     );
                     // Prefer target-level line (exact scores have it), fall back to market-level.
                     let effective_line = target_val.get("line").and_then(|v| v.as_f64()).or(line);
                     let token_id = target_val
-                        .get("token_id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        .get("token_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     if token_id.is_empty() {
                         continue;
                     }
                     token_ids.insert(token_id.clone());
                     let strategy_key = target_val
-                        .get("strategy_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        .get("strategy_key")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     if strategy_key.is_empty() {
                         continue;
                     }
@@ -222,7 +238,9 @@ impl NativeSoccerEngine {
                         Some(&idx) => idx,
                         None => {
                             let idx = TokenIdx(self.tokens.len() as u16);
-                            self.tokens.push(TokenSlot { token_id: Arc::from(token_id.as_str()) });
+                            self.tokens.push(TokenSlot {
+                                token_id: Arc::from(token_id.as_str()),
+                            });
                             self.token_id_to_idx.insert(token_id.clone(), idx);
                             idx
                         }
@@ -240,8 +258,14 @@ impl NativeSoccerEngine {
                             if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
-                                    "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
+                                    "over" => game_tgt.over_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
+                                    "under" => game_tgt.under_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled totals semantic '{}' for game {}", other, game_id_ref);
                                     }
@@ -275,15 +299,28 @@ impl NativeSoccerEngine {
                                         continue;
                                     }
                                 };
-                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                if let Some(slot) = game_tgt
+                                    .spreads
+                                    .iter_mut()
                                     .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
                                 {
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                 } else {
-                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    let mut slot = SpreadSlot {
+                                        side,
+                                        line: l,
+                                        covers_idx: None,
+                                        not_covers_idx: None,
+                                    };
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                     game_tgt.spreads.push(slot);
                                 }
                             }
@@ -294,7 +331,10 @@ impl NativeSoccerEngine {
                                 "yes" => game_tgt.btts_yes = Some(tidx),
                                 "no" => game_tgt.btts_no = Some(tidx),
                                 other => {
-                                    eprintln!("[polybot2] WARN: unhandled btts semantic '{}' for game {}", other, game_id_ref);
+                                    eprintln!(
+                                        "[polybot2] WARN: unhandled btts semantic '{}' for game {}",
+                                        other, game_id_ref
+                                    );
                                 }
                             }
                         }
@@ -303,8 +343,14 @@ impl NativeSoccerEngine {
                             if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
-                                    "over" => game_tgt.corner_over_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    "under" => game_tgt.corner_under_lines.push(OverLine { half_int: half, target_idx: tidx }),
+                                    "over" => game_tgt.corner_over_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
+                                    "under" => game_tgt.corner_under_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled corners semantic '{}' for game {}", other, game_id_ref);
                                     }
@@ -331,20 +377,29 @@ impl NativeSoccerEngine {
                                 "exact_yes" | "exact_no" => {
                                     if let Some(line_val) = effective_line {
                                         let home_pred = line_val.floor() as i64;
-                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        let away_pred =
+                                            ((line_val - line_val.floor()) * 10.0).round() as i64;
                                         let is_yes = semantic.as_str() == "exact_yes";
                                         // Find or create slot for this score
-                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
-                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        if let Some(slot) =
+                                            game_tgt.exact_scores.iter_mut().find(|s| {
+                                                s.home_pred == home_pred && s.away_pred == away_pred
+                                            })
                                         {
-                                            if is_yes { slot.yes_idx = Some(tidx); }
-                                            else { slot.no_idx = Some(tidx); }
+                                            if is_yes {
+                                                slot.yes_idx = Some(tidx);
+                                            } else {
+                                                slot.no_idx = Some(tidx);
+                                            }
                                         } else {
                                             let mut slot = ExactScoreSlot::default();
                                             slot.home_pred = home_pred;
                                             slot.away_pred = away_pred;
-                                            if is_yes { slot.yes_idx = Some(tidx); }
-                                            else { slot.no_idx = Some(tidx); }
+                                            if is_yes {
+                                                slot.yes_idx = Some(tidx);
+                                            } else {
+                                                slot.no_idx = Some(tidx);
+                                            }
                                             game_tgt.exact_scores.push(slot);
                                         }
                                     }
@@ -355,9 +410,12 @@ impl NativeSoccerEngine {
                                 "yes" | "over" => {
                                     if let Some(line_val) = effective_line {
                                         let home_pred = line_val.floor() as i64;
-                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
-                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
-                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        let away_pred =
+                                            ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        if let Some(slot) =
+                                            game_tgt.exact_scores.iter_mut().find(|s| {
+                                                s.home_pred == home_pred && s.away_pred == away_pred
+                                            })
                                         {
                                             slot.yes_idx = Some(tidx);
                                         } else {
@@ -423,7 +481,13 @@ impl NativeSoccerEngine {
     /// Pre-parse dedup + game index resolve in one lookup.
     /// Returns `None` if the frame is a duplicate (raw strings unchanged)
     /// or the fixture_id is unknown. Returns `Some(gidx)` otherwise.
-    pub(crate) fn check_duplicate(&self, fixture_id: &str, home_str: &str, away_str: &str, free_text: &str) -> Option<GameIdx> {
+    pub(crate) fn check_duplicate(
+        &self,
+        fixture_id: &str,
+        home_str: &str,
+        away_str: &str,
+        free_text: &str,
+    ) -> Option<GameIdx> {
         let &gidx = self.game_id_to_idx.get(fixture_id)?;
         let gi = gidx.0 as usize;
         if let Some(row) = self.rows[gi].as_ref() {
@@ -594,8 +658,8 @@ impl NativeSoccerEngine {
     // ---------------------------------------------------------------
 
     pub(crate) fn merge_plan(&mut self, plan_json: &str) -> Result<MergePlanResult, String> {
-        let plan_value: serde_json::Value = serde_json::from_str(plan_json)
-            .map_err(|e| format!("merge_plan_json_parse:{}", e))?;
+        let plan_value: serde_json::Value =
+            serde_json::from_str(plan_json).map_err(|e| format!("merge_plan_json_parse:{}", e))?;
         let games = plan_value
             .get("games")
             .and_then(|v| v.as_array())
@@ -626,7 +690,10 @@ impl NativeSoccerEngine {
 
             for market_val in markets {
                 let sports_market_type = canonical_soccer_market_type(
-                    market_val.get("sports_market_type").and_then(|v| v.as_str()).unwrap_or(""),
+                    market_val
+                        .get("sports_market_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
                 );
                 let line = market_val.get("line").and_then(|v| v.as_f64());
                 let targets_arr = match market_val.get("targets").and_then(|v| v.as_array()) {
@@ -664,7 +731,10 @@ impl NativeSoccerEngine {
                     }
 
                     let semantic = norm(
-                        target_val.get("outcome_semantic").and_then(|v| v.as_str()).unwrap_or(""),
+                        target_val
+                            .get("outcome_semantic")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
                     );
                     let effective_line = target_val.get("line").and_then(|v| v.as_f64()).or(line);
 
@@ -672,7 +742,9 @@ impl NativeSoccerEngine {
                         Some(&idx) => idx,
                         None => {
                             let idx = TokenIdx(self.tokens.len() as u16);
-                            self.tokens.push(TokenSlot { token_id: Arc::from(token_id.as_str()) });
+                            self.tokens.push(TokenSlot {
+                                token_id: Arc::from(token_id.as_str()),
+                            });
                             self.token_id_to_idx.insert(token_id.clone(), idx);
                             new_token_count += 1;
                             idx
@@ -693,8 +765,14 @@ impl NativeSoccerEngine {
                             if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
-                                    "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
+                                    "over" => game_tgt.over_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
+                                    "under" => game_tgt.under_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled totals semantic '{}' for game {}", other, uid);
                                     }
@@ -729,15 +807,28 @@ impl NativeSoccerEngine {
                                         continue;
                                     }
                                 };
-                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                if let Some(slot) = game_tgt
+                                    .spreads
+                                    .iter_mut()
                                     .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
                                 {
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                 } else {
-                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    let mut slot = SpreadSlot {
+                                        side,
+                                        line: l,
+                                        covers_idx: None,
+                                        not_covers_idx: None,
+                                    };
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                     game_tgt.spreads.push(slot);
                                 }
                             }
@@ -748,7 +839,10 @@ impl NativeSoccerEngine {
                                 "yes" => game_tgt.btts_yes = Some(tidx),
                                 "no" => game_tgt.btts_no = Some(tidx),
                                 other => {
-                                    eprintln!("[polybot2] WARN: unhandled btts semantic '{}' for game {}", other, uid);
+                                    eprintln!(
+                                        "[polybot2] WARN: unhandled btts semantic '{}' for game {}",
+                                        other, uid
+                                    );
                                 }
                             }
                             self.has_btts[gi] = true;
@@ -757,8 +851,14 @@ impl NativeSoccerEngine {
                             if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
-                                    "over" => game_tgt.corner_over_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    "under" => game_tgt.corner_under_lines.push(OverLine { half_int: half, target_idx: tidx }),
+                                    "over" => game_tgt.corner_over_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
+                                    "under" => game_tgt.corner_under_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled corners semantic '{}' for game {}", other, uid);
                                     }
@@ -786,19 +886,28 @@ impl NativeSoccerEngine {
                                 "exact_yes" | "exact_no" => {
                                     if let Some(line_val) = effective_line {
                                         let home_pred = line_val.floor() as i64;
-                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        let away_pred =
+                                            ((line_val - line_val.floor()) * 10.0).round() as i64;
                                         let is_yes = semantic.as_str() == "exact_yes";
-                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
-                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        if let Some(slot) =
+                                            game_tgt.exact_scores.iter_mut().find(|s| {
+                                                s.home_pred == home_pred && s.away_pred == away_pred
+                                            })
                                         {
-                                            if is_yes { slot.yes_idx = Some(tidx); }
-                                            else { slot.no_idx = Some(tidx); }
+                                            if is_yes {
+                                                slot.yes_idx = Some(tidx);
+                                            } else {
+                                                slot.no_idx = Some(tidx);
+                                            }
                                         } else {
                                             let mut slot = ExactScoreSlot::default();
                                             slot.home_pred = home_pred;
                                             slot.away_pred = away_pred;
-                                            if is_yes { slot.yes_idx = Some(tidx); }
-                                            else { slot.no_idx = Some(tidx); }
+                                            if is_yes {
+                                                slot.yes_idx = Some(tidx);
+                                            } else {
+                                                slot.no_idx = Some(tidx);
+                                            }
                                             game_tgt.exact_scores.push(slot);
                                         }
                                     }
@@ -808,9 +917,12 @@ impl NativeSoccerEngine {
                                 "yes" | "over" => {
                                     if let Some(line_val) = effective_line {
                                         let home_pred = line_val.floor() as i64;
-                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
-                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
-                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        let away_pred =
+                                            ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        if let Some(slot) =
+                                            game_tgt.exact_scores.iter_mut().find(|s| {
+                                                s.home_pred == home_pred && s.away_pred == away_pred
+                                            })
                                         {
                                             slot.yes_idx = Some(tidx);
                                         } else {
@@ -840,10 +952,18 @@ impl NativeSoccerEngine {
         }
 
         for gi in dirty_games {
-            self.game_targets[gi].over_lines.sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi].under_lines.sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi].corner_over_lines.sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi].corner_under_lines.sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi]
+                .over_lines
+                .sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi]
+                .under_lines
+                .sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi]
+                .corner_over_lines
+                .sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi]
+                .corner_under_lines
+                .sort_by_key(|ol| ol.half_int);
             self.token_ids_by_game[gi].sort();
             self.token_ids_by_game[gi].dedup();
         }
@@ -863,7 +983,9 @@ fn canonical_soccer_market_type(input: &str) -> String {
         "moneyline" | "game" | "match_result" => "moneyline".to_string(),
         "both_teams_to_score" | "btts" => "btts".to_string(),
         "total_corners" | "corners" => "total_corners".to_string(),
-        "soccer_halftime_result" | "halftime_result" | "ht_result" => "soccer_halftime_result".to_string(),
+        "soccer_halftime_result" | "halftime_result" | "ht_result" => {
+            "soccer_halftime_result".to_string()
+        }
         "soccer_exact_score" | "exact_score" | "correct_score" => "soccer_exact_score".to_string(),
         _ => raw,
     }
@@ -926,10 +1048,18 @@ mod tests {
             None => return vec![],
         };
         let result = engine.process_tick_live(
-            gidx, "", "", "free_text",
-            goals_home, goals_away,
-            corners_home, corners_away,
-            half, match_completed, "LIVE", 1000,
+            gidx,
+            "",
+            "",
+            "free_text",
+            goals_home,
+            goals_away,
+            corners_home,
+            corners_away,
+            half,
+            match_completed,
+            "LIVE",
+            1000,
         );
         match result {
             Some(r) => r.intents.to_vec(),
@@ -950,11 +1080,29 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Tick 1: corners 0+0=0, no fire
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), Some(0), Some(0), "1st half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            Some(0),
+            Some(0),
+            "1st half",
+            Some(false),
+        );
         assert!(intents.is_empty());
 
         // Tick 2: corners 2+2=4, crosses 3.5 -> fires
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), Some(2), Some(2), "1st half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            Some(2),
+            Some(2),
+            "1st half",
+            Some(false),
+        );
         assert_eq!(intents.len(), 1);
         assert_eq!(intents[0].target_idx, TargetIdx(0));
     }
@@ -970,11 +1118,29 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Initial: corners 2+3=5
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), Some(2), Some(3), "1st half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            Some(2),
+            Some(3),
+            "1st half",
+            Some(false),
+        );
         assert!(intents.is_empty());
 
         // Jump: corners 4+3=7, crosses both 5.5 and 6.5
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), Some(4), Some(3), "2nd half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            Some(4),
+            Some(3),
+            "2nd half",
+            Some(false),
+        );
         assert_eq!(intents.len(), 2);
     }
 
@@ -991,11 +1157,29 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Corners at 4+4=8 during game
-        let intents = tick(&mut engine, "game1", Some(1), Some(1), Some(4), Some(4), "2nd half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(1),
+            Some(4),
+            Some(4),
+            "2nd half",
+            Some(false),
+        );
         assert!(intents.is_empty());
 
         // Game ends with 8 total corners -> under 8.5 and under 9.5 fire, NOT under 7.5
-        let intents = tick(&mut engine, "game1", Some(1), Some(1), Some(4), Some(4), "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(1),
+            Some(4),
+            Some(4),
+            "Ended",
+            Some(true),
+        );
         assert_eq!(intents.len(), 2);
         // Target indices: under 8.5 -> tidx 0, under 9.5 -> tidx 1, under 7.5 -> tidx 2
         let fired: Vec<u16> = intents.iter().map(|i| i.target_idx.0).collect();
@@ -1013,11 +1197,29 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Initial: corners 2+1=3
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), Some(2), Some(1), "1st half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            Some(2),
+            Some(1),
+            "1st half",
+            Some(false),
+        );
         assert!(intents.is_empty());
 
         // Same corners again: no change -> no fire
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), Some(2), Some(1), "1st half_", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            Some(2),
+            Some(1),
+            "1st half_",
+            Some(false),
+        );
         assert!(intents.is_empty());
     }
 
@@ -1031,12 +1233,25 @@ mod tests {
         let t_home = target_json("tok_ht_home", "home_yes", "g1:HT:HOME_YES");
         let t_away_no = target_json("tok_ht_away_no", "away_no", "g1:HT:AWAY_NO");
         let t_draw_no = target_json("tok_ht_draw_no", "draw_no", "g1:HT:DRAW_NO");
-        let m = market_json("soccer_halftime_result", None, &[t_home, t_away_no, t_draw_no]);
+        let m = market_json(
+            "soccer_halftime_result",
+            None,
+            &[t_home, t_away_no, t_draw_no],
+        );
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
         // Score 1-0 at halftime
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), None, None, "Halftime", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            None,
+            None,
+            "Halftime",
+            Some(false),
+        );
         assert_eq!(intents.len(), 3);
         let fired: Vec<u16> = intents.iter().map(|i| i.target_idx.0).collect();
         assert!(fired.contains(&0)); // home_yes
@@ -1050,12 +1265,25 @@ mod tests {
         let t_away = target_json("tok_ht_away", "away_yes", "g1:HT:AWAY_YES");
         let t_home_no = target_json("tok_ht_home_no", "home_no", "g1:HT:HOME_NO");
         let t_draw_no = target_json("tok_ht_draw_no", "draw_no", "g1:HT:DRAW_NO");
-        let m = market_json("soccer_halftime_result", None, &[t_away, t_home_no, t_draw_no]);
+        let m = market_json(
+            "soccer_halftime_result",
+            None,
+            &[t_away, t_home_no, t_draw_no],
+        );
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
         // Score 0-2 at halftime
-        let intents = tick(&mut engine, "game1", Some(0), Some(2), None, None, "Halftime", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(2),
+            None,
+            None,
+            "Halftime",
+            Some(false),
+        );
         assert_eq!(intents.len(), 3);
         let fired: Vec<u16> = intents.iter().map(|i| i.target_idx.0).collect();
         assert!(fired.contains(&0)); // away_yes
@@ -1069,12 +1297,25 @@ mod tests {
         let t_draw = target_json("tok_ht_draw", "draw_yes", "g1:HT:DRAW_YES");
         let t_home_no = target_json("tok_ht_home_no", "home_no", "g1:HT:HOME_NO");
         let t_away_no = target_json("tok_ht_away_no", "away_no", "g1:HT:AWAY_NO");
-        let m = market_json("soccer_halftime_result", None, &[t_draw, t_home_no, t_away_no]);
+        let m = market_json(
+            "soccer_halftime_result",
+            None,
+            &[t_draw, t_home_no, t_away_no],
+        );
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
         // Score 1-1 at halftime
-        let intents = tick(&mut engine, "game1", Some(1), Some(1), None, None, "Halftime", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(1),
+            None,
+            None,
+            "Halftime",
+            Some(false),
+        );
         assert_eq!(intents.len(), 3);
         let fired: Vec<u16> = intents.iter().map(|i| i.target_idx.0).collect();
         assert!(fired.contains(&0)); // draw_yes
@@ -1091,11 +1332,29 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // First halftime tick -> fires
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), None, None, "Halftime", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            None,
+            None,
+            "Halftime",
+            Some(false),
+        );
         assert_eq!(intents.len(), 1);
 
         // Second halftime tick -> no fire (already resolved)
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), None, None, "Halftime", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            None,
+            None,
+            "Halftime",
+            Some(false),
+        );
         assert!(intents.is_empty());
     }
 
@@ -1108,7 +1367,16 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // If we only see "2nd half" (missed halftime), don't fire
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), None, None, "2nd half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            None,
+            None,
+            "2nd half",
+            Some(false),
+        );
         assert!(intents.is_empty());
     }
 
@@ -1126,7 +1394,16 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Game ends 1-3 -> fires
-        let intents = tick(&mut engine, "game1", Some(1), Some(3), None, None, "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(3),
+            None,
+            None,
+            "Ended",
+            Some(true),
+        );
         assert_eq!(intents.len(), 1);
         assert_eq!(intents[0].target_idx, TargetIdx(0));
     }
@@ -1141,7 +1418,16 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Game ends 1-3 -> doesn't fire (predicted was 2-1)
-        let intents = tick(&mut engine, "game1", Some(1), Some(3), None, None, "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(3),
+            None,
+            None,
+            "Ended",
+            Some(true),
+        );
         assert!(intents.is_empty());
     }
 
@@ -1155,7 +1441,16 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Game ends 0-0 -> fires
-        let intents = tick(&mut engine, "game1", Some(0), Some(0), None, None, "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(0),
+            Some(0),
+            None,
+            None,
+            "Ended",
+            Some(true),
+        );
         assert_eq!(intents.len(), 1);
         assert_eq!(intents[0].target_idx, TargetIdx(0));
     }
@@ -1169,11 +1464,29 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // First game-end tick -> fires
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), None, None, "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            None,
+            None,
+            "Ended",
+            Some(true),
+        );
         assert_eq!(intents.len(), 1);
 
         // Repeated game-end tick -> no double fire
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), None, None, "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            None,
+            None,
+            "Ended",
+            Some(true),
+        );
         assert!(intents.is_empty());
     }
 
@@ -1191,7 +1504,16 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Game ends 2-1 -> only target for 2-1 fires
-        let intents = tick(&mut engine, "game1", Some(2), Some(1), None, None, "Ended", Some(true));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(2),
+            Some(1),
+            None,
+            None,
+            "Ended",
+            Some(true),
+        );
         assert_eq!(intents.len(), 1);
         assert_eq!(intents[0].target_idx, TargetIdx(1)); // t2 is the second target
     }
@@ -1205,7 +1527,16 @@ mod tests {
         engine.load_plan_from_json(&plan).unwrap();
 
         // Score is 1-0 but game not ended -> doesn't fire
-        let intents = tick(&mut engine, "game1", Some(1), Some(0), None, None, "2nd half", Some(false));
+        let intents = tick(
+            &mut engine,
+            "game1",
+            Some(1),
+            Some(0),
+            None,
+            None,
+            "2nd half",
+            Some(false),
+        );
         assert!(intents.is_empty());
     }
 }

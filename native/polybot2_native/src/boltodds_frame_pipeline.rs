@@ -55,8 +55,10 @@ pub(crate) fn process_boltodds_frame_sync(
         "AT_FULL_TIME" | "MATCH_COMPLETED" => "Ended",
         _ => "",
     };
-    let match_completed =
-        matches!(extract.match_period_detail, "AT_FULL_TIME" | "MATCH_COMPLETED");
+    let match_completed = matches!(
+        extract.match_period_detail,
+        "AT_FULL_TIME" | "MATCH_COMPLETED"
+    );
     let game_state: &'static str = if match_completed {
         "FINAL"
     } else if half.is_empty() {

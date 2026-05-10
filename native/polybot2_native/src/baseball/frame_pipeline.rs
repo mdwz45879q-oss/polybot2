@@ -1,10 +1,10 @@
-use crate::*;
+use crate::baseball::parse::{is_completed_free_text, parse_period};
 use crate::baseball::types::*;
 use crate::dispatch::{DispatchHandle, SubmitBatch};
 use crate::fast_extract;
 use crate::kalstrop_types::KalstropFrame;
 use crate::log_writer::LogWriter;
-use crate::baseball::parse::{is_completed_free_text, parse_period};
+use crate::*;
 use std::sync::{Arc, Mutex};
 
 /// Compact tick-log record collected during frame processing and flushed
@@ -32,8 +32,12 @@ pub(crate) fn process_decoded_frame_sync(
             let mut batch: SubmitBatch = SubmitBatch::new();
             let mut pending_logs = smallvec::SmallVec::<[PendingTickLog; 4]>::new();
             for frame in &frames {
-                if frame.msg_type != "next" { continue; }
-                let update = frame.payload.as_ref()
+                if frame.msg_type != "next" {
+                    continue;
+                }
+                let update = frame
+                    .payload
+                    .as_ref()
                     .and_then(|p| p.data.as_ref())
                     .and_then(|d| d.update.as_ref());
                 if let Some(u) = update {
@@ -42,8 +46,15 @@ pub(crate) fn process_decoded_frame_sync(
                     let away_str = summary.and_then(|s| s.away_score).unwrap_or("");
                     let free_text = summary.and_then(|s| s.first_free_text).unwrap_or("");
                     if let Some(tl) = process_extracted_fields(
-                        engine, u.fixture_id, home_str, away_str, free_text,
-                        recv_monotonic_ns, dispatch_handle, log, &mut batch,
+                        engine,
+                        u.fixture_id,
+                        home_str,
+                        away_str,
+                        free_text,
+                        recv_monotonic_ns,
+                        dispatch_handle,
+                        log,
+                        &mut batch,
                     ) {
                         pending_logs.push(tl);
                     }
@@ -57,8 +68,15 @@ pub(crate) fn process_decoded_frame_sync(
     } else if let Some(extract) = fast_extract::fast_extract_v1(frame_text) {
         let mut batch: SubmitBatch = SubmitBatch::new();
         let pending = process_extracted_fields(
-            engine, extract.fixture_id, extract.home_score, extract.away_score, extract.free_text,
-            recv_monotonic_ns, dispatch_handle, log, &mut batch,
+            engine,
+            extract.fixture_id,
+            extract.home_score,
+            extract.away_score,
+            extract.free_text,
+            recv_monotonic_ns,
+            dispatch_handle,
+            log,
+            &mut batch,
         );
         if !batch.is_empty() && !matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
             dispatch_handle.send_batch(batch, log);
@@ -123,9 +141,23 @@ fn process_extracted_fields(
     let (inning_number, inning_half) = parse_period(free_text);
     let goals_home = fast_extract::fast_parse_score(home_str);
     let goals_away = fast_extract::fast_parse_score(away_str);
-    let is_completed = if free_text.is_empty() { false } else { is_completed_free_text(free_text) };
-    let match_completed = if free_text.is_empty() { None } else { Some(is_completed) };
-    let game_state: &'static str = if free_text.is_empty() { "UNKNOWN" } else if is_completed { "FINAL" } else { "LIVE" };
+    let is_completed = if free_text.is_empty() {
+        false
+    } else {
+        is_completed_free_text(free_text)
+    };
+    let match_completed = if free_text.is_empty() {
+        None
+    } else {
+        Some(is_completed)
+    };
+    let game_state: &'static str = if free_text.is_empty() {
+        "UNKNOWN"
+    } else if is_completed {
+        "FINAL"
+    } else {
+        "LIVE"
+    };
 
     // Process through engine path (no dedup inside — already handled above).
     let result = engine.process_tick_live(

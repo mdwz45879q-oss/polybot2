@@ -1,6 +1,6 @@
-use crate::*;
 use crate::baseball::types::*;
 use crate::InlineStr;
+use crate::*;
 use rustc_hash::FxHashMap;
 
 #[cfg(feature = "python-extension")]
@@ -98,8 +98,8 @@ impl NativeMlbEngine {
         self.has_nrfi.clear();
         self.has_final.clear();
 
-        let plan_value: serde_json::Value = serde_json::from_str(plan_json)
-            .map_err(|e| format!("load_plan_json_parse:{}", e))?;
+        let plan_value: serde_json::Value =
+            serde_json::from_str(plan_json).map_err(|e| format!("load_plan_json_parse:{}", e))?;
         let games = plan_value
             .get("games")
             .and_then(|v| v.as_array())
@@ -144,7 +144,10 @@ impl NativeMlbEngine {
 
             for market_val in markets {
                 let sports_market_type = canonical_market_type(
-                    market_val.get("sports_market_type").and_then(|v| v.as_str()).unwrap_or(""),
+                    market_val
+                        .get("sports_market_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
                 );
                 let line = market_val.get("line").and_then(|v| v.as_f64());
                 let targets_arr = match market_val.get("targets").and_then(|v| v.as_array()) {
@@ -154,16 +157,27 @@ impl NativeMlbEngine {
 
                 for target_val in targets_arr {
                     let semantic = norm(
-                        target_val.get("outcome_semantic").and_then(|v| v.as_str()).unwrap_or(""),
+                        target_val
+                            .get("outcome_semantic")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
                     );
                     let token_id = target_val
-                        .get("token_id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        .get("token_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     if token_id.is_empty() {
                         continue;
                     }
                     token_ids.insert(token_id.clone());
                     let strategy_key = target_val
-                        .get("strategy_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        .get("strategy_key")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     if strategy_key.is_empty() {
                         continue;
                     }
@@ -178,7 +192,9 @@ impl NativeMlbEngine {
                         Some(&idx) => idx,
                         None => {
                             let idx = TokenIdx(self.tokens.len() as u16);
-                            self.tokens.push(TokenSlot { token_id: Arc::from(token_id.as_str()) });
+                            self.tokens.push(TokenSlot {
+                                token_id: Arc::from(token_id.as_str()),
+                            });
                             self.token_id_to_idx.insert(token_id.clone(), idx);
                             idx
                         }
@@ -196,9 +212,17 @@ impl NativeMlbEngine {
                             if let Some(l) = line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
-                                    "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    other => { eprintln!("[polybot2] WARN: unhandled baseball semantic '{}' key={}",other,strategy_key); }
+                                    "over" => game_tgt.over_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
+                                    "under" => game_tgt.under_lines.push(OverLine {
+                                        half_int: half,
+                                        target_idx: tidx,
+                                    }),
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled baseball semantic '{}' key={}",other,strategy_key);
+                                    }
                                 }
                             }
                         }
@@ -207,7 +231,12 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "yes" => game_tgt.nrfi_yes = Some(tidx),
                                 "no" => game_tgt.nrfi_no = Some(tidx),
-                                other => { eprintln!("[polybot2] WARN: unhandled baseball nrfi semantic '{}'", other); }
+                                other => {
+                                    eprintln!(
+                                        "[polybot2] WARN: unhandled baseball nrfi semantic '{}'",
+                                        other
+                                    );
+                                }
                             }
                         }
                         "moneyline" => {
@@ -215,7 +244,9 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "home" => game_tgt.moneyline_home = Some(tidx),
                                 "away" => game_tgt.moneyline_away = Some(tidx),
-                                other => { eprintln!("[polybot2] WARN: unhandled baseball moneyline semantic '{}'", other); }
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled baseball moneyline semantic '{}'", other);
+                                }
                             }
                         }
                         "spread" => {
@@ -228,15 +259,28 @@ impl NativeMlbEngine {
                                     "away_not_covers" => (SpreadSide::Away, false),
                                     _ => continue,
                                 };
-                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                if let Some(slot) = game_tgt
+                                    .spreads
+                                    .iter_mut()
                                     .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
                                 {
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                 } else {
-                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    let mut slot = SpreadSlot {
+                                        side,
+                                        line: l,
+                                        covers_idx: None,
+                                        not_covers_idx: None,
+                                    };
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                     game_tgt.spreads.push(slot);
                                 }
                             }
@@ -361,7 +405,13 @@ impl NativeMlbEngine {
     /// Pre-parse dedup + game index resolve in one lookup.
     /// Returns `None` if the frame is a duplicate (raw strings unchanged)
     /// or the fixture_id is unknown. Returns `Some(gidx)` otherwise.
-    pub(crate) fn check_duplicate(&self, fixture_id: &str, home_str: &str, away_str: &str, free_text: &str) -> Option<GameIdx> {
+    pub(crate) fn check_duplicate(
+        &self,
+        fixture_id: &str,
+        home_str: &str,
+        away_str: &str,
+        free_text: &str,
+    ) -> Option<GameIdx> {
         let &gidx = self.game_id_to_idx.get(fixture_id)?;
         let gi = gidx.0 as usize;
         if let Some(row) = self.rows[gi].as_ref() {
@@ -423,7 +473,11 @@ impl NativeMlbEngine {
         let home = goals_home.or(prev.home);
         let away = goals_away.or(prev.away);
         let inn = inning_number.or(prev.inning_number);
-        let half = if inning_half.is_empty() { prev.inning_half } else { inning_half };
+        let half = if inning_half.is_empty() {
+            prev.inning_half
+        } else {
+            inning_half
+        };
         let completed = if prev.match_completed.unwrap_or(false) {
             Some(true)
         } else if match_completed.is_some() {
@@ -478,8 +532,8 @@ impl NativeMlbEngine {
     }
 
     pub(crate) fn merge_plan(&mut self, plan_json: &str) -> Result<MergePlanResult, String> {
-        let plan_value: serde_json::Value = serde_json::from_str(plan_json)
-            .map_err(|e| format!("merge_plan_json_parse:{}", e))?;
+        let plan_value: serde_json::Value =
+            serde_json::from_str(plan_json).map_err(|e| format!("merge_plan_json_parse:{}", e))?;
         let games = plan_value
             .get("games")
             .and_then(|v| v.as_array())
@@ -597,7 +651,9 @@ impl NativeMlbEngine {
                                             target_idx: tidx,
                                         });
                                     }
-                                    other => { eprintln!("[polybot2] WARN: unhandled baseball semantic '{}' key={}",other,strategy_key); }
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled baseball semantic '{}' key={}",other,strategy_key);
+                                    }
                                 }
                             }
                             self.has_totals[gi] = true;
@@ -607,7 +663,12 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "yes" => game_tgt.nrfi_yes = Some(tidx),
                                 "no" => game_tgt.nrfi_no = Some(tidx),
-                                other => { eprintln!("[polybot2] WARN: unhandled baseball nrfi semantic '{}'", other); }
+                                other => {
+                                    eprintln!(
+                                        "[polybot2] WARN: unhandled baseball nrfi semantic '{}'",
+                                        other
+                                    );
+                                }
                             }
                             self.has_nrfi[gi] = true;
                         }
@@ -615,7 +676,9 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "home" => game_tgt.moneyline_home = Some(tidx),
                                 "away" => game_tgt.moneyline_away = Some(tidx),
-                                other => { eprintln!("[polybot2] WARN: unhandled baseball moneyline semantic '{}'", other); }
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled baseball moneyline semantic '{}'", other);
+                                }
                             }
                             self.has_final[gi] = true;
                         }
@@ -628,15 +691,28 @@ impl NativeMlbEngine {
                                     "away_not_covers" => (SpreadSide::Away, false),
                                     _ => continue,
                                 };
-                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                if let Some(slot) = game_tgt
+                                    .spreads
+                                    .iter_mut()
                                     .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
                                 {
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                 } else {
-                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
-                                    if is_covers { slot.covers_idx = Some(tidx); }
-                                    else { slot.not_covers_idx = Some(tidx); }
+                                    let mut slot = SpreadSlot {
+                                        side,
+                                        line: l,
+                                        covers_idx: None,
+                                        not_covers_idx: None,
+                                    };
+                                    if is_covers {
+                                        slot.covers_idx = Some(tidx);
+                                    } else {
+                                        slot.not_covers_idx = Some(tidx);
+                                    }
                                     game_tgt.spreads.push(slot);
                                 }
                             }
@@ -655,8 +731,12 @@ impl NativeMlbEngine {
 
         // Deferred sort/dedup — once per dirty game, not per inserted target.
         for gi in dirty_games {
-            self.game_targets[gi].over_lines.sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi].under_lines.sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi]
+                .over_lines
+                .sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi]
+                .under_lines
+                .sort_by_key(|ol| ol.half_int);
             self.token_ids_by_game[gi].sort();
             self.token_ids_by_game[gi].dedup();
         }
@@ -725,22 +805,37 @@ pub(crate) fn serde_value_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObj
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kalstrop_types::KalstropFrame;
     use crate::baseball::parse::parse_tick_from_kalstrop_update;
+    use crate::kalstrop_types::KalstropFrame;
 
     impl NativeMlbEngine {
         fn process_tick(&mut self, tick: Tick) -> TickResult {
             let game_id = tick.universal_id.clone();
             if game_id.is_empty() {
-                return TickResult { game_id, state: GameState::default(), intents: vec![], material: false };
+                return TickResult {
+                    game_id,
+                    state: GameState::default(),
+                    intents: vec![],
+                    material: false,
+                };
             }
             let Some(&gidx) = self.game_id_to_idx.get(&game_id) else {
-                return TickResult { game_id, state: GameState::default(), intents: vec![], material: false };
+                return TickResult {
+                    game_id,
+                    state: GameState::default(),
+                    intents: vec![],
+                    material: false,
+                };
             };
             let delta = self.apply_delta(gidx, &tick);
             if !delta.material_change {
                 let state = self.game_states[gidx.0 as usize];
-                return TickResult { game_id, state, intents: vec![], material: false };
+                return TickResult {
+                    game_id,
+                    state,
+                    intents: vec![],
+                    material: false,
+                };
             }
             let (_prev_state, state) = self.update_game_state(gidx, &tick);
             let mut intents = Vec::new();
@@ -752,7 +847,12 @@ mod tests {
             if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
                 self.cleanup_completed_game_idx(gidx);
             }
-            TickResult { game_id, state, intents, material: true }
+            TickResult {
+                game_id,
+                state,
+                intents,
+                material: true,
+            }
         }
 
         fn apply_delta(&mut self, gidx: GameIdx, tick: &Tick) -> DeltaEvent {
@@ -770,7 +870,11 @@ mod tests {
                 goals_home: tick.goals_home,
                 goals_away: tick.goals_away,
             });
-            DeltaEvent { material_change: true, goal_delta_home, goal_delta_away }
+            DeltaEvent {
+                material_change: true,
+                goal_delta_home,
+                goal_delta_away,
+            }
         }
 
         fn update_game_state(&mut self, gidx: GameIdx, tick: &Tick) -> (GameState, GameState) {
@@ -779,7 +883,11 @@ mod tests {
             let home = tick.goals_home.or(prev.home);
             let away = tick.goals_away.or(prev.away);
             let inning_number = tick.inning_number.or(prev.inning_number);
-            let inning_half = if tick.inning_half.is_empty() { prev.inning_half } else { tick.inning_half };
+            let inning_half = if tick.inning_half.is_empty() {
+                prev.inning_half
+            } else {
+                tick.inning_half
+            };
             let match_completed = if prev.match_completed.unwrap_or(false) {
                 Some(true)
             } else if tick.match_completed.is_some() {
@@ -797,8 +905,14 @@ mod tests {
                 "UNKNOWN"
             };
             let mut state = GameState {
-                home: prev.home, away: prev.away, total: prev.total, prev_total: prev.total,
-                inning_number, inning_half, match_completed, game_state: resolved_game_state,
+                home: prev.home,
+                away: prev.away,
+                total: prev.total,
+                prev_total: prev.total,
+                inning_number,
+                inning_half,
+                match_completed,
+                game_state: resolved_game_state,
             };
             if home.is_some() && away.is_some() {
                 state.home = home;
@@ -867,7 +981,9 @@ mod tests {
                 return idx;
             }
             let idx = TokenIdx(self.tokens.len() as u16);
-            self.tokens.push(TokenSlot { token_id: Arc::from(token_id) });
+            self.tokens.push(TokenSlot {
+                token_id: Arc::from(token_id),
+            });
             self.token_id_to_idx.insert(token_id.to_string(), idx);
             idx
         }
@@ -928,7 +1044,11 @@ mod tests {
         }
     }
 
-    fn add_game(engine: &mut NativeMlbEngine, game_id: &str, build: impl FnOnce(&mut GameTargetBuilder)) {
+    fn add_game(
+        engine: &mut NativeMlbEngine,
+        game_id: &str,
+        build: impl FnOnce(&mut GameTargetBuilder),
+    ) {
         let gidx = GameIdx(engine.game_ids.len() as u16);
         engine.game_id_to_idx.insert(game_id.to_string(), gidx);
         engine.game_ids.push(game_id.to_string());
@@ -994,9 +1114,16 @@ mod tests {
             b.under(2.5, "tok_shared");
         });
         sync_target_vecs(&mut engine);
-        assert_eq!(engine.tokens.len(), 1, "shared token should dedupe to one TokenIdx");
+        assert_eq!(
+            engine.tokens.len(),
+            1,
+            "shared token should dedupe to one TokenIdx"
+        );
         assert_eq!(engine.target_slots.len(), 2, "two distinct targets");
-        assert_eq!(engine.target_slots[0].token_idx, engine.target_slots[1].token_idx);
+        assert_eq!(
+            engine.target_slots[0].token_idx,
+            engine.target_slots[1].token_idx
+        );
         let registry = engine.clone_registry().expect("registry should be set");
         assert_eq!(registry.tokens.len(), 1);
         assert_eq!(registry.targets.len(), 2);
@@ -1052,7 +1179,6 @@ mod tests {
         let tick1 = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(0),
             goals_away: Some(0),
             inning_number: Some(1),
@@ -1065,7 +1191,6 @@ mod tests {
         let tick2 = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(1),
             goals_away: Some(0),
             inning_number: Some(1),
@@ -1075,7 +1200,11 @@ mod tests {
         };
         let out = engine.process_tick(tick2);
 
-        assert_eq!(out.intents.len(), 2, "should have totals over + nrfi yes intents");
+        assert_eq!(
+            out.intents.len(),
+            2,
+            "should have totals over + nrfi yes intents"
+        );
     }
 
     #[test]
@@ -1090,7 +1219,6 @@ mod tests {
         let tick1 = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(3),
             goals_away: Some(1),
             inning_number: Some(9),
@@ -1102,7 +1230,6 @@ mod tests {
 
         let tick2 = Tick {
             universal_id: "g1".to_string(),
-
 
             goals_home: Some(3),
             goals_away: Some(1),
@@ -1131,7 +1258,6 @@ mod tests {
         let tick = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(0),
             goals_away: Some(0),
             inning_number: Some(2),
@@ -1141,7 +1267,10 @@ mod tests {
         };
         let out = engine.process_tick(tick);
 
-        assert!(out.intents.is_empty(), "late subscription should not produce NRFI intent");
+        assert!(
+            out.intents.is_empty(),
+            "late subscription should not produce NRFI intent"
+        );
         assert!(engine.nrfi_resolved_games[0]);
     }
 
@@ -1156,7 +1285,6 @@ mod tests {
         let tick1 = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(0),
             goals_away: Some(0),
             inning_number: Some(1),
@@ -1169,7 +1297,6 @@ mod tests {
 
         let tick2 = Tick {
             universal_id: "g1".to_string(),
-
 
             goals_home: Some(1),
             goals_away: Some(0),
@@ -1194,7 +1321,6 @@ mod tests {
         let tick = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(0),
             goals_away: Some(0),
             inning_number: Some(9),
@@ -1205,7 +1331,10 @@ mod tests {
         };
         let out = engine.process_tick(tick);
 
-        assert!(out.intents.is_empty(), "completed game on first observation should not produce NRFI");
+        assert!(
+            out.intents.is_empty(),
+            "completed game on first observation should not produce NRFI"
+        );
     }
 
     #[test]
@@ -1219,7 +1348,6 @@ mod tests {
         let tick = Tick {
             universal_id: "g1".to_string(),
 
-
             goals_home: Some(0),
             goals_away: Some(0),
             game_state: "LIVE",
@@ -1227,7 +1355,10 @@ mod tests {
         };
         let out = engine.process_tick(tick);
 
-        assert!(out.intents.is_empty(), "no inning data should defer NRFI evaluation");
+        assert!(
+            out.intents.is_empty(),
+            "no inning data should defer NRFI evaluation"
+        );
         assert!(!engine.nrfi_first_inning_observed[0]);
         assert!(!engine.nrfi_resolved_games[0]);
     }
@@ -1245,7 +1376,11 @@ mod tests {
         let _ = engine.process_tick(tick_with_score("g1", 0, 0, 1000));
         let out = engine.process_tick(tick_with_score("g1", 3, 0, 2000));
 
-        assert_eq!(out.intents.len(), 2, "should emit intents for crossed lines 1.5 and 2.5");
+        assert_eq!(
+            out.intents.len(),
+            2,
+            "should emit intents for crossed lines 1.5 and 2.5"
+        );
     }
 
     #[test]
@@ -1277,7 +1412,10 @@ mod tests {
         let _ = engine.process_tick(tick_with_score("g1", 0, 0, 1000));
         let out = engine.process_tick(tick_with_score("g1", 1, 1, 2000));
 
-        assert!(out.intents.is_empty(), "total 2 is below all lines (5.5, 6.5)");
+        assert!(
+            out.intents.is_empty(),
+            "total 2 is below all lines (5.5, 6.5)"
+        );
     }
 
     #[test]
@@ -1337,10 +1475,16 @@ mod tests {
     // Walkoff tests
     // ---------------------------------------------------------------
 
-    fn tick_with_inning(game_id: &str, home: i64, away: i64, inning: i64, half: &'static str, _ns: i64) -> Tick {
+    fn tick_with_inning(
+        game_id: &str,
+        home: i64,
+        away: i64,
+        inning: i64,
+        half: &'static str,
+        _ns: i64,
+    ) -> Tick {
         Tick {
             universal_id: game_id.to_string(),
-
 
             goals_home: Some(home),
             goals_away: Some(away),
@@ -1354,7 +1498,6 @@ mod tests {
     fn tick_ended(game_id: &str, home: i64, away: i64, _ns: i64) -> Tick {
         Tick {
             universal_id: game_id.to_string(),
-
 
             goals_home: Some(home),
             goals_away: Some(away),
@@ -1382,8 +1525,10 @@ mod tests {
 
         // Walkoff should fire moneyline_home
         let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
-        assert!(out.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "walkoff should fire moneyline_home");
+        assert!(
+            out.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "walkoff should fire moneyline_home"
+        );
     }
 
     #[test]
@@ -1400,8 +1545,10 @@ mod tests {
         let out = engine.process_tick(tick_with_inning("g1", 2, 3, 9, "top", 2000));
 
         let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
-        assert!(!out.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "should NOT fire moneyline_home in top of 9th");
+        assert!(
+            !out.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "should NOT fire moneyline_home in top of 9th"
+        );
     }
 
     #[test]
@@ -1417,8 +1564,10 @@ mod tests {
         let out = engine.process_tick(tick_with_inning("g1", 3, 2, 7, "bottom", 2000));
 
         let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
-        assert!(!out.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "should NOT fire moneyline_home before 9th inning");
+        assert!(
+            !out.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "should NOT fire moneyline_home before 9th inning"
+        );
     }
 
     #[test]
@@ -1435,8 +1584,10 @@ mod tests {
         let out = engine.process_tick(tick_with_inning("g1", 5, 4, 11, "bottom", 2000));
 
         let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
-        assert!(out.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "walkoff should fire in extra innings");
+        assert!(
+            out.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "walkoff should fire in extra innings"
+        );
     }
 
     #[test]
@@ -1470,8 +1621,10 @@ mod tests {
         let out = engine.process_tick(tick_ended("g1", 3, 2, 2000));
 
         let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
-        assert!(out.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "moneyline_home should fire");
+        assert!(
+            out.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "moneyline_home should fire"
+        );
     }
 
     #[test]
@@ -1490,14 +1643,18 @@ mod tests {
         let _ = engine.process_tick(tick_with_inning("g1", 2, 2, 9, "bottom", 1000));
         let out1 = engine.process_tick(tick_with_inning("g1", 3, 2, 9, "bottom", 2000));
         let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
-        assert!(out1.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "walkoff should fire");
+        assert!(
+            out1.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "walkoff should fire"
+        );
 
         // Game officially ends — evaluate_final also fires moneyline_home.
         // At the intent level, this is a second emit for the same target.
         // The presign pool will reject the second one (pool slot already taken).
         let out2 = engine.process_tick(tick_ended("g1", 3, 2, 3000));
-        assert!(out2.intents.iter().any(|i| i.target_idx == ml_home_idx),
-            "evaluate_final should also emit moneyline_home (pool deduplicates)");
+        assert!(
+            out2.intents.iter().any(|i| i.target_idx == ml_home_idx),
+            "evaluate_final should also emit moneyline_home (pool deduplicates)"
+        );
     }
 }

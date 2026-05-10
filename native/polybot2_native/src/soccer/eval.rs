@@ -1,7 +1,7 @@
 //! Soccer evaluation strategies.
 
-use crate::*;
 use crate::soccer::types::*;
+use crate::*;
 
 fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 4]>) {
     if let Some(tidx) = slot {
@@ -40,21 +40,23 @@ impl NativeSoccerEngine {
                         break; // sorted — no more can match
                     }
                     if ol.half_int >= prev {
-                        out.push(Intent { target_idx: ol.target_idx });
+                        out.push(Intent {
+                            target_idx: ol.target_idx,
+                        });
                     }
                 }
             }
         }
 
         // Final-under only needs the current total + match_completed.
-        if state.match_completed.unwrap_or(false)
-            && !self.totals_final_under_emitted[gi]
-        {
+        if state.match_completed.unwrap_or(false) && !self.totals_final_under_emitted[gi] {
             self.totals_final_under_emitted[gi] = true;
             let total = total_now as u16;
             for ol in &targets.under_lines {
                 if ol.half_int >= total {
-                    out.push(Intent { target_idx: ol.target_idx });
+                    out.push(Intent {
+                        target_idx: ol.target_idx,
+                    });
                 }
             }
         }
@@ -175,21 +177,23 @@ impl NativeSoccerEngine {
                         break; // sorted — no more can match
                     }
                     if ol.half_int >= p {
-                        out.push(Intent { target_idx: ol.target_idx });
+                        out.push(Intent {
+                            target_idx: ol.target_idx,
+                        });
                     }
                 }
             }
         }
 
         // Final-under only needs the current total + match_completed.
-        if state.match_completed.unwrap_or(false)
-            && !self.corners_final_under_emitted[gi]
-        {
+        if state.match_completed.unwrap_or(false) && !self.corners_final_under_emitted[gi] {
             self.corners_final_under_emitted[gi] = true;
             let total = total_now as u16;
             for ol in &targets.corner_under_lines {
                 if ol.half_int >= total {
-                    out.push(Intent { target_idx: ol.target_idx });
+                    out.push(Intent {
+                        target_idx: ol.target_idx,
+                    });
                 }
             }
         }

@@ -14,16 +14,20 @@ pub(crate) struct BoltOddsExtract<'a> {
 use memchr::memmem::Finder;
 use std::sync::LazyLock;
 
-static FINDER_MATCH_UPDATE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"match_update\""));
+static FINDER_MATCH_UPDATE: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"match_update\""));
 static FINDER_GAME: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"game\""));
-static FINDER_MATCH_PERIOD: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"matchPeriod\""));
+static FINDER_MATCH_PERIOD: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"matchPeriod\""));
 static FINDER_GOALS_A: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"goalsA\""));
 static FINDER_GOALS_B: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"goalsB\""));
 static FINDER_CORNERS_A: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"cornersA\""));
 static FINDER_CORNERS_B: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"cornersB\""));
 
 fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
-    if from >= haystack.len() { return None; }
+    if from >= haystack.len() {
+        return None;
+    }
     finder.find(&haystack[from..]).map(|pos| pos + from)
 }
 
@@ -42,15 +46,24 @@ fn extract_string_value(bytes: &[u8], start: usize) -> Option<(&[u8], usize)> {
     None
 }
 
-fn find_key_string_start(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<usize> {
+fn find_key_string_start(
+    finder: &Finder,
+    key_len: usize,
+    bytes: &[u8],
+    from: usize,
+) -> Option<usize> {
     let mut pos = from;
     while pos + key_len < bytes.len() {
         if let Some(idx) = find_with(finder, bytes, pos) {
             let mut p = idx + key_len;
-            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                p += 1;
+            }
             if p < bytes.len() && bytes[p] == b':' {
                 p += 1;
-                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                    p += 1;
+                }
                 if p < bytes.len() && bytes[p] == b'"' {
                     return Some(p + 1);
                 }
@@ -63,17 +76,28 @@ fn find_key_string_start(finder: &Finder, key_len: usize, bytes: &[u8], from: us
     None
 }
 
-fn find_key_integer(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<(i64, usize)> {
+fn find_key_integer(
+    finder: &Finder,
+    key_len: usize,
+    bytes: &[u8],
+    from: usize,
+) -> Option<(i64, usize)> {
     let mut pos = from;
     while pos + key_len < bytes.len() {
         if let Some(idx) = find_with(finder, bytes, pos) {
             let mut p = idx + key_len;
-            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                p += 1;
+            }
             if p < bytes.len() && bytes[p] == b':' {
                 p += 1;
-                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                    p += 1;
+                }
                 let negative = p < bytes.len() && bytes[p] == b'-';
-                if negative { p += 1; }
+                if negative {
+                    p += 1;
+                }
                 let start = p;
                 let mut acc: i64 = 0;
                 while p < bytes.len() && bytes[p].is_ascii_digit() {
@@ -92,26 +116,43 @@ fn find_key_integer(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) 
     None
 }
 
-fn find_key_array_second_string<'a>(finder: &Finder, key_len: usize, bytes: &'a [u8], from: usize) -> Option<(&'a [u8], usize)> {
+fn find_key_array_second_string<'a>(
+    finder: &Finder,
+    key_len: usize,
+    bytes: &'a [u8],
+    from: usize,
+) -> Option<(&'a [u8], usize)> {
     let mut pos = from;
     while pos + key_len < bytes.len() {
         if let Some(idx) = find_with(finder, bytes, pos) {
             let mut p = idx + key_len;
-            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                p += 1;
+            }
             if p < bytes.len() && bytes[p] == b':' {
                 p += 1;
-                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                    p += 1;
+                }
                 if p < bytes.len() && bytes[p] == b'[' {
                     p += 1;
-                    while p < bytes.len() && bytes[p] != b'"' { p += 1; }
-                    if p >= bytes.len() { pos = idx + 1; continue; }
+                    while p < bytes.len() && bytes[p] != b'"' {
+                        p += 1;
+                    }
+                    if p >= bytes.len() {
+                        pos = idx + 1;
+                        continue;
+                    }
                     p += 1;
                     if let Some((_, end)) = extract_string_value(bytes, p) {
                         p = end;
                     } else {
-                        pos = idx + 1; continue;
+                        pos = idx + 1;
+                        continue;
                     }
-                    while p < bytes.len() && bytes[p] != b'"' && bytes[p] != b']' { p += 1; }
+                    while p < bytes.len() && bytes[p] != b'"' && bytes[p] != b']' {
+                        p += 1;
+                    }
                     if p < bytes.len() && bytes[p] == b'"' {
                         p += 1;
                         return extract_string_value(bytes, p);
@@ -176,7 +217,10 @@ mod tests {
     fn test_real_match_update_frame() {
         let frame = r#"{"action":"match_update","game":"Chelsea vs Nottingham Forest, 2026-05-04, 10","universal_id":"a07b00129a1b","home":"Chelsea","away":"Nottingham Forest","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":false,"clockRunningNow":true,"matchPeriod":["FootballMatchPeriod","IN_FIRST_HALF"],"elapsedTimeSeconds":30,"goalsA":0,"goalsB":0,"cornersA":0,"cornersB":0,"yellowCardsA":0,"yellowCardsB":0,"redCardsA":0,"redCardsB":0,"firstHalfGoalsA":0,"firstHalfGoalsB":0,"secondHalfGoalsA":0,"secondHalfGoalsB":0,"varReferralInProgress":false,"clockRunning":false}}"#;
         let result = fast_extract_boltodds(frame).unwrap();
-        assert_eq!(result.game_label, "Chelsea vs Nottingham Forest, 2026-05-04, 10");
+        assert_eq!(
+            result.game_label,
+            "Chelsea vs Nottingham Forest, 2026-05-04, 10"
+        );
         assert_eq!(result.goals_a, 0);
         assert_eq!(result.goals_b, 0);
         assert_eq!(result.corners_a, 0);

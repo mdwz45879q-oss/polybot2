@@ -4,9 +4,7 @@ pub(crate) fn parse_tick_from_kalstrop_update(
     _recv_monotonic_ns: i64,
 ) -> crate::baseball::types::Tick {
     let summary = update.match_summary.as_ref();
-    let free_text = summary
-        .and_then(|s| s.first_free_text)
-        .unwrap_or("");
+    let free_text = summary.and_then(|s| s.first_free_text).unwrap_or("");
     let (inning_number, inning_half) = parse_period(free_text);
 
     crate::baseball::types::Tick {

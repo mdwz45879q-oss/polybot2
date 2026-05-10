@@ -50,8 +50,7 @@ pub fn build_bench_engine_noop(plan_json: &str) -> Result<BenchEngine, String> {
     let cfg = DispatchConfig::default(); // Noop mode
     let shared_registry = shared_registry_for(Arc::clone(&registry));
     let dispatch = DispatchHandle::new(cfg, registry, shared_registry);
-    let log = LogWriter::open("/dev/null")
-        .map_err(|e| format!("log_open:{}", e))?;
+    let log = LogWriter::open("/dev/null").map_err(|e| format!("log_open:{}", e))?;
     Ok(BenchEngine {
         engine,
         dispatch,
@@ -74,10 +73,8 @@ pub fn build_bench_engine_with_channel(plan_json: &str) -> Result<BenchEngine, S
     let shared_registry = shared_registry_for(Arc::clone(&registry));
     let mut dispatch = DispatchHandle::new(cfg, registry, shared_registry);
     let (tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
-    let notify = Arc::new(tokio::sync::Notify::new());
-    dispatch.install_submit_tx(tx, notify);
-    let log = LogWriter::open("/dev/null")
-        .map_err(|e| format!("log_open:{}", e))?;
+    dispatch.install_submit_tx(tx);
+    let log = LogWriter::open("/dev/null").map_err(|e| format!("log_open:{}", e))?;
     Ok(BenchEngine {
         engine,
         dispatch,
@@ -113,20 +110,36 @@ pub fn bench_process_frame_pop_miss(bench: &mut BenchEngine, frame: &str, mono_n
 
 /// Print layout sizes of hot-path types.
 pub fn layout_sizes() {
-    use polymarket_client_sdk_v2::clob::types::SignedOrder as SdkSignedOrder;
+    use crate::dispatch::PreparedOrderPayload;
     use std::mem::size_of;
     println!("=== Layout Sizes ===");
-    println!("SdkSignedOrder:    {:>4} bytes", size_of::<SdkSignedOrder>());
-    println!("SubmitWork:        {:>4} bytes", size_of::<SubmitWork>());
-    println!("SubmitBatch:       {:>4} bytes", size_of::<crate::dispatch::SubmitBatch>());
-    println!("(TargetIdx, Box<Signed>): {:>3} bytes", size_of::<(TargetIdx, Box<SdkSignedOrder>)>());
-    println!("SmallVec inline:   {:>4} bytes (4 × {})",
-        4 * size_of::<(TargetIdx, Box<SdkSignedOrder>)>(),
-        size_of::<(TargetIdx, Box<SdkSignedOrder>)>(),
+    println!(
+        "PreparedPayload:   {:>4} bytes",
+        size_of::<PreparedOrderPayload>()
     );
-    println!("LiveTickResult:    {:>4} bytes", size_of::<LiveTickResult>());
+    println!("SubmitWork:        {:>4} bytes", size_of::<SubmitWork>());
+    println!(
+        "SubmitBatch:       {:>4} bytes",
+        size_of::<crate::dispatch::SubmitBatch>()
+    );
+    println!(
+        "(TargetIdx, Box<Prepared>): {:>3} bytes",
+        size_of::<(TargetIdx, Box<PreparedOrderPayload>)>()
+    );
+    println!(
+        "SmallVec inline:   {:>4} bytes (4 × {})",
+        4 * size_of::<(TargetIdx, Box<PreparedOrderPayload>)>(),
+        size_of::<(TargetIdx, Box<PreparedOrderPayload>)>(),
+    );
+    println!(
+        "LiveTickResult:    {:>4} bytes",
+        size_of::<LiveTickResult>()
+    );
     println!("GameState:         {:>4} bytes", size_of::<GameState>());
-    println!("KalstropFrame:     {:>4} bytes", size_of::<KalstropFrame<'_>>());
+    println!(
+        "KalstropFrame:     {:>4} bytes",
+        size_of::<KalstropFrame<'_>>()
+    );
     println!("====================");
 }
 
@@ -287,11 +300,11 @@ mod tests {
 
     #[test]
     fn bench_dispatch_channel_send() {
+        use alloy::primitives::{Signature, U256};
         use polymarket_client_sdk_v2::auth::ApiKey;
         use polymarket_client_sdk_v2::clob::types::{
             OrderPayload, OrderType, SignedOrder as SdkSignedOrder,
         };
-        use alloy::primitives::{Signature, U256};
 
         // Construct a dummy SignedOrder via bon builder (struct is #[non_exhaustive]).
         fn make_dummy_signed_order() -> SdkSignedOrder {
@@ -308,7 +321,9 @@ mod tests {
         run_timed("dispatch_channel_send (1 intent)", 10000, || {
             let signed = make_dummy_signed_order();
             let mut batch = crate::dispatch::SubmitBatch::new();
-            batch.push((TargetIdx(0), Box::new(signed)));
+            let prepared = crate::dispatch::prepare_payload_from_signed(signed)
+                .expect("serialize signed order");
+            batch.push((TargetIdx(0), Box::new(prepared)));
             let work = crate::dispatch::SubmitWork::Batch(batch);
             let _ = tx.push(work);
             while _rx.pop().is_ok() {}
@@ -317,7 +332,10 @@ mod tests {
         run_timed("dispatch_channel_send (4 intents)", 10000, || {
             let mut batch = crate::dispatch::SubmitBatch::new();
             for i in 0..4u16 {
-                batch.push((TargetIdx(i), Box::new(make_dummy_signed_order())));
+                let prepared =
+                    crate::dispatch::prepare_payload_from_signed(make_dummy_signed_order())
+                        .expect("serialize signed order");
+                batch.push((TargetIdx(i), Box::new(prepared)));
             }
             let work = crate::dispatch::SubmitWork::Batch(batch);
             let _ = tx.push(work);
@@ -374,9 +392,7 @@ mod tests {
             .build()
             .expect("tokio runtime");
         let (spawn_elapsed, inline_elapsed) = tokio_rt
-            .block_on(crate::dispatch::simulate_submitter_spawn_vs_inline_overhead_for_test(
-                iters,
-            ));
+            .block_on(crate::dispatch::simulate_submitter_spawn_vs_inline_overhead_for_test(iters));
         let spawn_us = spawn_elapsed.as_secs_f64() * 1_000_000.0 / iters as f64;
         let inline_us = inline_elapsed.as_secs_f64() * 1_000_000.0 / iters as f64;
         println!(
@@ -462,7 +478,9 @@ mod tests {
 
             if let Some(sf) = &serde_result {
                 if sf.msg_type == "next" {
-                    let update = sf.payload.as_ref()
+                    let update = sf
+                        .payload
+                        .as_ref()
                         .and_then(|p| p.data.as_ref())
                         .and_then(|d| d.update.as_ref());
                     if let (Some(u), Some(ff)) = (update, &fast_result) {
@@ -479,7 +497,10 @@ mod tests {
                 }
             }
         }
-        println!("Verified {} frames match between serde and fast_extract", checked);
+        println!(
+            "Verified {} frames match between serde and fast_extract",
+            checked
+        );
         assert!(checked > 0, "no frames were checked");
     }
 }

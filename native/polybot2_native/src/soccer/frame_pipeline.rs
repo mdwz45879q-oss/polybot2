@@ -1,11 +1,11 @@
 //! Soccer frame pipeline: zero-alloc live WS path.
 
-use crate::*;
-use crate::soccer::types::*;
-use crate::soccer::parse::{parse_half, is_completed_free_text};
 use crate::dispatch::{DispatchHandle, SubmitBatch};
 use crate::kalstrop_types::KalstropFrame;
 use crate::log_writer::LogWriter;
+use crate::soccer::parse::{is_completed_free_text, parse_half};
+use crate::soccer::types::*;
+use crate::*;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy)]
@@ -28,7 +28,12 @@ pub(crate) fn process_decoded_frame_sync(
             let mut pending_logs = smallvec::SmallVec::<[PendingTickLog; 4]>::new();
             for frame in &frames {
                 if let Some(tl) = process_single_frame_live(
-                    engine, frame, recv_monotonic_ns, dispatch_handle, log, &mut batch,
+                    engine,
+                    frame,
+                    recv_monotonic_ns,
+                    dispatch_handle,
+                    log,
+                    &mut batch,
                 ) {
                     pending_logs.push(tl);
                 }
@@ -41,7 +46,12 @@ pub(crate) fn process_decoded_frame_sync(
     } else if let Ok(frame) = serde_json::from_str::<KalstropFrame<'_>>(frame_text) {
         let mut batch: SubmitBatch = SubmitBatch::new();
         let pending = process_single_frame_live(
-            engine, &frame, recv_monotonic_ns, dispatch_handle, log, &mut batch,
+            engine,
+            &frame,
+            recv_monotonic_ns,
+            dispatch_handle,
+            log,
+            &mut batch,
         );
         if !batch.is_empty() && !matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
             dispatch_handle.send_batch(batch, log);
@@ -102,9 +112,7 @@ fn process_single_frame_live(
     let summary = update.match_summary.as_ref();
     let home_str = summary.and_then(|s| s.home_score).unwrap_or("");
     let away_str = summary.and_then(|s| s.away_score).unwrap_or("");
-    let free_text = summary
-        .and_then(|s| s.first_free_text)
-        .unwrap_or("");
+    let free_text = summary.and_then(|s| s.first_free_text).unwrap_or("");
 
     // Pre-parse dedup + game index resolve in one FxHashMap lookup.
     let gidx = engine.check_duplicate(fixture_id, home_str, away_str, free_text)?;
@@ -113,9 +121,23 @@ fn process_single_frame_live(
     let half = parse_half(free_text);
     let goals_home = crate::fast_extract::fast_parse_score(home_str);
     let goals_away = crate::fast_extract::fast_parse_score(away_str);
-    let is_completed = if free_text.is_empty() { false } else { is_completed_free_text(free_text) };
-    let match_completed = if free_text.is_empty() { None } else { Some(is_completed) };
-    let game_state: &'static str = if free_text.is_empty() { "UNKNOWN" } else if is_completed { "FINAL" } else { "LIVE" };
+    let is_completed = if free_text.is_empty() {
+        false
+    } else {
+        is_completed_free_text(free_text)
+    };
+    let match_completed = if free_text.is_empty() {
+        None
+    } else {
+        Some(is_completed)
+    };
+    let game_state: &'static str = if free_text.is_empty() {
+        "UNKNOWN"
+    } else if is_completed {
+        "FINAL"
+    } else {
+        "LIVE"
+    };
 
     let result = engine.process_tick_live(
         gidx,

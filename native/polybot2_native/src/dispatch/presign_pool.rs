@@ -15,25 +15,28 @@ impl DispatchHandle {
             presign_templates: vec![None; n],
             presign_pool: (0..n).map(|_| None).collect(),
             submit_tx: None,
-            submit_notify: None,
         }
     }
 
-    pub(crate) fn install_submit_tx(&mut self, tx: rtrb::Producer<SubmitWork>, notify: Arc<tokio::sync::Notify>) {
+    pub(crate) fn install_submit_tx(&mut self, tx: rtrb::Producer<SubmitWork>) {
         self.submit_tx = Some(tx);
-        self.submit_notify = Some(notify);
     }
 
     pub(crate) fn templates_and_pool_mut(
         &mut self,
     ) -> (
         &[Option<OrderRequestData>],
-        &mut [Option<Box<SdkSignedOrder>>],
+        &mut [Option<Box<PreparedOrderPayload>>],
     ) {
-        (self.presign_templates.as_slice(), self.presign_pool.as_mut_slice())
+        (
+            self.presign_templates.as_slice(),
+            self.presign_pool.as_mut_slice(),
+        )
     }
 
-    pub(crate) fn parse_template_request(template: &PresignTemplateData) -> Option<OrderRequestData> {
+    pub(crate) fn parse_template_request(
+        template: &PresignTemplateData,
+    ) -> Option<OrderRequestData> {
         let token_id = template.token_id.trim().to_string();
         if token_id.is_empty() {
             return None;
@@ -51,7 +54,10 @@ impl DispatchHandle {
             limit_price,
             time_in_force: parse_time_in_force(template.time_in_force.as_deref().unwrap_or("FAK"))
                 .unwrap_or(OrderTimeInForce::FAK),
-            size_shares: template.size_shares.filter(|v| *v > 0.0).unwrap_or(amount_usdc / price),
+            size_shares: template
+                .size_shares
+                .filter(|v| *v > 0.0)
+                .unwrap_or(amount_usdc / price),
         })
     }
 
@@ -72,10 +78,7 @@ impl DispatchHandle {
         }
     }
 
-    pub(crate) fn activate_presign_templates_for_tokens(
-        &mut self,
-        _token_ids: &[String],
-    ) -> usize {
+    pub(crate) fn activate_presign_templates_for_tokens(&mut self, _token_ids: &[String]) -> usize {
         let mut active = 0usize;
         for (idx, slot) in self.registry.tokens.iter().enumerate() {
             let trimmed = slot.token_id.trim();
@@ -108,7 +111,9 @@ impl DispatchHandle {
                 self.presign_templates[idx] = Some(tpl);
             }
             if let Some(signed) = new_presigned.remove(token_id) {
-                self.presign_pool[idx] = Some(Box::new(signed));
+                if let Ok(payload) = prepare_payload_from_signed(signed) {
+                    self.presign_pool[idx] = Some(Box::new(payload));
+                }
             }
         }
     }
@@ -126,7 +131,7 @@ pub(crate) async fn warm_presign_startup_into(
     client: &SdkClient<SdkAuthenticatedState<SdkAuthNormal>>,
     signer: &super::CachedSigner,
     templates: &[Option<OrderRequestData>],
-    pool: &mut [Option<Box<SdkSignedOrder>>],
+    pool: &mut [Option<Box<PreparedOrderPayload>>],
 ) -> Result<(), String> {
     if !cfg.presign_enabled {
         return Ok(());
@@ -167,8 +172,7 @@ pub(crate) async fn warm_presign_startup_into(
             let c = client.clone();
             let s = signer.clone();
             tokio::spawn(async move {
-                let result =
-                    super::sdk_exec::sign_order_batch(&c, &s, &template, 1).await;
+                let result = super::sdk_exec::sign_order_batch(&c, &s, &template, 1).await;
                 (idx, template.token_id, result)
             })
         })
@@ -200,11 +204,10 @@ pub(crate) async fn warm_presign_startup_into(
     for result in results {
         let (idx, token_id, batch_result) =
             result.map_err(|e| format!("presign_task_panicked:{}", e))?;
-        let signed_orders = batch_result.map_err(|e| {
-            format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
-        })?;
+        let signed_orders = batch_result
+            .map_err(|e| format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e))?;
         if let Some(signed) = signed_orders.into_iter().next() {
-            pool[idx] = Some(Box::new(signed));
+            pool[idx] = Some(Box::new(prepare_payload_from_signed(signed)?));
         }
     }
 
@@ -225,4 +228,12 @@ pub(crate) async fn warm_presign_startup_into(
     }
 
     Ok(())
+}
+
+pub(crate) fn prepare_payload_from_signed(
+    signed: SdkSignedOrder,
+) -> Result<PreparedOrderPayload, String> {
+    let order_json =
+        serde_json::to_vec(&signed).map_err(|e| format!("presign_serialize_failed:{}", e))?;
+    Ok(PreparedOrderPayload { order_json })
 }

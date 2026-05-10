@@ -16,12 +16,20 @@ pub(crate) fn fast_parse_score(s: &str) -> Option<i64> {
         0 => None,
         1 => {
             let d = b[0].wrapping_sub(b'0');
-            if d <= 9 { Some(d as i64) } else { None }
+            if d <= 9 {
+                Some(d as i64)
+            } else {
+                None
+            }
         }
         2 => {
             let d0 = b[0].wrapping_sub(b'0');
             let d1 = b[1].wrapping_sub(b'0');
-            if d0 <= 9 && d1 <= 9 { Some((d0 * 10 + d1) as i64) } else { None }
+            if d0 <= 9 && d1 <= 9 {
+                Some((d0 * 10 + d1) as i64)
+            } else {
+                None
+            }
         }
         3 => {
             let d0 = b[0].wrapping_sub(b'0');
@@ -41,28 +49,45 @@ use memchr::memmem::Finder;
 use std::sync::LazyLock;
 
 static FINDER_TYPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"type\""));
-static FINDER_FIXTURE_ID: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"fixtureId\""));
+static FINDER_FIXTURE_ID: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"fixtureId\""));
 static FINDER_FREE_TEXT: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"freeText\""));
-static FINDER_HOME_SCORE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"homeScore\""));
-static FINDER_AWAY_SCORE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"awayScore\""));
+static FINDER_HOME_SCORE: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"homeScore\""));
+static FINDER_AWAY_SCORE: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"awayScore\""));
 
 fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
-    if from >= haystack.len() { return None; }
+    if from >= haystack.len() {
+        return None;
+    }
     finder.find(&haystack[from..]).map(|pos| pos + from)
 }
 
-fn find_key_value_start(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<usize> {
+fn find_key_value_start(
+    finder: &Finder,
+    key_len: usize,
+    bytes: &[u8],
+    from: usize,
+) -> Option<usize> {
     let mut pos = from;
     let len = bytes.len();
     while pos + key_len < len {
         if let Some(idx) = find_with(finder, bytes, pos) {
             let mut p = idx + key_len;
-            while p < len && (bytes[p] == b' ' || bytes[p] == b'\t' || bytes[p] == b'\n' || bytes[p] == b'\r') {
+            while p < len
+                && (bytes[p] == b' ' || bytes[p] == b'\t' || bytes[p] == b'\n' || bytes[p] == b'\r')
+            {
                 p += 1;
             }
             if p < len && bytes[p] == b':' {
                 p += 1;
-                while p < len && (bytes[p] == b' ' || bytes[p] == b'\t' || bytes[p] == b'\n' || bytes[p] == b'\r') {
+                while p < len
+                    && (bytes[p] == b' '
+                        || bytes[p] == b'\t'
+                        || bytes[p] == b'\n'
+                        || bytes[p] == b'\r')
+                {
                     p += 1;
                 }
                 if p < len && bytes[p] == b'"' {
@@ -103,7 +128,9 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     let is_next = find_with(&FINDER_TYPE, bytes, 0)
         .and_then(|pos| {
             let mut p = pos + 6; // skip past `"type"`
-            while p < bytes.len() && bytes[p] != b'"' { p += 1; }
+            while p < bytes.len() && bytes[p] != b'"' {
+                p += 1;
+            }
             if p < bytes.len() {
                 extract_string_value(bytes, p + 1)
             } else {
