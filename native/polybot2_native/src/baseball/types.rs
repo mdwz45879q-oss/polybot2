@@ -27,6 +27,7 @@ pub(crate) struct SpreadSlot {
     pub(crate) not_covers_idx: Option<TargetIdx>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Default)]
 pub(crate) struct Tick {
     pub(crate) universal_id: String,
@@ -40,6 +41,7 @@ pub(crate) struct Tick {
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct DeltaEvent {
+    #[allow(dead_code)]
     pub(crate) material_change: bool,
     pub(crate) goal_delta_home: i64,
     pub(crate) goal_delta_away: i64,
@@ -66,7 +68,7 @@ pub(crate) struct GameState {
     pub(crate) game_state: &'static str,
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) struct TickResult {
     pub(crate) game_id: String,
     pub(crate) state: GameState,

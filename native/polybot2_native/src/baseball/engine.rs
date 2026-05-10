@@ -354,139 +354,6 @@ impl NativeMlbEngine {
         }
     }
 
-    pub(crate) fn process_tick(&mut self, tick: Tick) -> TickResult {
-        let game_id = tick.universal_id.clone();
-
-        if game_id.is_empty() {
-            return TickResult {
-                game_id,
-                state: GameState::default(),
-                intents: vec![],
-                material: false,
-            };
-        }
-
-        let Some(&gidx) = self.game_id_to_idx.get(&game_id) else {
-            return TickResult {
-                game_id,
-                state: GameState::default(),
-                intents: vec![],
-                material: false,
-            };
-        };
-
-        let delta = self.apply_delta(gidx, &tick);
-        if !delta.material_change {
-            let state = self.game_states[gidx.0 as usize];
-            return TickResult {
-                game_id,
-                state,
-                intents: vec![],
-                material: false,
-            };
-        }
-
-        let (_prev_state, state) = self.update_game_state(gidx, &tick);
-
-        let mut intents = Vec::new();
-        intents.extend(self.evaluate_totals(gidx, &state));
-        intents.extend(self.evaluate_nrfi(gidx, &state, &delta));
-        intents.extend(self.evaluate_walkoff(gidx, &state));
-        intents.extend(self.evaluate_final(gidx, &state));
-
-        let gi = gidx.0 as usize;
-        if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
-            self.cleanup_completed_game_idx(gidx);
-        }
-
-        TickResult {
-            game_id,
-            state,
-            intents,
-            material: true,
-        }
-    }
-
-    fn apply_delta(&mut self, gidx: GameIdx, tick: &Tick) -> DeltaEvent {
-        let gi = gidx.0 as usize;
-
-        // No dedup in the old FFI path — the live WS path handles dedup
-        // in the frame pipeline via `check_duplicate` before calling the engine.
-        // Every tick that reaches process_tick is considered material.
-
-        let mut goal_delta_home = 0;
-        let mut goal_delta_away = 0;
-        if let Some(row) = self.rows[gi].as_ref() {
-            goal_delta_home = tick.goals_home.unwrap_or(0) - row.goals_home.unwrap_or(0);
-            goal_delta_away = tick.goals_away.unwrap_or(0) - row.goals_away.unwrap_or(0);
-        }
-
-        self.rows[gi] = Some(StateRow {
-            home_score_raw: InlineStr::new(),
-            away_score_raw: InlineStr::new(),
-            free_text_raw: InlineStr::new(),
-            goals_home: tick.goals_home,
-            goals_away: tick.goals_away,
-        });
-
-        DeltaEvent {
-            material_change: true,
-            goal_delta_home,
-            goal_delta_away,
-        }
-    }
-
-    fn update_game_state(&mut self, gidx: GameIdx, tick: &Tick) -> (GameState, GameState) {
-        let gi = gidx.0 as usize;
-        let prev = self.game_states[gi];
-
-        let home = tick.goals_home.or(prev.home);
-        let away = tick.goals_away.or(prev.away);
-        let inning_number = tick.inning_number.or(prev.inning_number);
-        let inning_half = if tick.inning_half.is_empty() {
-            prev.inning_half
-        } else {
-            tick.inning_half
-        };
-        let match_completed = if prev.match_completed.unwrap_or(false) {
-            Some(true)
-        } else if tick.match_completed.is_some() {
-            Some(tick.match_completed.unwrap_or(false))
-        } else {
-            prev.match_completed
-        };
-        let resolved_game_state = if !tick.game_state.is_empty() {
-            tick.game_state
-        } else if match_completed.unwrap_or(false) {
-            "FINAL"
-        } else if !prev.game_state.is_empty() {
-            prev.game_state
-        } else {
-            "UNKNOWN"
-        };
-
-        let mut state = GameState {
-            home: prev.home,
-            away: prev.away,
-            total: prev.total,
-            prev_total: prev.total,
-            inning_number,
-            inning_half,
-            match_completed,
-            game_state: resolved_game_state,
-        };
-
-        if home.is_some() && away.is_some() {
-            state.home = home;
-            state.away = away;
-            state.prev_total = prev.total;
-            state.total = Some(home.unwrap_or(0) + away.unwrap_or(0));
-        }
-
-        self.game_states[gi] = state;
-        (prev, state)
-    }
-
     // ---------------------------------------------------------------
     // Zero-alloc live WS path
     // ---------------------------------------------------------------
@@ -860,6 +727,89 @@ mod tests {
     use super::*;
     use crate::kalstrop_types::KalstropFrame;
     use crate::baseball::parse::parse_tick_from_kalstrop_update;
+
+    impl NativeMlbEngine {
+        fn process_tick(&mut self, tick: Tick) -> TickResult {
+            let game_id = tick.universal_id.clone();
+            if game_id.is_empty() {
+                return TickResult { game_id, state: GameState::default(), intents: vec![], material: false };
+            }
+            let Some(&gidx) = self.game_id_to_idx.get(&game_id) else {
+                return TickResult { game_id, state: GameState::default(), intents: vec![], material: false };
+            };
+            let delta = self.apply_delta(gidx, &tick);
+            if !delta.material_change {
+                let state = self.game_states[gidx.0 as usize];
+                return TickResult { game_id, state, intents: vec![], material: false };
+            }
+            let (_prev_state, state) = self.update_game_state(gidx, &tick);
+            let mut intents = Vec::new();
+            intents.extend(self.evaluate_totals(gidx, &state));
+            intents.extend(self.evaluate_nrfi(gidx, &state, &delta));
+            intents.extend(self.evaluate_walkoff(gidx, &state));
+            intents.extend(self.evaluate_final(gidx, &state));
+            let gi = gidx.0 as usize;
+            if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
+                self.cleanup_completed_game_idx(gidx);
+            }
+            TickResult { game_id, state, intents, material: true }
+        }
+
+        fn apply_delta(&mut self, gidx: GameIdx, tick: &Tick) -> DeltaEvent {
+            let gi = gidx.0 as usize;
+            let mut goal_delta_home = 0;
+            let mut goal_delta_away = 0;
+            if let Some(row) = self.rows[gi].as_ref() {
+                goal_delta_home = tick.goals_home.unwrap_or(0) - row.goals_home.unwrap_or(0);
+                goal_delta_away = tick.goals_away.unwrap_or(0) - row.goals_away.unwrap_or(0);
+            }
+            self.rows[gi] = Some(StateRow {
+                home_score_raw: InlineStr::new(),
+                away_score_raw: InlineStr::new(),
+                free_text_raw: InlineStr::new(),
+                goals_home: tick.goals_home,
+                goals_away: tick.goals_away,
+            });
+            DeltaEvent { material_change: true, goal_delta_home, goal_delta_away }
+        }
+
+        fn update_game_state(&mut self, gidx: GameIdx, tick: &Tick) -> (GameState, GameState) {
+            let gi = gidx.0 as usize;
+            let prev = self.game_states[gi];
+            let home = tick.goals_home.or(prev.home);
+            let away = tick.goals_away.or(prev.away);
+            let inning_number = tick.inning_number.or(prev.inning_number);
+            let inning_half = if tick.inning_half.is_empty() { prev.inning_half } else { tick.inning_half };
+            let match_completed = if prev.match_completed.unwrap_or(false) {
+                Some(true)
+            } else if tick.match_completed.is_some() {
+                Some(tick.match_completed.unwrap_or(false))
+            } else {
+                prev.match_completed
+            };
+            let resolved_game_state = if !tick.game_state.is_empty() {
+                tick.game_state
+            } else if match_completed.unwrap_or(false) {
+                "FINAL"
+            } else if !prev.game_state.is_empty() {
+                prev.game_state
+            } else {
+                "UNKNOWN"
+            };
+            let mut state = GameState {
+                home: prev.home, away: prev.away, total: prev.total, prev_total: prev.total,
+                inning_number, inning_half, match_completed, game_state: resolved_game_state,
+            };
+            if home.is_some() && away.is_some() {
+                state.home = home;
+                state.away = away;
+                state.prev_total = prev.total;
+                state.total = Some(home.unwrap_or(0) + away.unwrap_or(0));
+            }
+            self.game_states[gi] = state;
+            (prev, state)
+        }
+    }
 
     fn process_single_frame(
         engine: &mut NativeMlbEngine,

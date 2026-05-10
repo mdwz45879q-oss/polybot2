@@ -36,6 +36,7 @@ pub(crate) type SubmitBatch = smallvec::SmallVec<[(crate::TargetIdx, Box<SdkSign
 /// `Batch` arrivals up to `MAX_BATCH_SIZE` before posting.
 pub(crate) enum SubmitWork {
     Batch(SubmitBatch),
+    #[allow(dead_code)]
     Stop,
 }
 

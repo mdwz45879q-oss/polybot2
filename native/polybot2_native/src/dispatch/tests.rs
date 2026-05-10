@@ -3,6 +3,7 @@ use crate::log_writer::LogWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 static TEST_LOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -286,6 +287,187 @@ fn submitter_run_sets_running_then_clears_on_channel_close() {
     tokio_rt.block_on(crate::dispatch::run_submitter_async(submitter));
     let h = health.lock().expect("health lock");
     assert!(!h.running);
+}
+
+#[test]
+fn submitter_parallelizes_two_chunks_when_permits_allow() {
+    let delay = Duration::from_millis(35);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let (elapsed, max_inflight) = tokio_rt.block_on(super::simulate_chunk_parallelism_for_test(
+        30,
+        15,
+        3,
+        delay,
+    ));
+    assert!(max_inflight >= 2, "max_inflight={}", max_inflight);
+    assert!(
+        elapsed < Duration::from_millis(65),
+        "expected near single-delay parallel wall time, got {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn submitter_serializes_two_chunks_when_permit_is_one() {
+    let delay = Duration::from_millis(35);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let (elapsed, max_inflight) = tokio_rt.block_on(super::simulate_chunk_parallelism_for_test(
+        30,
+        15,
+        1,
+        delay,
+    ));
+    assert_eq!(max_inflight, 1, "max_inflight={}", max_inflight);
+    assert!(
+        elapsed >= Duration::from_millis(60),
+        "expected serialized >= two-delay wall time, got {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn submitter_chunk_calls_respect_global_permit_cap() {
+    let delay = Duration::from_millis(20);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let (_elapsed, max_inflight) = tokio_rt.block_on(super::simulate_chunk_parallelism_for_test(
+        90,
+        15,
+        3,
+        delay,
+    ));
+    assert!(
+        max_inflight <= 3,
+        "max_inflight {} exceeded permit cap 3",
+        max_inflight
+    );
+}
+
+#[test]
+fn submitter_queue_is_serialized_across_batches() {
+    let delay = Duration::from_millis(35);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let (elapsed, max_inflight) =
+        tokio_rt.block_on(super::simulate_submitter_serial_queue_for_test(2, delay));
+    assert_eq!(max_inflight, 1, "max_inflight={}", max_inflight);
+    assert!(
+        elapsed >= Duration::from_millis(60),
+        "expected roughly sum of both delays for strict serialization, got {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn submitter_small_batch_single_call_synthetic() {
+    let delay = Duration::from_millis(25);
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let (elapsed, max_inflight) = tokio_rt.block_on(super::simulate_chunk_parallelism_for_test(
+        8,
+        15,
+        3,
+        delay,
+    ));
+    assert_eq!(max_inflight, 1, "max_inflight={}", max_inflight);
+    assert!(
+        elapsed < Duration::from_millis(50),
+        "expected single-call wall time for 2..=15 path, got {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn submitter_small_batch_mapping_is_deterministic_and_short_error_aligned() {
+    let targets = vec![
+        crate::TargetIdx(10),
+        crate::TargetIdx(11),
+        crate::TargetIdx(12),
+    ];
+    let mapped = super::simulate_small_batch_mapping_for_test(&targets, 2);
+    assert_eq!(mapped.len(), 3);
+    assert_eq!(mapped[0].0, crate::TargetIdx(10));
+    assert!(mapped[0].1.as_ref().is_ok());
+    assert_eq!(mapped[1].0, crate::TargetIdx(11));
+    assert!(mapped[1].1.as_ref().is_ok());
+    assert_eq!(mapped[2].0, crate::TargetIdx(12));
+    let err = mapped[2].1.as_ref().expect_err("3rd should be short-response err");
+    assert!(
+        err.starts_with("batch_response_short:expected=3,got=2"),
+        "unexpected err {}",
+        err
+    );
+}
+
+#[test]
+fn submitter_spawn_overhead_proxy_is_higher_than_inline() {
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let (spawn_elapsed, inline_elapsed) = tokio_rt
+        .block_on(super::simulate_submitter_spawn_vs_inline_overhead_for_test(5_000));
+    assert!(
+        spawn_elapsed > inline_elapsed,
+        "spawn_elapsed={:?} inline_elapsed={:?}",
+        spawn_elapsed,
+        inline_elapsed
+    );
+}
+
+#[test]
+fn submitter_metrics_snapshot_routes_buckets_and_chunk_lens() {
+    let mut h = crate::SubmitterHealth::default();
+    h.record_pop_to_task_start_ns(1, 11);
+    h.record_pop_to_task_start_ns(2, 22);
+    h.record_pop_to_task_start_ns(16, 33);
+    h.record_task_prep_ns(1, 7);
+    h.record_permit_wait_ns(2, 8);
+    h.record_sdk_call_total_ns(2, 12);
+    h.record_sdk_call_total_ns(16, 9);
+    h.record_batch_total_ns(1, 10);
+    h.record_chunk_sdk_call_total_ns(1, 101);
+    h.record_chunk_sdk_call_total_ns(2, 202);
+    h.record_chunk_sdk_call_total_ns(15, 1515);
+
+    let snapshot = h.latency_metrics_snapshot_json();
+    assert_eq!(snapshot["window"].as_u64(), Some(2048));
+    assert_eq!(
+        snapshot["buckets"]["n1"]["pop_to_task_start_ns"]["count"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(
+        snapshot["buckets"]["n2_15"]["pop_to_task_start_ns"]["count"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(
+        snapshot["buckets"]["n2_15"]["sdk_call_total_ns"]["count"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(
+        snapshot["buckets"]["n16_plus"]["pop_to_task_start_ns"]["count"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(snapshot["chunk_len"]["1"]["count"].as_u64(), Some(1));
+    assert_eq!(snapshot["chunk_len"]["2"]["count"].as_u64(), Some(1));
+    assert_eq!(snapshot["chunk_len"]["15"]["count"].as_u64(), Some(1));
+    assert!(
+        snapshot["buckets"]["n1"]["batch_total_ns"]["p50"]
+            .as_u64()
+            .is_some()
+    );
 }
 
 #[test]

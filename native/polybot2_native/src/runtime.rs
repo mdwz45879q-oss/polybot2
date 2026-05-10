@@ -491,6 +491,15 @@ impl NativeHotPathRuntime {
         let mut submitter_last_error = String::new();
         let mut posted_ok = 0i64;
         let mut posted_err = 0i64;
+        let mut latency_metrics = json!({
+            "window": 0,
+            "buckets": {
+                "n1": {},
+                "n2_15": {},
+                "n16_plus": {},
+            },
+            "chunk_len": {},
+        });
         if let Some(sub) = self.submitter.as_ref() {
             submitter_present = true;
             if let Ok(h) = sub.health.lock() {
@@ -498,6 +507,7 @@ impl NativeHotPathRuntime {
                 submitter_last_error = h.last_error.clone();
                 posted_ok = h.posted_ok;
                 posted_err = h.posted_err;
+                latency_metrics = h.latency_metrics_snapshot_json();
             }
         }
         let payload = json!({
@@ -511,6 +521,7 @@ impl NativeHotPathRuntime {
                 "last_error": submitter_last_error,
                 "posted_ok": posted_ok,
                 "posted_err": posted_err,
+                "latency_metrics": latency_metrics,
             },
         });
         crate::baseball::engine::serde_value_to_py(py, &payload)

@@ -1,22 +1,15 @@
-use crate::baseball::types::Tick;
-use crate::kalstrop_types::KalstropUpdate;
-
-// ---------------------------------------------------------------------------
-// Zero-copy Kalstrop parse (live WS path)
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn parse_tick_from_kalstrop_update(
-    update: &KalstropUpdate<'_>,
+    update: &crate::kalstrop_types::KalstropUpdate<'_>,
     _recv_monotonic_ns: i64,
-) -> Tick {
+) -> crate::baseball::types::Tick {
     let summary = update.match_summary.as_ref();
     let free_text = summary
         .and_then(|s| s.first_free_text)
         .unwrap_or("");
     let (inning_number, inning_half) = parse_period(free_text);
 
-    Tick {
+    crate::baseball::types::Tick {
         universal_id: update.fixture_id.to_owned(),
         goals_home: summary
             .and_then(|s| s.home_score)
@@ -135,8 +128,7 @@ pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
         || s.eq_ignore_ascii_case("FT")
 }
 
-/// Derive game state from freeText. Prematch games don't produce WS frames,
-/// so any non-empty freeText that isn't a completion state means the game is live.
+#[cfg(test)]
 pub(crate) fn normalize_game_state_from_free_text(free_text: &str) -> &'static str {
     let s = free_text.trim();
     if s.is_empty() {

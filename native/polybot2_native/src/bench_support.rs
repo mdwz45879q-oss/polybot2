@@ -326,6 +326,92 @@ mod tests {
     }
 
     #[test]
+    fn bench_submitter_chunk_parallel_synthetic() {
+        let delay = Duration::from_millis(2);
+        let iters = 30u64;
+        let tokio_rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+
+        let serial_start = Instant::now();
+        for _ in 0..iters {
+            let _ = tokio_rt.block_on(crate::dispatch::simulate_chunk_parallelism_for_test(
+                30, 15, 1, delay,
+            ));
+        }
+        let serial = serial_start.elapsed();
+
+        let parallel_start = Instant::now();
+        for _ in 0..iters {
+            let _ = tokio_rt.block_on(crate::dispatch::simulate_chunk_parallelism_for_test(
+                30, 15, 3, delay,
+            ));
+        }
+        let parallel = parallel_start.elapsed();
+
+        let serial_ms = serial.as_secs_f64() * 1000.0 / iters as f64;
+        let parallel_ms = parallel.as_secs_f64() * 1000.0 / iters as f64;
+        println!(
+            "[submitter_chunk_parallel_synthetic] serial_avg_ms={:.3} parallel_avg_ms={:.3} speedup={:.2}x",
+            serial_ms,
+            parallel_ms,
+            serial_ms / parallel_ms.max(0.000_001)
+        );
+        assert!(
+            parallel < serial,
+            "expected parallel < serial, serial={:?}, parallel={:?}",
+            serial,
+            parallel
+        );
+    }
+
+    #[test]
+    fn bench_submitter_spawn_overhead_proxy() {
+        let iters = 20_000usize;
+        let tokio_rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        let (spawn_elapsed, inline_elapsed) = tokio_rt
+            .block_on(crate::dispatch::simulate_submitter_spawn_vs_inline_overhead_for_test(
+                iters,
+            ));
+        let spawn_us = spawn_elapsed.as_secs_f64() * 1_000_000.0 / iters as f64;
+        let inline_us = inline_elapsed.as_secs_f64() * 1_000_000.0 / iters as f64;
+        println!(
+            "[submitter_spawn_overhead_proxy] spawn_avg_us={:.3} inline_avg_us={:.3} ratio={:.2}x",
+            spawn_us,
+            inline_us,
+            spawn_us / inline_us.max(0.000_001)
+        );
+        assert!(spawn_elapsed > inline_elapsed);
+    }
+
+    #[test]
+    fn bench_submitter_small_batch_single_call_synthetic() {
+        let delay = Duration::from_millis(2);
+        let iters = 40u64;
+        let tokio_rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        let start = Instant::now();
+        for _ in 0..iters {
+            let (_elapsed, max_inflight) = tokio_rt.block_on(
+                crate::dispatch::simulate_chunk_parallelism_for_test(8, 15, 3, delay),
+            );
+            assert_eq!(max_inflight, 1);
+        }
+        let total = start.elapsed();
+        let avg_ms = total.as_secs_f64() * 1000.0 / iters as f64;
+        println!(
+            "[submitter_small_batch_single_call_synthetic] avg_ms={:.3}",
+            avg_ms
+        );
+    }
+
+    #[test]
     fn bench_mlb_fast_extract_only() {
         let frames = load_capture_next_frames();
         if frames.is_empty() {

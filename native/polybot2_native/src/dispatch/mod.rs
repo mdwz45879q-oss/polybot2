@@ -26,6 +26,39 @@ pub(crate) use types::OrderRequestData;
 pub(crate) use types::SharedRegistry;
 pub(super) use types::PolymarketSdkRuntime;
 
+#[cfg(any(test, feature = "bench-support"))]
+pub(crate) async fn simulate_chunk_parallelism_for_test(
+    total_orders: usize,
+    max_batch: usize,
+    permit_count: usize,
+    delay: std::time::Duration,
+) -> (std::time::Duration, usize) {
+    submitter::simulate_chunk_parallelism_for_test(total_orders, max_batch, permit_count, delay).await
+}
+
+#[cfg(any(test, feature = "bench-support"))]
+pub(crate) async fn simulate_submitter_serial_queue_for_test(
+    batch_count: usize,
+    delay: std::time::Duration,
+) -> (std::time::Duration, usize) {
+    submitter::simulate_submitter_serial_queue_for_test(batch_count, delay).await
+}
+
+#[cfg(any(test, feature = "bench-support"))]
+pub(crate) async fn simulate_submitter_spawn_vs_inline_overhead_for_test(
+    iterations: usize,
+) -> (std::time::Duration, std::time::Duration) {
+    submitter::simulate_submitter_spawn_vs_inline_overhead_for_test(iterations).await
+}
+
+#[cfg(any(test, feature = "bench-support"))]
+pub(crate) fn simulate_small_batch_mapping_for_test(
+    target_idxs: &[crate::TargetIdx],
+    response_count: usize,
+) -> Vec<(crate::TargetIdx, Result<String, String>)> {
+    submitter::simulate_small_batch_mapping_for_test(target_idxs, response_count)
+}
+
 pub(crate) fn build_dispatch_config(
     exec_cfg: ExecStartConfig,
     amount_usdc: f64,

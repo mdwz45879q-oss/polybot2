@@ -210,46 +210,29 @@ impl NativeMlbEngine {
         self.final_resolved_games[gi] = true;
     }
 
-    // ---------------------------------------------------------------
-    // Vec-returning wrappers (Python FFI / replay path)
-    // ---------------------------------------------------------------
+}
 
-    pub(crate) fn evaluate_totals(
-        &mut self,
-        gidx: GameIdx,
-        state: &GameState,
-    ) -> Vec<Intent> {
+#[cfg(test)]
+impl NativeMlbEngine {
+    pub(crate) fn evaluate_totals(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_totals_into(gidx, state, &mut out);
         out.into_vec()
     }
 
-    pub(crate) fn evaluate_nrfi(
-        &mut self,
-        gidx: GameIdx,
-        state: &GameState,
-        delta: &DeltaEvent,
-    ) -> Vec<Intent> {
+    pub(crate) fn evaluate_nrfi(&mut self, gidx: GameIdx, state: &GameState, delta: &DeltaEvent) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_nrfi_into(gidx, state, delta, &mut out);
         out.into_vec()
     }
 
-    pub(crate) fn evaluate_walkoff(
-        &mut self,
-        gidx: GameIdx,
-        state: &GameState,
-    ) -> Vec<Intent> {
+    pub(crate) fn evaluate_walkoff(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_walkoff_into(gidx, state, &mut out);
         out.into_vec()
     }
 
-    pub(crate) fn evaluate_final(
-        &mut self,
-        gidx: GameIdx,
-        state: &GameState,
-    ) -> Vec<Intent> {
+    pub(crate) fn evaluate_final(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_final_into(gidx, state, &mut out);
         out.into_vec()

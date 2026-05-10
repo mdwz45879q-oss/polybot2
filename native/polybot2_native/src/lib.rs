@@ -246,12 +246,225 @@ struct RuntimeHealth {
     last_error: String,
 }
 
-#[derive(Default)]
+const SUBMITTER_LATENCY_WINDOW: usize = 2048;
+const SUBMITTER_BUCKET_COUNT: usize = 3;
+const SUBMITTER_CHUNK_MAX: usize = 15;
+const SUBMITTER_BUCKET_N2_15_MAX: usize = 15;
+
+pub(crate) struct LatencyRing {
+    values: Box<[u64; SUBMITTER_LATENCY_WINDOW]>,
+    len: usize,
+    next: usize,
+}
+
+impl Default for LatencyRing {
+    fn default() -> Self {
+        Self {
+            values: Box::new([0u64; SUBMITTER_LATENCY_WINDOW]),
+            len: 0,
+            next: 0,
+        }
+    }
+}
+
+impl LatencyRing {
+    fn push(&mut self, value: u64) {
+        self.values[self.next] = value;
+        self.next = (self.next + 1) % SUBMITTER_LATENCY_WINDOW;
+        if self.len < SUBMITTER_LATENCY_WINDOW {
+            self.len += 1;
+        }
+    }
+
+    fn stats_json(&self) -> Value {
+        if self.len == 0 {
+            return json!({
+                "count": 0,
+                "min": 0,
+                "max": 0,
+                "p50": 0,
+                "p95": 0,
+                "p99": 0,
+            });
+        }
+
+        let mut data = if self.len < SUBMITTER_LATENCY_WINDOW {
+            self.values[..self.len].to_vec()
+        } else {
+            let mut out = Vec::with_capacity(SUBMITTER_LATENCY_WINDOW);
+            out.extend_from_slice(&self.values[self.next..]);
+            out.extend_from_slice(&self.values[..self.next]);
+            out
+        };
+        data.sort_unstable();
+        let count = data.len();
+        let p50 = data[count / 2];
+        let p95 = data[(count * 95) / 100];
+        let p99 = data[(count * 99) / 100];
+
+        json!({
+            "count": count as u64,
+            "min": data[0],
+            "max": data[count - 1],
+            "p50": p50,
+            "p95": p95,
+            "p99": p99,
+        })
+    }
+}
+
+pub(crate) struct SubmitterLatencyMetrics {
+    pop_to_task_start_ns: [LatencyRing; SUBMITTER_BUCKET_COUNT],
+    task_prep_ns: [LatencyRing; SUBMITTER_BUCKET_COUNT],
+    permit_wait_ns: [LatencyRing; SUBMITTER_BUCKET_COUNT],
+    sdk_call_total_ns: [LatencyRing; SUBMITTER_BUCKET_COUNT],
+    batch_total_ns: [LatencyRing; SUBMITTER_BUCKET_COUNT],
+    chunk_sdk_call_total_ns: [LatencyRing; SUBMITTER_CHUNK_MAX],
+}
+
+impl Default for SubmitterLatencyMetrics {
+    fn default() -> Self {
+        Self {
+            pop_to_task_start_ns: std::array::from_fn(|_| LatencyRing::default()),
+            task_prep_ns: std::array::from_fn(|_| LatencyRing::default()),
+            permit_wait_ns: std::array::from_fn(|_| LatencyRing::default()),
+            sdk_call_total_ns: std::array::from_fn(|_| LatencyRing::default()),
+            batch_total_ns: std::array::from_fn(|_| LatencyRing::default()),
+            chunk_sdk_call_total_ns: std::array::from_fn(|_| LatencyRing::default()),
+        }
+    }
+}
+
+impl SubmitterLatencyMetrics {
+    fn bucket_idx(batch_len: usize) -> usize {
+        if batch_len <= 1 {
+            0
+        } else if batch_len <= SUBMITTER_BUCKET_N2_15_MAX {
+            1
+        } else {
+            2
+        }
+    }
+
+    fn record_pop_to_task_start(&mut self, batch_len: usize, ns: u64) {
+        let idx = Self::bucket_idx(batch_len);
+        self.pop_to_task_start_ns[idx].push(ns);
+    }
+
+    fn record_task_prep(&mut self, batch_len: usize, ns: u64) {
+        let idx = Self::bucket_idx(batch_len);
+        self.task_prep_ns[idx].push(ns);
+    }
+
+    fn record_permit_wait(&mut self, batch_len: usize, ns: u64) {
+        let idx = Self::bucket_idx(batch_len);
+        self.permit_wait_ns[idx].push(ns);
+    }
+
+    fn record_sdk_call_total(&mut self, batch_len: usize, ns: u64) {
+        let idx = Self::bucket_idx(batch_len);
+        self.sdk_call_total_ns[idx].push(ns);
+    }
+
+    fn record_batch_total(&mut self, batch_len: usize, ns: u64) {
+        let idx = Self::bucket_idx(batch_len);
+        self.batch_total_ns[idx].push(ns);
+    }
+
+    fn record_chunk_sdk_call_total(&mut self, chunk_len: usize, ns: u64) {
+        if chunk_len == 0 || chunk_len > SUBMITTER_CHUNK_MAX {
+            return;
+        }
+        self.chunk_sdk_call_total_ns[chunk_len - 1].push(ns);
+    }
+
+    fn snapshot_json(&self) -> Value {
+        let bucket_n1 = 0usize;
+        let bucket_n2_15 = 1usize;
+        let bucket_n16_plus = 2usize;
+        let mut chunk_map = serde_json::Map::new();
+        for (i, ring) in self.chunk_sdk_call_total_ns.iter().enumerate() {
+            chunk_map.insert((i + 1).to_string(), ring.stats_json());
+        }
+
+        json!({
+            "window": SUBMITTER_LATENCY_WINDOW,
+            "buckets": {
+                "n1": {
+                    "pop_to_task_start_ns": self.pop_to_task_start_ns[bucket_n1].stats_json(),
+                    "task_prep_ns": self.task_prep_ns[bucket_n1].stats_json(),
+                    "permit_wait_ns": self.permit_wait_ns[bucket_n1].stats_json(),
+                    "sdk_call_total_ns": self.sdk_call_total_ns[bucket_n1].stats_json(),
+                    "batch_total_ns": self.batch_total_ns[bucket_n1].stats_json(),
+                },
+                "n2_15": {
+                    "pop_to_task_start_ns": self.pop_to_task_start_ns[bucket_n2_15].stats_json(),
+                    "task_prep_ns": self.task_prep_ns[bucket_n2_15].stats_json(),
+                    "permit_wait_ns": self.permit_wait_ns[bucket_n2_15].stats_json(),
+                    "sdk_call_total_ns": self.sdk_call_total_ns[bucket_n2_15].stats_json(),
+                    "batch_total_ns": self.batch_total_ns[bucket_n2_15].stats_json(),
+                },
+                "n16_plus": {
+                    "pop_to_task_start_ns": self.pop_to_task_start_ns[bucket_n16_plus].stats_json(),
+                    "task_prep_ns": self.task_prep_ns[bucket_n16_plus].stats_json(),
+                    "permit_wait_ns": self.permit_wait_ns[bucket_n16_plus].stats_json(),
+                    "sdk_call_total_ns": self.sdk_call_total_ns[bucket_n16_plus].stats_json(),
+                    "batch_total_ns": self.batch_total_ns[bucket_n16_plus].stats_json(),
+                }
+            },
+            "chunk_len": chunk_map,
+        })
+    }
+}
+
 pub(crate) struct SubmitterHealth {
     pub(crate) running: bool,
     pub(crate) last_error: String,
     pub(crate) posted_ok: i64,
     pub(crate) posted_err: i64,
+    pub(crate) latency_metrics: Box<SubmitterLatencyMetrics>,
+}
+
+impl Default for SubmitterHealth {
+    fn default() -> Self {
+        Self {
+            running: false,
+            last_error: String::new(),
+            posted_ok: 0,
+            posted_err: 0,
+            latency_metrics: Box::new(SubmitterLatencyMetrics::default()),
+        }
+    }
+}
+
+impl SubmitterHealth {
+    fn record_pop_to_task_start_ns(&mut self, batch_len: usize, ns: u64) {
+        self.latency_metrics.record_pop_to_task_start(batch_len, ns);
+    }
+
+    fn record_task_prep_ns(&mut self, batch_len: usize, ns: u64) {
+        self.latency_metrics.record_task_prep(batch_len, ns);
+    }
+
+    fn record_permit_wait_ns(&mut self, batch_len: usize, ns: u64) {
+        self.latency_metrics.record_permit_wait(batch_len, ns);
+    }
+
+    fn record_sdk_call_total_ns(&mut self, batch_len: usize, ns: u64) {
+        self.latency_metrics.record_sdk_call_total(batch_len, ns);
+    }
+
+    fn record_batch_total_ns(&mut self, batch_len: usize, ns: u64) {
+        self.latency_metrics.record_batch_total(batch_len, ns);
+    }
+
+    fn record_chunk_sdk_call_total_ns(&mut self, chunk_len: usize, ns: u64) {
+        self.latency_metrics.record_chunk_sdk_call_total(chunk_len, ns);
+    }
+
+    fn latency_metrics_snapshot_json(&self) -> Value {
+        self.latency_metrics.snapshot_json()
+    }
 }
 
 #[derive(Clone)]
