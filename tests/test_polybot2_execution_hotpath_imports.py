@@ -3,7 +3,7 @@ from __future__ import annotations
 import polybot2.hotpath as hotpath_pkg
 
 from polybot2.execution import FastExecutionConfig, OrderRequest
-from polybot2.hotpath import HotPathConfig, NativeHotPathService, OrderIntent
+from polybot2.hotpath import HotPathConfig, NativeHotPathService
 
 
 def test_execution_contracts_smoke() -> None:
@@ -23,14 +23,6 @@ def test_execution_contracts_smoke() -> None:
 def test_hotpath_contracts_smoke() -> None:
     cfg = HotPathConfig(run_scores=True, run_odds=False)
     assert cfg.run_scores is True
-    intent = OrderIntent(
-        strategy_key="s1",
-        token_id="tok",
-        side="buy_yes",
-        amount_usdc=5.0,
-        limit_price=0.2,
-    )
-    assert intent.strategy_key == "s1"
 
 
 def test_hotpath_runtime_exports_are_native_only() -> None:

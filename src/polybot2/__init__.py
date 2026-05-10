@@ -9,7 +9,7 @@ from polybot2.execution import (
     ReplaceRequest,
     resolve_token_id,
 )
-from polybot2.hotpath import HotPathConfig, MatchDeltaEvent, OrderIntent
+from polybot2.hotpath import HotPathConfig
 from polybot2.linking import (
     BindingResolver,
     LinkReviewService,
@@ -44,8 +44,6 @@ __all__ = [
     "LinkService",
     "LinkReviewService",
     "MarketSync",
-    "MatchDeltaEvent",
-    "OrderIntent",
     "OrderRequest",
     "ProviderGameRecord",
     "ProviderSyncResult",

@@ -41,19 +41,6 @@ pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
         || s.eq_ignore_ascii_case("FT")
 }
 
-/// Derive game state from freeText.
-#[allow(dead_code)]
-pub(crate) fn normalize_game_state_from_free_text(free_text: &str) -> &'static str {
-    let s = free_text.trim();
-    if s.is_empty() {
-        return "UNKNOWN";
-    }
-    if is_completed_free_text(s) {
-        return "FINAL";
-    }
-    "LIVE"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

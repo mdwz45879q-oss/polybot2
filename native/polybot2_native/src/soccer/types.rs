@@ -21,8 +21,8 @@ pub(crate) struct SoccerGameTargets {
     pub(crate) moneyline_draw_yes: Option<TargetIdx>,
     pub(crate) moneyline_draw_no: Option<TargetIdx>,
 
-    // Spreads — identical structure to baseball
-    pub(crate) spreads: Vec<(SpreadSide, f64, TargetIdx)>,
+    // Spreads — covers + not-covers per side+line
+    pub(crate) spreads: Vec<SpreadSlot>,
 
     // Both Teams to Score
     pub(crate) btts_yes: Option<TargetIdx>,
@@ -40,8 +40,26 @@ pub(crate) struct SoccerGameTargets {
     pub(crate) halftime_draw_yes: Option<TargetIdx>,
     pub(crate) halftime_draw_no: Option<TargetIdx>,
 
-    // Exact score — (predicted_home, predicted_away, target_idx)
-    pub(crate) exact_scores: Vec<(i64, i64, TargetIdx)>,
+    // Exact score — YES/NO per predicted scoreline + "any other score"
+    pub(crate) exact_scores: Vec<ExactScoreSlot>,
+    pub(crate) any_other_score_yes: Option<TargetIdx>,
+    pub(crate) any_other_score_no: Option<TargetIdx>,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ExactScoreSlot {
+    pub(crate) home_pred: i64,
+    pub(crate) away_pred: i64,
+    pub(crate) yes_idx: Option<TargetIdx>,
+    pub(crate) no_idx: Option<TargetIdx>,
+}
+
+#[derive(Clone)]
+pub(crate) struct SpreadSlot {
+    pub(crate) side: SpreadSide,
+    pub(crate) line: f64,
+    pub(crate) covers_idx: Option<TargetIdx>,
+    pub(crate) not_covers_idx: Option<TargetIdx>,
 }
 
 #[derive(Clone, Default)]

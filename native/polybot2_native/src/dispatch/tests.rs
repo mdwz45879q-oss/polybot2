@@ -1,20 +1,26 @@
 use super::*;
 use crate::log_writer::LogWriter;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 static TEST_LOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn temp_log() -> Arc<Mutex<LogWriter>> {
+    temp_log_with_path().0
+}
+
+fn temp_log_with_path() -> (Arc<Mutex<LogWriter>>, PathBuf) {
     let n = TEST_LOG_COUNTER.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
         "polybot2_test_{}_{}.jsonl",
         std::process::id(),
         n
     ));
-    Arc::new(Mutex::new(
+    let log = Arc::new(Mutex::new(
         LogWriter::open(path.to_str().expect("utf8 path")).expect("temp log"),
-    ))
+    ));
+    (log, path)
 }
 
 fn empty_registry() -> Arc<crate::TargetRegistry> {
@@ -54,23 +60,34 @@ fn registry_with_n_targets(targets: &[(&str, &str)]) -> Arc<crate::TargetRegistr
     Arc::new(crate::TargetRegistry { tokens, targets: target_slots })
 }
 
+fn shared_registry_for(
+    registry: Arc<crate::TargetRegistry>,
+) -> crate::dispatch::SharedRegistry {
+    Arc::new(arc_swap::ArcSwap::new(registry))
+}
+
 #[allow(dead_code)]
 fn make_handle_with_channel(
     cfg: DispatchConfig,
-) -> (DispatchHandle, flume::Receiver<SubmitWork>) {
-    let mut handle = DispatchHandle::new(cfg, empty_registry());
-    let (tx, rx) = flume::unbounded::<SubmitWork>();
-    handle.install_submit_tx(tx);
+) -> (DispatchHandle, rtrb::Consumer<SubmitWork>) {
+    let registry = empty_registry();
+    let shared_registry = shared_registry_for(Arc::clone(&registry));
+    let mut handle = DispatchHandle::new(cfg, registry, shared_registry);
+    let (tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    handle.install_submit_tx(tx, notify);
     (handle, rx)
 }
 
 fn make_handle_with_registry(
     cfg: DispatchConfig,
     registry: Arc<crate::TargetRegistry>,
-) -> (DispatchHandle, flume::Receiver<SubmitWork>) {
-    let mut handle = DispatchHandle::new(cfg, registry);
-    let (tx, rx) = flume::unbounded::<SubmitWork>();
-    handle.install_submit_tx(tx);
+) -> (DispatchHandle, rtrb::Consumer<SubmitWork>) {
+    let shared_registry = shared_registry_for(Arc::clone(&registry));
+    let mut handle = DispatchHandle::new(cfg, registry, shared_registry);
+    let (tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    handle.install_submit_tx(tx, notify);
     (handle, rx)
 }
 
@@ -111,6 +128,19 @@ fn read_log_lines(log: &Arc<Mutex<LogWriter>>) -> Vec<String> {
     // Find the file path: we don't track it directly. Instead, this helper is
     // not used; tests rely on channel inspection and behavioral assertions.
     Vec::new()
+}
+
+fn make_dummy_signed_order() -> SdkSignedOrder {
+    use alloy::primitives::{Signature, U256};
+    use polymarket_client_sdk_v2::auth::ApiKey;
+    use polymarket_client_sdk_v2::clob::types::{OrderPayload, OrderType};
+
+    SdkSignedOrder::builder()
+        .payload(OrderPayload::default())
+        .signature(Signature::new(U256::ZERO, U256::ZERO, false))
+        .order_type(OrderType::GTC)
+        .owner(ApiKey::nil())
+        .build()
 }
 
 fn env_enabled(name: &str) -> bool {
@@ -200,12 +230,25 @@ fn submitter_health_default_is_not_running() {
 
 #[test]
 fn submitter_run_sets_running_then_clears_on_stop() {
-    let cfg = DispatchConfig::default(); // Noop — skips SDK init
+    let cfg = DispatchConfig::default();
     let log = temp_log();
-    let (tx, rx) = flume::unbounded::<SubmitWork>();
+    let (mut tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
-    let submitter = OrderSubmitter::new(cfg, log, rx, Arc::clone(&health), empty_registry());
-    let _ = tx.send(SubmitWork::Stop);
+    let registry = empty_registry();
+    let shared_registry = shared_registry_for(registry);
+    let submitter = OrderSubmitter::new(
+        cfg,
+        log,
+        rx,
+        Arc::clone(&notify),
+        Arc::clone(&stop_flag),
+        Arc::clone(&health),
+        shared_registry,
+    );
+    let _ = tx.push(SubmitWork::Stop);
+    notify.notify_one();
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -219,10 +262,23 @@ fn submitter_run_sets_running_then_clears_on_stop() {
 fn submitter_run_sets_running_then_clears_on_channel_close() {
     let cfg = DispatchConfig::default();
     let log = temp_log();
-    let (tx, rx) = flume::unbounded::<SubmitWork>();
+    let (_tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
-    let submitter = OrderSubmitter::new(cfg, log, rx, Arc::clone(&health), empty_registry());
-    drop(tx); // close the channel; submitter should exit cleanly
+    let registry = empty_registry();
+    let shared_registry = shared_registry_for(registry);
+    let submitter = OrderSubmitter::new(
+        cfg,
+        log,
+        rx,
+        Arc::clone(&notify),
+        Arc::clone(&stop_flag),
+        Arc::clone(&health),
+        shared_registry,
+    );
+    stop_flag.store(true, std::sync::atomic::Ordering::Release);
+    notify.notify_one();
     let tokio_rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -239,14 +295,14 @@ fn submit_presigned_miss_is_fail_closed() {
         presign_enabled: true,
         ..DispatchConfig::default()
     };
-    let (mut handle, rx) = make_handle_with_registry(
+    let (mut handle, mut rx) = make_handle_with_registry(
         cfg,
         registry_with_one_target("t", "strategy_a"),
     );
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     // Nothing was sent to the submitter channel: presign miss is fail-closed.
-    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
+    assert!(rx.pop().is_err());
 }
 
 #[test]
@@ -261,7 +317,9 @@ fn startup_warm_fails_when_templates_missing() {
     // warm_presign_startup_into early-returns on empty templates before
     // touching them. Pass dummy refs by short-circuiting in the function.
     // Easiest verification: empty templates → returns the expected error.
-    let mut handle = DispatchHandle::new(cfg.clone(), empty_registry());
+    let registry = empty_registry();
+    let shared_registry = shared_registry_for(Arc::clone(&registry));
+    let mut handle = DispatchHandle::new(cfg.clone(), registry, shared_registry);
     handle.set_presign_templates(&[]);
     handle.activate_presign_templates_for_tokens(&[]);
     let (templates, pool) = handle.templates_and_pool_mut();
@@ -284,14 +342,14 @@ fn startup_warm_fails_when_templates_missing() {
 
 #[test]
 fn noop_dispatch_succeeds() {
-    let (mut handle, rx) = make_handle_with_registry(
+    let (mut handle, mut rx) = make_handle_with_registry(
         DispatchConfig::default(),
         registry_with_one_target("t1", "sk1"),
     );
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     // Noop short-circuits before reaching the channel.
-    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
+    assert!(rx.pop().is_err());
 }
 
 #[test]
@@ -327,11 +385,11 @@ fn empty_send_batch_is_noop() {
         mode: DispatchMode::Http,
         ..DispatchConfig::default()
     };
-    let (handle, rx) = make_handle_with_registry(cfg, empty_registry());
+    let (mut handle, mut rx) = make_handle_with_registry(cfg, empty_registry());
     let log = temp_log();
     handle.send_batch(SubmitBatch::new(), &log);
     // Empty batch should not send anything.
-    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
+    assert!(rx.pop().is_err());
 }
 
 #[test]
@@ -362,14 +420,14 @@ fn noop_dispatch_batch_succeeds() {
         ("t2", "sk2"),
         ("t3", "sk3"),
     ]);
-    let (mut handle, rx) =
+    let (mut handle, mut rx) =
         make_handle_with_registry(DispatchConfig::default(), registry);
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     dispatch_target_inline(&mut handle, crate::TargetIdx(1), &log);
     dispatch_target_inline(&mut handle, crate::TargetIdx(2), &log);
     // Noop never sends on the channel.
-    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
+    assert!(rx.pop().is_err());
 }
 
 #[test]
@@ -380,12 +438,12 @@ fn presign_batch_miss_is_per_order() {
         ..DispatchConfig::default()
     };
     let registry = registry_with_n_targets(&[("t1", "sk1"), ("t2", "sk2")]);
-    let (mut handle, rx) = make_handle_with_registry(cfg, registry);
+    let (mut handle, mut rx) = make_handle_with_registry(cfg, registry);
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
     dispatch_target_inline(&mut handle, crate::TargetIdx(1), &log);
     // Both intents should have failed presign-miss, so nothing on the channel.
-    assert!(matches!(rx.try_recv(), Err(flume::TryRecvError::Empty)));
+    assert!(rx.pop().is_err());
 }
 
 #[test]
@@ -406,6 +464,86 @@ fn dispatch_handle_logs_when_channel_closed() {
     // Receiver dropped here — channel is closed before dispatching.
     let log = temp_log();
     dispatch_target_inline(&mut handle, crate::TargetIdx(0), &log);
+}
+
+#[test]
+fn registry_publish_is_independent_of_ring_capacity() {
+    let cfg = DispatchConfig {
+        mode: DispatchMode::Http,
+        ..DispatchConfig::default()
+    };
+    let old_registry = registry_with_one_target("tok_old", "sk_old");
+    let shared_registry = shared_registry_for(Arc::clone(&old_registry));
+    let mut handle = DispatchHandle::new(
+        cfg,
+        Arc::clone(&old_registry),
+        Arc::clone(&shared_registry),
+    );
+
+    let (mut tx, mut _rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    for _ in 0..64 {
+        assert!(tx.push(SubmitWork::Stop).is_ok());
+    }
+    let notify = Arc::new(tokio::sync::Notify::new());
+    handle.install_submit_tx(tx, notify);
+
+    let new_registry = registry_with_one_target("tok_new", "sk_new");
+    handle.replace_registry(Arc::clone(&new_registry));
+
+    let observed = shared_registry.load_full();
+    assert_eq!(observed.targets.len(), 1);
+    assert_eq!(&*observed.targets[0].strategy_key, "sk_new");
+    assert_eq!(&*observed.tokens[0].token_id, "tok_new");
+    let (sk, tok) = handle.resolve_strings(crate::TargetIdx(0));
+    assert_eq!(sk, "sk_new");
+    assert_eq!(tok, "tok_new");
+}
+
+#[test]
+fn submitter_error_drain_uses_shared_registry_snapshot() {
+    let cfg = DispatchConfig {
+        mode: DispatchMode::Http,
+        ..DispatchConfig::default()
+    };
+    let old_registry = registry_with_one_target("tok_old", "sk_old");
+    let new_registry = registry_with_one_target("tok_new", "sk_new");
+    let shared_registry = shared_registry_for(Arc::clone(&old_registry));
+    let (log, log_path) = temp_log_with_path();
+    let (mut tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
+    let submitter = OrderSubmitter::new(
+        cfg,
+        Arc::clone(&log),
+        rx,
+        Arc::clone(&notify),
+        Arc::clone(&stop_flag),
+        Arc::clone(&health),
+        Arc::clone(&shared_registry),
+    );
+
+    let mut batch = SubmitBatch::new();
+    batch.push((crate::TargetIdx(0), Box::new(make_dummy_signed_order())));
+    tx.push(SubmitWork::Batch(batch))
+        .expect("batch push succeeds");
+    tx.push(SubmitWork::Stop).expect("stop push succeeds");
+
+    // Publish newer registry before submitter drains error path.
+    shared_registry.store(new_registry);
+    notify.notify_one();
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    tokio_rt.block_on(crate::dispatch::run_submitter_async(submitter));
+    if let Ok(mut g) = log.lock() {
+        g.flush();
+    }
+    let text = std::fs::read_to_string(log_path).expect("read log file");
+    assert!(text.contains("\"sk\":\"sk_new\""), "log contents: {}", text);
+    assert!(text.contains("\"tok\":\"tok_new\""), "log contents: {}", text);
 }
 
 fn build_live_dispatch_config() -> Option<DispatchConfig> {
@@ -442,9 +580,13 @@ fn build_live_dispatch_config() -> Option<DispatchConfig> {
 
 fn build_test_submitter(cfg: DispatchConfig) -> OrderSubmitter {
     let log = temp_log();
-    let (_tx, rx) = flume::unbounded::<SubmitWork>();
+    let (_tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
-    OrderSubmitter::new(cfg, log, rx, health, empty_registry())
+    let registry = empty_registry();
+    let shared_registry = shared_registry_for(registry);
+    OrderSubmitter::new(cfg, log, rx, notify, stop_flag, health, shared_registry)
 }
 
 fn build_request(token_id: &str, cfg: &DispatchConfig) -> OrderRequestData {

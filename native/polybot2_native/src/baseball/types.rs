@@ -16,38 +16,15 @@ pub(crate) struct GameTargets {
     pub(crate) nrfi_no: Option<TargetIdx>,
     pub(crate) moneyline_home: Option<TargetIdx>,
     pub(crate) moneyline_away: Option<TargetIdx>,
-    pub(crate) spreads: Vec<(SpreadSide, f64, TargetIdx)>,
+    pub(crate) spreads: Vec<SpreadSlot>,
 }
 
-impl GameTargets {
-    #[allow(dead_code)]
-    pub(crate) fn all_target_indices(&self) -> Vec<TargetIdx> {
-        let mut out = Vec::with_capacity(
-            self.over_lines.len() + self.under_lines.len() + 4 + self.spreads.len(),
-        );
-        for ol in &self.over_lines {
-            out.push(ol.target_idx);
-        }
-        for ol in &self.under_lines {
-            out.push(ol.target_idx);
-        }
-        if let Some(t) = self.nrfi_yes {
-            out.push(t);
-        }
-        if let Some(t) = self.nrfi_no {
-            out.push(t);
-        }
-        if let Some(t) = self.moneyline_home {
-            out.push(t);
-        }
-        if let Some(t) = self.moneyline_away {
-            out.push(t);
-        }
-        for &(_, _, t) in &self.spreads {
-            out.push(t);
-        }
-        out
-    }
+#[derive(Clone)]
+pub(crate) struct SpreadSlot {
+    pub(crate) side: SpreadSide,
+    pub(crate) line: f64,
+    pub(crate) covers_idx: Option<TargetIdx>,
+    pub(crate) not_covers_idx: Option<TargetIdx>,
 }
 
 #[derive(Clone, Default)]

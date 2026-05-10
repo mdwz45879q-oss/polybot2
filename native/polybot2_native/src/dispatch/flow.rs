@@ -58,17 +58,17 @@ impl DispatchHandle {
         }
     }
 
-    /// Send a frame-batch to the submitter. On failure (no channel installed
-    /// or receiver dropped), logs an error per item via the registry.
+    /// Send a frame-batch to the submitter via the lock-free SPSC ring.
+    /// On failure (ring full or not installed), logs an error per item.
     pub(crate) fn send_batch(
-        &self,
+        &mut self,
         batch: SubmitBatch,
         log: &Arc<Mutex<LogWriter>>,
     ) {
         if batch.is_empty() {
             return;
         }
-        let Some(tx) = self.submit_tx.as_ref() else {
+        let Some(tx) = self.submit_tx.as_mut() else {
             for (target_idx, _) in &batch {
                 let (sk, tok) = self.resolve_strings(*target_idx);
                 if let Ok(mut g) = log.lock() {
@@ -77,22 +77,22 @@ impl DispatchHandle {
             }
             return;
         };
-        // Send first — zero allocation on the success path. On failure,
-        // recover the batch from SendError for diagnostics.
-        if let Err(flume::SendError(work)) = tx.send(SubmitWork::Batch(batch)) {
-            let SubmitWork::Batch(returned) = work else { return };
-            for (target_idx, _) in returned {
-                let (sk, tok) = self.resolve_strings(target_idx);
-                if let Ok(mut g) = log.lock() {
-                    g.log_order_err(sk, tok, "submit_channel_closed");
+        match tx.push(SubmitWork::Batch(batch)) {
+            Ok(()) => {
+                if let Some(n) = self.submit_notify.as_ref() {
+                    n.notify_one();
+                }
+            }
+            Err(rtrb::PushError::Full(work)) => {
+                let SubmitWork::Batch(returned) = work else { return };
+                for (target_idx, _) in returned {
+                    let (sk, tok) = self.resolve_strings(target_idx);
+                    if let Ok(mut g) = log.lock() {
+                        g.log_order_err(sk, tok, "submit_ring_full");
+                    }
                 }
             }
         }
     }
 
-    pub(crate) fn send_registry_update(&self, new_registry: Arc<crate::TargetRegistry>) {
-        if let Some(tx) = self.submit_tx.as_ref() {
-            let _ = tx.send(SubmitWork::UpdateRegistry(new_registry));
-        }
-    }
 }

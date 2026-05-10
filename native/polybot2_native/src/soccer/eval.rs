@@ -3,9 +3,9 @@
 use crate::*;
 use crate::soccer::types::*;
 
-fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[RawIntent; 4]>) {
+fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 4]>) {
     if let Some(tidx) = slot {
-        out.push(RawIntent { target_idx: tidx });
+        out.push(Intent { target_idx: tidx });
     }
 }
 
@@ -18,7 +18,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_totals[gi] {
@@ -36,8 +36,11 @@ impl NativeSoccerEngine {
                 let prev = prev_total as u16;
                 let now = total_now as u16;
                 for ol in &targets.over_lines {
-                    if ol.half_int >= prev && ol.half_int < now {
-                        out.push(RawIntent { target_idx: ol.target_idx });
+                    if ol.half_int >= now {
+                        break; // sorted — no more can match
+                    }
+                    if ol.half_int >= prev {
+                        out.push(Intent { target_idx: ol.target_idx });
                     }
                 }
             }
@@ -51,7 +54,7 @@ impl NativeSoccerEngine {
             let total = total_now as u16;
             for ol in &targets.under_lines {
                 if ol.half_int >= total {
-                    out.push(RawIntent { target_idx: ol.target_idx });
+                    out.push(Intent { target_idx: ol.target_idx });
                 }
             }
         }
@@ -61,7 +64,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if self.final_resolved_games[gi] {
@@ -96,14 +99,16 @@ impl NativeSoccerEngine {
 
         // Spreads evaluated at game end alongside moneyline.
         let margin_home = home - away;
-        for &(side, sl, tidx) in &targets.spreads {
-            let margin = if side == SpreadSide::Home {
+        for slot in &targets.spreads {
+            let margin = if slot.side == SpreadSide::Home {
                 margin_home
             } else {
                 -margin_home
             };
-            if (margin as f64) + sl > 0.0 {
-                out.push(RawIntent { target_idx: tidx });
+            if (margin as f64) + slot.line > 0.0 {
+                push_if_some(slot.covers_idx, out);
+            } else {
+                push_if_some(slot.not_covers_idx, out);
             }
         }
 
@@ -114,7 +119,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if self.btts_resolved_games[gi] {
@@ -148,7 +153,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_corners[gi] {
@@ -166,8 +171,11 @@ impl NativeSoccerEngine {
                 let p = prev as u16;
                 let n = total_now as u16;
                 for ol in &targets.corner_over_lines {
-                    if ol.half_int >= p && ol.half_int < n {
-                        out.push(RawIntent { target_idx: ol.target_idx });
+                    if ol.half_int >= n {
+                        break; // sorted — no more can match
+                    }
+                    if ol.half_int >= p {
+                        out.push(Intent { target_idx: ol.target_idx });
                     }
                 }
             }
@@ -181,7 +189,7 @@ impl NativeSoccerEngine {
             let total = total_now as u16;
             for ol in &targets.corner_under_lines {
                 if ol.half_int >= total {
-                    out.push(RawIntent { target_idx: ol.target_idx });
+                    out.push(Intent { target_idx: ol.target_idx });
                 }
             }
         }
@@ -195,7 +203,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if self.halftime_resolved[gi] {
@@ -238,7 +246,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if self.exact_score_resolved[gi] {
@@ -256,11 +264,26 @@ impl NativeSoccerEngine {
         };
 
         let targets = &self.game_targets[gi];
-        for &(pred_h, pred_a, tidx) in &targets.exact_scores {
-            if home == pred_h && away == pred_a {
-                out.push(RawIntent { target_idx: tidx });
+        let mut any_exact_matched = false;
+
+        for slot in &targets.exact_scores {
+            if home == slot.home_pred && away == slot.away_pred {
+                // This exact score matched — fire YES
+                push_if_some(slot.yes_idx, out);
+                any_exact_matched = true;
+            } else {
+                // This exact score did NOT match — fire NO
+                push_if_some(slot.no_idx, out);
             }
         }
+
+        // "Any other score" market
+        if any_exact_matched {
+            push_if_some(targets.any_other_score_no, out);
+        } else {
+            push_if_some(targets.any_other_score_yes, out);
+        }
+
         self.exact_score_resolved[gi] = true;
     }
 }

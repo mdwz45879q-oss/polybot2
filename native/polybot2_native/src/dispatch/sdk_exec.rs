@@ -34,16 +34,20 @@ impl OrderSubmitter {
     pub(crate) fn new(
         cfg: DispatchConfig,
         log: Arc<Mutex<LogWriter>>,
-        submit_rx: flume::Receiver<SubmitWork>,
+        submit_rx: rtrb::Consumer<SubmitWork>,
+        submit_notify: Arc<tokio::sync::Notify>,
+        stop_flag: Arc<std::sync::atomic::AtomicBool>,
         health: Arc<Mutex<crate::SubmitterHealth>>,
-        registry: Arc<crate::TargetRegistry>,
+        shared_registry: SharedRegistry,
     ) -> Self {
         Self {
             cfg,
-            registry,
+            shared_registry,
             sdk_runtime: None,
             cached_signer: None,
             submit_rx,
+            submit_notify,
+            stop_flag,
             log,
             health,
         }

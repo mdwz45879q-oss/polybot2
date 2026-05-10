@@ -11,22 +11,27 @@ pub(crate) struct BoltOddsExtract<'a> {
     pub match_period_detail: &'a str,
 }
 
-/// Find a byte pattern in a slice starting from `from`.
-/// Uses the `memchr` crate's SIMD-accelerated memmem searcher.
-fn memchr_find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if needle.is_empty() || from >= haystack.len() {
-        return None;
-    }
-    memchr::memmem::find(&haystack[from..], needle).map(|pos| pos + from)
+use memchr::memmem::Finder;
+use std::sync::LazyLock;
+
+static FINDER_MATCH_UPDATE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"match_update\""));
+static FINDER_GAME: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"game\""));
+static FINDER_MATCH_PERIOD: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"matchPeriod\""));
+static FINDER_GOALS_A: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"goalsA\""));
+static FINDER_GOALS_B: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"goalsB\""));
+static FINDER_CORNERS_A: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"cornersA\""));
+static FINDER_CORNERS_B: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"cornersB\""));
+
+fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
+    if from >= haystack.len() { return None; }
+    finder.find(&haystack[from..]).map(|pos| pos + from)
 }
 
-/// Extract a JSON string value starting at `start` (the position after the opening `"`).
-/// Returns the string content slice and the position after the closing `"`.
 fn extract_string_value(bytes: &[u8], start: usize) -> Option<(&[u8], usize)> {
     let mut pos = start;
     while pos < bytes.len() {
         if bytes[pos] == b'\\' {
-            pos += 2; // skip escaped character
+            pos += 2;
             continue;
         }
         if bytes[pos] == b'"' {
@@ -37,25 +42,15 @@ fn extract_string_value(bytes: &[u8], start: usize) -> Option<(&[u8], usize)> {
     None
 }
 
-/// Scan for a JSON key like `"keyName"` followed by `:` and optional whitespace,
-/// then a `"` opening a string value. Returns the byte offset after the opening `"`.
-fn find_key_string_start(bytes: &[u8], key_pattern: &[u8], from: usize) -> Option<usize> {
+fn find_key_string_start(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<usize> {
     let mut pos = from;
-    while pos + key_pattern.len() < bytes.len() {
-        if let Some(idx) = memchr_find(bytes, key_pattern, pos) {
-            let mut p = idx + key_pattern.len();
-            // Skip whitespace
-            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
-                p += 1;
-            }
-            // Expect `:`
+    while pos + key_len < bytes.len() {
+        if let Some(idx) = find_with(finder, bytes, pos) {
+            let mut p = idx + key_len;
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
             if p < bytes.len() && bytes[p] == b':' {
                 p += 1;
-                // Skip whitespace
-                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
-                    p += 1;
-                }
-                // Expect opening `"`
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
                 if p < bytes.len() && bytes[p] == b'"' {
                     return Some(p + 1);
                 }
@@ -68,29 +63,17 @@ fn find_key_string_start(bytes: &[u8], key_pattern: &[u8], from: usize) -> Optio
     None
 }
 
-/// Scan for a JSON key like `"keyName"` followed by `:` and optional whitespace,
-/// then digits (an integer value). Returns the parsed i64 and position after the digits.
-fn find_key_integer(bytes: &[u8], key_pattern: &[u8], from: usize) -> Option<(i64, usize)> {
+fn find_key_integer(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<(i64, usize)> {
     let mut pos = from;
-    while pos + key_pattern.len() < bytes.len() {
-        if let Some(idx) = memchr_find(bytes, key_pattern, pos) {
-            let mut p = idx + key_pattern.len();
-            // Skip whitespace
-            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
-                p += 1;
-            }
-            // Expect `:`
+    while pos + key_len < bytes.len() {
+        if let Some(idx) = find_with(finder, bytes, pos) {
+            let mut p = idx + key_len;
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
             if p < bytes.len() && bytes[p] == b':' {
                 p += 1;
-                // Skip whitespace
-                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
-                    p += 1;
-                }
-                // Parse integer (optional leading minus, then digits)
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
                 let negative = p < bytes.len() && bytes[p] == b'-';
-                if negative {
-                    p += 1;
-                }
+                if negative { p += 1; }
                 let start = p;
                 let mut acc: i64 = 0;
                 while p < bytes.len() && bytes[p].is_ascii_digit() {
@@ -109,49 +92,28 @@ fn find_key_integer(bytes: &[u8], key_pattern: &[u8], from: usize) -> Option<(i6
     None
 }
 
-/// Extract the second string from a JSON array value for a key.
-/// Expects: `"key": ["first", "SECOND"]` and returns `"SECOND"`.
-fn find_key_array_second_string<'a>(bytes: &'a [u8], key_pattern: &[u8], from: usize) -> Option<(&'a [u8], usize)> {
+fn find_key_array_second_string<'a>(finder: &Finder, key_len: usize, bytes: &'a [u8], from: usize) -> Option<(&'a [u8], usize)> {
     let mut pos = from;
-    while pos + key_pattern.len() < bytes.len() {
-        if let Some(idx) = memchr_find(bytes, key_pattern, pos) {
-            let mut p = idx + key_pattern.len();
-            // Skip whitespace
-            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
-                p += 1;
-            }
-            // Expect `:`
+    while pos + key_len < bytes.len() {
+        if let Some(idx) = find_with(finder, bytes, pos) {
+            let mut p = idx + key_len;
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
             if p < bytes.len() && bytes[p] == b':' {
                 p += 1;
-                // Skip whitespace
-                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
-                    p += 1;
-                }
-                // Expect `[`
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
                 if p < bytes.len() && bytes[p] == b'[' {
                     p += 1;
-                    // Find first string: skip to `"`
-                    while p < bytes.len() && bytes[p] != b'"' {
-                        p += 1;
-                    }
-                    if p >= bytes.len() {
-                        pos = idx + 1;
-                        continue;
-                    }
-                    // Skip past first string value
-                    p += 1; // past opening quote
+                    while p < bytes.len() && bytes[p] != b'"' { p += 1; }
+                    if p >= bytes.len() { pos = idx + 1; continue; }
+                    p += 1;
                     if let Some((_, end)) = extract_string_value(bytes, p) {
                         p = end;
                     } else {
-                        pos = idx + 1;
-                        continue;
+                        pos = idx + 1; continue;
                     }
-                    // Find second string: skip to `"`
-                    while p < bytes.len() && bytes[p] != b'"' && bytes[p] != b']' {
-                        p += 1;
-                    }
+                    while p < bytes.len() && bytes[p] != b'"' && bytes[p] != b']' { p += 1; }
                     if p < bytes.len() && bytes[p] == b'"' {
-                        p += 1; // past opening quote
+                        p += 1;
                         return extract_string_value(bytes, p);
                     }
                 }
@@ -167,20 +129,13 @@ fn find_key_array_second_string<'a>(bytes: &'a [u8], key_pattern: &[u8], from: u
 pub(crate) fn fast_extract_boltodds(json: &str) -> Option<BoltOddsExtract<'_>> {
     let bytes = json.as_bytes();
 
-    // Quick-reject: "match_update" is unique to relevant BoltOdds frames.
-    // Single scan replaces the previous double scan ("match_update" + "action").
-    if memchr_find(bytes, b"\"match_update\"", 0).is_none() {
+    if find_with(&FINDER_MATCH_UPDATE, bytes, 0).is_none() {
         return None;
     }
 
-    // Carry-forward position: extract fields in frame layout order so each
-    // scan starts where the previous field ended, not from byte 0.
-    // Frame field order: action(~2) → game(~27) → matchPeriod(~269)
-    //                   → goalsA(~358) → goalsB(~370) → cornersA(~381) → cornersB(~395)
     let mut pos = 0usize;
 
-    // game label
-    let game_start = find_key_string_start(bytes, b"\"game\"", pos)?;
+    let game_start = find_key_string_start(&FINDER_GAME, 6, bytes, pos)?;
     let (game_bytes, end) = extract_string_value(bytes, game_start)?;
     let game_label = std::str::from_utf8(game_bytes).ok()?;
     if game_label.is_empty() {
@@ -188,25 +143,20 @@ pub(crate) fn fast_extract_boltodds(json: &str) -> Option<BoltOddsExtract<'_>> {
     }
     pos = end;
 
-    // matchPeriod (from after game)
-    let (period_bytes, end) = find_key_array_second_string(bytes, b"\"matchPeriod\"", pos)?;
+    let (period_bytes, end) = find_key_array_second_string(&FINDER_MATCH_PERIOD, 13, bytes, pos)?;
     let match_period_detail = std::str::from_utf8(period_bytes).ok()?;
     pos = end;
 
-    // goalsA (from after matchPeriod)
-    let (goals_a, end) = find_key_integer(bytes, b"\"goalsA\"", pos)?;
+    let (goals_a, end) = find_key_integer(&FINDER_GOALS_A, 8, bytes, pos)?;
     pos = end;
 
-    // goalsB (from after goalsA)
-    let (goals_b, end) = find_key_integer(bytes, b"\"goalsB\"", pos)?;
+    let (goals_b, end) = find_key_integer(&FINDER_GOALS_B, 8, bytes, pos)?;
     pos = end;
 
-    // cornersA (from after goalsB)
-    let (corners_a, end) = find_key_integer(bytes, b"\"cornersA\"", pos)?;
+    let (corners_a, end) = find_key_integer(&FINDER_CORNERS_A, 10, bytes, pos)?;
     pos = end;
 
-    // cornersB (from after cornersA)
-    let (corners_b, _) = find_key_integer(bytes, b"\"cornersB\"", pos)?;
+    let (corners_b, _) = find_key_integer(&FINDER_CORNERS_B, 10, bytes, pos)?;
 
     Some(BoltOddsExtract {
         game_label,

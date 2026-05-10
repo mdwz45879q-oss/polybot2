@@ -68,3 +68,9 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_observe.add_argument("--db", type=str, default="")
     hotpath_observe.add_argument("--league", type=str, default="mlb")
     hotpath_observe.add_argument("--link-run-id", type=int, default=None)
+
+    hotpath_compile = hotpath_sub.add_parser("compile", help="Compile hotpath plan and print summary (dry run)")
+    hotpath_compile.add_argument("--league", type=str, required=True)
+    hotpath_compile.add_argument("--link-run-id", type=int, default=None,
+                                  help="Link run ID (default: latest for the league)")
+    hotpath_compile.add_argument("--db", type=str, default="", help="Override SQLite DB path")

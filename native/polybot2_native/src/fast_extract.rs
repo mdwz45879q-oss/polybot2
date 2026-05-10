@@ -9,46 +9,72 @@ pub(crate) struct V1Extract<'a> {
     pub free_text: &'a str,
 }
 
-/// Scan for a JSON key pattern like `"keyName":"` and return the byte offset
-/// of the character after the opening quote of the value.
-/// Handles optional whitespace after `:`.
-fn find_key_value_start(bytes: &[u8], key_pattern: &[u8], from: usize) -> Option<usize> {
+#[inline(always)]
+pub(crate) fn fast_parse_score(s: &str) -> Option<i64> {
+    let b = s.as_bytes();
+    match b.len() {
+        0 => None,
+        1 => {
+            let d = b[0].wrapping_sub(b'0');
+            if d <= 9 { Some(d as i64) } else { None }
+        }
+        2 => {
+            let d0 = b[0].wrapping_sub(b'0');
+            let d1 = b[1].wrapping_sub(b'0');
+            if d0 <= 9 && d1 <= 9 { Some((d0 * 10 + d1) as i64) } else { None }
+        }
+        3 => {
+            let d0 = b[0].wrapping_sub(b'0');
+            let d1 = b[1].wrapping_sub(b'0');
+            let d2 = b[2].wrapping_sub(b'0');
+            if d0 <= 9 && d1 <= 9 && d2 <= 9 {
+                Some(d0 as i64 * 100 + d1 as i64 * 10 + d2 as i64)
+            } else {
+                None
+            }
+        }
+        _ => s.parse().ok(),
+    }
+}
+
+use memchr::memmem::Finder;
+use std::sync::LazyLock;
+
+static FINDER_TYPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"type\""));
+static FINDER_FIXTURE_ID: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"fixtureId\""));
+static FINDER_FREE_TEXT: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"freeText\""));
+static FINDER_HOME_SCORE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"homeScore\""));
+static FINDER_AWAY_SCORE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"awayScore\""));
+
+fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
+    if from >= haystack.len() { return None; }
+    finder.find(&haystack[from..]).map(|pos| pos + from)
+}
+
+fn find_key_value_start(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<usize> {
     let mut pos = from;
     let len = bytes.len();
-    while pos + key_pattern.len() < len {
-        if let Some(idx) = memchr_find(bytes, key_pattern, pos) {
-            // After the key pattern (which ends with `"`), expect `:` then optional whitespace then `"`
-            let mut p = idx + key_pattern.len();
-            // Skip whitespace
+    while pos + key_len < len {
+        if let Some(idx) = find_with(finder, bytes, pos) {
+            let mut p = idx + key_len;
             while p < len && (bytes[p] == b' ' || bytes[p] == b'\t' || bytes[p] == b'\n' || bytes[p] == b'\r') {
                 p += 1;
             }
-            // Expect `:`
             if p < len && bytes[p] == b':' {
                 p += 1;
-                // Skip whitespace
                 while p < len && (bytes[p] == b' ' || bytes[p] == b'\t' || bytes[p] == b'\n' || bytes[p] == b'\r') {
                     p += 1;
                 }
-                // Expect opening `"`
                 if p < len && bytes[p] == b'"' {
-                    return Some(p + 1); // position after the opening quote
+                    return Some(p + 1);
                 }
             }
-            pos = idx + 1; // try next occurrence
+            pos = idx + 1;
         } else {
             break;
         }
     }
     None
-}
-
-/// Find a byte pattern in a slice starting from `from`.
-fn memchr_find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if needle.is_empty() || from >= haystack.len() {
-        return None;
-    }
-    memchr::memmem::find(&haystack[from..], needle).map(|pos| pos + from)
 }
 
 /// Extract a JSON string value starting at `start` (the position after the opening `"`).
@@ -74,14 +100,12 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     // Quick reject: check for "type":"next".
     // In live V1 frames this appears in the first ~30 bytes, but we search the
     // full buffer for robustness (test data may have reordered keys).
-    let is_next = memchr_find(bytes, b"\"type\"", 0)
+    let is_next = find_with(&FINDER_TYPE, bytes, 0)
         .and_then(|pos| {
-            // Find the value after "type":
-            let mut p = pos + 6; // skip "type"
+            let mut p = pos + 6; // skip past `"type"`
             while p < bytes.len() && bytes[p] != b'"' { p += 1; }
             if p < bytes.len() {
-                let start = p + 1;
-                extract_string_value(bytes, start)
+                extract_string_value(bytes, p + 1)
             } else {
                 None
             }
@@ -103,32 +127,28 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     let mut away_score: Option<&str> = None;
     let mut pos = 0usize;
 
-    // fixtureId
-    if let Some(start) = find_key_value_start(bytes, b"\"fixtureId\"", pos) {
+    if let Some(start) = find_key_value_start(&FINDER_FIXTURE_ID, 11, bytes, pos) {
         if let Some((val, end)) = extract_string_value(bytes, start) {
             fixture_id = Some(std::str::from_utf8(val).ok()?);
             pos = end;
         }
     }
 
-    // freeText (inside matchStatusDisplay array — first occurrence)
-    if let Some(start) = find_key_value_start(bytes, b"\"freeText\"", pos) {
+    if let Some(start) = find_key_value_start(&FINDER_FREE_TEXT, 10, bytes, pos) {
         if let Some((val, end)) = extract_string_value(bytes, start) {
             free_text = Some(std::str::from_utf8(val).ok()?);
             pos = end;
         }
     }
 
-    // homeScore
-    if let Some(start) = find_key_value_start(bytes, b"\"homeScore\"", pos) {
+    if let Some(start) = find_key_value_start(&FINDER_HOME_SCORE, 11, bytes, pos) {
         if let Some((val, end)) = extract_string_value(bytes, start) {
             home_score = Some(std::str::from_utf8(val).ok()?);
             pos = end;
         }
     }
 
-    // awayScore
-    if let Some(start) = find_key_value_start(bytes, b"\"awayScore\"", pos) {
+    if let Some(start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, bytes, pos) {
         if let Some((val, _end)) = extract_string_value(bytes, start) {
             away_score = Some(std::str::from_utf8(val).ok()?);
         }
@@ -166,5 +186,21 @@ mod tests {
     fn test_missing_fixture_id() {
         let frame = r#"{"type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"matchSummary":{"homeScore":"0","awayScore":"0"}}}}}"#;
         assert!(fast_extract_v1(frame).is_none());
+    }
+
+    #[test]
+    fn test_fast_parse_score() {
+        assert_eq!(fast_parse_score(""), None);
+        assert_eq!(fast_parse_score("0"), Some(0));
+        assert_eq!(fast_parse_score("5"), Some(5));
+        assert_eq!(fast_parse_score("9"), Some(9));
+        assert_eq!(fast_parse_score("10"), Some(10));
+        assert_eq!(fast_parse_score("42"), Some(42));
+        assert_eq!(fast_parse_score("99"), Some(99));
+        assert_eq!(fast_parse_score("100"), Some(100));
+        assert_eq!(fast_parse_score("abc"), None);
+        assert_eq!(fast_parse_score("1a"), None);
+        assert_eq!(fast_parse_score("a1"), None);
+        assert_eq!(fast_parse_score("1234"), Some(1234)); // fallback path
     }
 }

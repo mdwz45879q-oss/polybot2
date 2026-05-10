@@ -1,6 +1,12 @@
 use crate::*;
 use crate::baseball::types::*;
 
+fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 4]>) {
+    if let Some(tidx) = slot {
+        out.push(Intent { target_idx: tidx });
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn line_key(value: f64) -> String {
     let text = format!("{:.6}", value);
@@ -21,7 +27,7 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_totals[gi] {
@@ -38,8 +44,11 @@ impl NativeMlbEngine {
                 let prev = prev_total as u16;
                 let now = total_now as u16;
                 for ol in &targets.over_lines {
-                    if ol.half_int >= prev && ol.half_int < now {
-                        out.push(RawIntent { target_idx: ol.target_idx });
+                    if ol.half_int >= now {
+                        break; // sorted — no more can match
+                    }
+                    if ol.half_int >= prev {
+                        out.push(Intent { target_idx: ol.target_idx });
                     }
                 }
                 // Tie guarantee: a tied game must produce at least one more run,
@@ -49,7 +58,7 @@ impl NativeMlbEngine {
                         let tied_half_int = total_now as u16;
                         for ol in &targets.over_lines {
                             if ol.half_int == tied_half_int {
-                                out.push(RawIntent { target_idx: ol.target_idx });
+                                out.push(Intent { target_idx: ol.target_idx });
                                 break;
                             }
                         }
@@ -65,7 +74,7 @@ impl NativeMlbEngine {
             let total = total_now as u16;
             for ol in &targets.under_lines {
                 if ol.half_int >= total {
-                    out.push(RawIntent { target_idx: ol.target_idx });
+                    out.push(Intent { target_idx: ol.target_idx });
                 }
             }
         }
@@ -76,7 +85,7 @@ impl NativeMlbEngine {
         gidx: GameIdx,
         state: &GameState,
         delta: &DeltaEvent,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_nrfi[gi] {
@@ -105,7 +114,7 @@ impl NativeMlbEngine {
         if run_delta > 0 && is_first_inning(state) {
             self.nrfi_resolved_games[gi] = true;
             if let Some(tidx) = targets.nrfi_yes {
-                out.push(RawIntent { target_idx: tidx });
+                out.push(Intent { target_idx: tidx });
             }
             return;
         }
@@ -114,7 +123,7 @@ impl NativeMlbEngine {
             if state.total.unwrap_or(-1) == 0 {
                 if let Some(tidx) = targets.nrfi_no {
                     self.nrfi_resolved_games[gi] = true;
-                    out.push(RawIntent { target_idx: tidx });
+                    out.push(Intent { target_idx: tidx });
                 }
             }
         }
@@ -129,16 +138,22 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
+        if self.final_resolved_games[gi] {
+            return;
+        }
+        if !self.has_final[gi] {
+            return;
+        }
         let inning = state.inning_number.unwrap_or(0);
         if inning >= 9
             && state.inning_half == "bottom"
             && state.home.unwrap_or(0) > state.away.unwrap_or(0)
         {
             if let Some(tidx) = self.game_targets[gi].moneyline_home {
-                out.push(RawIntent { target_idx: tidx });
+                out.push(Intent { target_idx: tidx });
             }
         }
     }
@@ -147,7 +162,7 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-        out: &mut smallvec::SmallVec<[RawIntent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 4]>,
     ) {
         let gi = gidx.0 as usize;
         if self.final_resolved_games[gi] {
@@ -175,18 +190,20 @@ impl NativeMlbEngine {
             None
         };
         if let Some(tidx) = winner_slot {
-            out.push(RawIntent { target_idx: tidx });
+            out.push(Intent { target_idx: tidx });
         }
 
         let margin_home = home - away;
-        for &(side, sl, tidx) in &targets.spreads {
-            let margin = if side == SpreadSide::Home {
+        for slot in &targets.spreads {
+            let margin = if slot.side == SpreadSide::Home {
                 margin_home
             } else {
                 -margin_home
             };
-            if (margin as f64) + sl > 0.0 {
-                out.push(RawIntent { target_idx: tidx });
+            if (margin as f64) + slot.line > 0.0 {
+                push_if_some(slot.covers_idx, out);
+            } else {
+                push_if_some(slot.not_covers_idx, out);
             }
         }
 
@@ -201,8 +218,8 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-    ) -> Vec<RawIntent> {
-        let mut out = smallvec::SmallVec::<[RawIntent; 4]>::new();
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_totals_into(gidx, state, &mut out);
         out.into_vec()
     }
@@ -212,8 +229,8 @@ impl NativeMlbEngine {
         gidx: GameIdx,
         state: &GameState,
         delta: &DeltaEvent,
-    ) -> Vec<RawIntent> {
-        let mut out = smallvec::SmallVec::<[RawIntent; 4]>::new();
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_nrfi_into(gidx, state, delta, &mut out);
         out.into_vec()
     }
@@ -222,8 +239,8 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-    ) -> Vec<RawIntent> {
-        let mut out = smallvec::SmallVec::<[RawIntent; 4]>::new();
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_walkoff_into(gidx, state, &mut out);
         out.into_vec()
     }
@@ -232,8 +249,8 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-    ) -> Vec<RawIntent> {
-        let mut out = smallvec::SmallVec::<[RawIntent; 4]>::new();
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
         self.evaluate_final_into(gidx, state, &mut out);
         out.into_vec()
     }

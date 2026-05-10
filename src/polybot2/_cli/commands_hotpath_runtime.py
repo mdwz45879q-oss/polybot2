@@ -290,7 +290,150 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     return 0
 
 
+def run_hotpath_compile(args: Any, *, logger: logging.Logger) -> int:
+    """Compile hotpath plan and print a human-readable summary (dry run).
+
+    Same compilation as 'hotpath live' but without starting the runtime,
+    presigning orders, or connecting to any WS feed. Use this to verify
+    that the compiler produced the correct outcome semantics and strategy
+    keys before trading.
+    """
+    from collections import Counter
+    from polybot2.linking import load_mapping as _load_mapping
+
+    _load_dotenv(logger)
+    live_policy = load_live_trading_policy()
+    league_key = str(getattr(args, "league", "") or "").strip().lower()
+    if not league_key:
+        logger.error("--league is required")
+        return 1
+    mapping = _load_mapping()
+    league_cfg = mapping.leagues.get(league_key, {})
+    provider_name = str(league_cfg.get("provider", "")).strip().lower()
+    if not provider_name:
+        logger.error("league %s has no provider configured", league_key)
+        return 1
+    run_id = _int_or_none(getattr(args, "link_run_id", None))
+    if run_id is None:
+        with open_database(_runtime_from_args(args)) as _db:
+            latest = _db.linking.load_latest_link_run_for_league(league=league_key)
+        if latest is None:
+            logger.error("no link run found for league=%s", league_key)
+            return 1
+        run_id = int(latest["run_id"])
+        logger.info("using latest link run: run_id=%d league=%s", run_id, league_key)
+
+    runtime = _runtime_from_args(args)
+    runtime_policy = _hotpath_runtime_policy_for_league(
+        live_policy=live_policy, league_key=league_key,
+    )
+
+    try:
+        with open_database(runtime) as db:
+            compiled_plan = compile_hotpath_plan(
+                db=db,
+                provider=provider_name,
+                league=league_key,
+                run_id=run_id,
+                live_policy=live_policy,
+                now_ts_utc=int(time.time()),
+                plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+            )
+    except HotPathPlanError as exc:
+        logger.error("compilation failed: %s: %s", exc.code, str(exc))
+        return 1
+
+    # --- Print compiled plan summary ---
+    team_map = mapping.team_map.get(league_key, {})
+    n_targets = 0
+    n_unknown = 0
+    n_generic_keys = 0
+
+    for game in compiled_plan.games:
+        home = game.canonical_home_team
+        away = game.canonical_away_team
+        home_code = str(team_map.get(home, {}).get("polymarket_code", "")).upper() or home[:3].upper()
+        away_code = str(team_map.get(away, {}).get("polymarket_code", "")).upper() or away[:3].upper()
+
+        print(f"\n{'═' * 70}")
+        print(f"  {home_code}-{away_code}  ({home} vs {away})")
+        print(f"  Home: {home}    Away: {away}")
+        if game.kickoff_ts_utc:
+            print(f"  Kickoff: {datetime.fromtimestamp(game.kickoff_ts_utc, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+        print(f"{'═' * 70}")
+
+        # Group targets by market type
+        by_type: dict[str, list[tuple[Any, Any]]] = {}
+        for market in game.markets:
+            for target in market.targets:
+                by_type.setdefault(market.sports_market_type, []).append((market, target))
+
+        for mtype, items in sorted(by_type.items()):
+            print(f"  {mtype.upper()} ({len(items)} targets)")
+            for _market, target in items:
+                sem = str(target.outcome_semantic)
+                tok = str(target.token_id)
+                tok_short = tok[:8] + "..." + tok[-4:] if len(tok) > 16 else tok
+                line_str = f" {target.line}" if target.line is not None else ""
+
+                # Resolve team name for home/away semantics
+                sem_upper = sem.upper()
+                team_note = ""
+                if "HOME" in sem_upper:
+                    team_note = f" ({home})"
+                elif "AWAY" in sem_upper:
+                    team_note = f" ({away})"
+
+                # Flag problems
+                flags = ""
+                if sem == "unknown":
+                    flags = " ⚠️  UNKNOWN SEMANTIC"
+                    n_unknown += 1
+                sk_parts = str(target.strategy_key).split(":")
+                if len(sk_parts) >= 3 and sk_parts[2].startswith("0x"):
+                    flags = " ⚠️  GENERIC KEY"
+                    n_generic_keys += 1
+
+                print(f"    {sem_upper}{line_str}{team_note:<30} → {tok_short}  {flags}")
+                n_targets += 1
+
+    # Summary
+    print(f"\n{'─' * 70}")
+    print(f"  Summary: {len(compiled_plan.games)} games, {n_targets} targets, run_id={run_id}")
+    if n_unknown > 0:
+        print(f"  ⚠️  {n_unknown} unknown semantics")
+    if n_generic_keys > 0:
+        print(f"  ⚠️  {n_generic_keys} generic strategy keys")
+    if n_unknown == 0 and n_generic_keys == 0:
+        print(f"  ✓ All targets have resolved semantics and self-describing keys")
+
+    # Check for duplicate semantics within a game+market_type
+    for game in compiled_plan.games:
+        by_type_sem: dict[str, list[str]] = {}
+        for market in game.markets:
+            for target in market.targets:
+                by_type_sem.setdefault(market.sports_market_type, []).append(
+                    str(target.outcome_semantic),
+                )
+        for mtype, sems in by_type_sem.items():
+            counts = Counter(sems)
+            for sem, count in counts.items():
+                # Multi-instance semantics are expected for: totals (multiple lines),
+                # spreads (multiple lines), exact scores (multiple scorelines).
+                multi_instance = {
+                    "over", "under",                  # totals / corners at different lines
+                    "home", "away",                   # spreads at different lines
+                    "exact_yes", "exact_no",          # exact scores at different scorelines
+                }
+                if count > 1 and sem not in multi_instance:
+                    gid_short = game.provider_game_id[:30]
+                    print(f"  ⚠️  DUPLICATE SEMANTIC: {gid_short} {mtype} has {count}× {sem}")
+    print()
+    return 0
+
+
 __all__ = [
+    "run_hotpath_compile",
     "run_hotpath_live",
     "run_hotpath_observe",
     "FastExecutionService",

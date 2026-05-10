@@ -43,6 +43,7 @@ def serialize_compiled_plan(plan: CompiledPlan | None) -> dict[str, Any]:
                             "condition_id": str(target.condition_id or ""),
                             "strategy_key": str(target.strategy_key or ""),
                             "outcome_semantic": str(target.outcome_semantic or ""),
+                            "line": (None if target.line is None else float(target.line)),
                         }
                     )
                 markets.append(

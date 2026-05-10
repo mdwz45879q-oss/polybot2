@@ -111,8 +111,8 @@ fn process_single_frame_live(
 
     // THEN parse: half, scores, completion status.
     let half = parse_half(free_text);
-    let goals_home: Option<i64> = if home_str.is_empty() { None } else { home_str.parse().ok() };
-    let goals_away: Option<i64> = if away_str.is_empty() { None } else { away_str.parse().ok() };
+    let goals_home = crate::fast_extract::fast_parse_score(home_str);
+    let goals_away = crate::fast_extract::fast_parse_score(away_str);
     let is_completed = if free_text.is_empty() { false } else { is_completed_free_text(free_text) };
     let match_completed = if free_text.is_empty() { None } else { Some(is_completed) };
     let game_state: &'static str = if free_text.is_empty() { "UNKNOWN" } else if is_completed { "FINAL" } else { "LIVE" };

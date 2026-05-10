@@ -23,7 +23,7 @@ use futures_util::{SinkExt, StreamExt};
 use hmac::{Hmac, Mac};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyList};
+use pyo3::types::{PyDict, PyList};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -110,10 +110,6 @@ enum SpreadSide {
 #[derive(Clone, Copy)]
 struct OverLine {
     half_int: u16,
-    target_idx: TargetIdx,
-}
-
-struct RawIntent {
     target_idx: TargetIdx,
 }
 
@@ -339,7 +335,8 @@ pub(crate) struct PatchPayload {
 }
 
 struct SubmitterHandle {
-    submit_tx: flume::Sender<crate::dispatch::SubmitWork>,
+    submit_notify: Arc<tokio::sync::Notify>,
+    stop_flag: Arc<std::sync::atomic::AtomicBool>,
     join: Option<JoinHandle<()>>,
     health: Arc<Mutex<SubmitterHealth>>,
 }

@@ -592,6 +592,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ark-ff"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2723,6 +2732,7 @@ name = "polybot2_native"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "arc-swap",
  "base64",
  "chrono",
  "flume",
@@ -2732,6 +2742,7 @@ dependencies = [
  "memchr",
  "polymarket_client_sdk_v2",
  "pyo3",
+ "rtrb",
  "rustc-hash",
  "rustls",
  "serde",
@@ -3302,6 +3313,12 @@ dependencies = [
  "bytes",
  "rustc-hex",
 ]
+
+[[package]]
+name = "rtrb"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ade083ccbb4bf536df69d1f6432cc23deb7acccff86b183f3923a6fd56a1153"
 
 [[package]]
 name = "ruint"

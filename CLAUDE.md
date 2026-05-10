@@ -121,26 +121,31 @@ The only string hash on the live path is `game_id_to_idx.get(fixture_id)` — on
 
 The Python compiler (`compiler.py`) produces strategy keys (`"gid:TOTAL:OVER:5.5"`, etc.) and embeds them in the compiled plan JSON. Rust stores them in `TargetSlot.strategy_key` for log output but never parses or hashes them.
 
-### Three-Way Soccer Market Wiring
+### Compiler: Market-Type Dispatch Architecture
 
-Soccer moneyline and halftime result are three-way markets (home/away/draw). Polymarket publishes each as three separate Yes/No markets. The compiler must produce distinct semantics (`home_yes`, `away_yes`, `draw_yes`, `home_no`, `away_no`, `draw_no`) for each. **Slug-based disambiguation** is used (not question text matching):
+`_parse_outcome_semantic` in `compiler.py` dispatches on `sports_market_type` first. Each branch uses only its reliable signal — **no cross-type label matching**. This prevents bugs like "Sunderland" matching "under" via substring.
 
-- **Moneyline:** slug ends with `-{home_polymarket_code}`, `-{away_polymarket_code}`, or `-draw`
-- **Halftime result:** slug ends with `-home`, `-away`, or `-draw`
+| Market type | Resolution method | Semantics produced |
+|---|---|---|
+| **Totals / corners** | Label exact match ("Over"/"Under") or outcome_index fallback | `over`, `under` |
+| **Spreads** | Slug (`-spread-home-` / `-spread-away-`) + outcome_index | `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers` |
+| **Moneyline (baseball)** | Team name in label (substring match against canonical) | `home`, `away` |
+| **Moneyline (soccer)** | Slug suffix (`-{team_code}` / `-draw`) + outcome_index | `home_yes`, `home_no`, `away_yes`, `away_no`, `draw_yes`, `draw_no` |
+| **Halftime result** | Slug suffix (`-home` / `-away` / `-draw`) + outcome_index | same as soccer moneyline |
+| **BTTS / NRFI** | outcome_index (0=yes, 1=no) | `yes`, `no` |
+| **Exact score** | Slug (`-exact-score-{h}-{a}` or `-any-other`) + outcome_index | `exact_yes`, `exact_no`, `any_other_yes`, `any_other_no` |
 
-The function `_three_way_side_from_slug` in `compiler.py` parses the suffix. Polymarket codes are looked up from `TEAM_MAP_*` via the mapping.
+Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exact_score_from_slug`. Polymarket codes looked up from `TEAM_MAP_*` via the mapping at compile time.
 
-For "Yes" labels, the two-way check (`home_norm in question`) fires first for team-name matches (returns `"home"` / `"away"`). The three-way slug check only fires when the two-way check fails (draw markets, abbreviated names). Both `"home"` and `"home_yes"` are accepted by the Rust engine via `"home_yes" | "home"` match arms.
-
-For "No" labels, spreads use the two-way check. Moneyline and halftime use the slug check exclusively (returns `"home_no"` / `"draw_no"` etc.) — the two-way `"away"` would be wrong for three-way (draw is possible).
-
-Baseball moneyline is two-way — outcome labels are team names (not "Yes"/"No"), so they resolve at lines 83-90 before reaching either check. The three-way path is never entered for baseball.
-
-**Strategy keys** are self-describing for all soccer market types:
+**Strategy keys** are self-describing for all market types:
 - `{gid}:MONEYLINE:HOME_YES`, `{gid}:SOCCER_HALFTIME_RESULT:DRAW_NO`
-- `{gid}:BTTS:YES`, `{gid}:TOTAL_CORNERS:OVER:8.5`, `{gid}:EXACT_SCORE:1_0`
+- `{gid}:SPREAD:HOME_COVERS:-1.5`, `{gid}:SPREAD:AWAY_NOT_COVERS:-2.5`
+- `{gid}:BTTS:YES`, `{gid}:TOTAL_CORNERS:OVER:8.5`
+- `{gid}:EXACT_SCORE:1_1:YES`, `{gid}:EXACT_SCORE:ANY_OTHER:NO`
 
-The Rust plan loader has `eprintln!` warnings on all `_ => {}` arms — unhandled semantics are visible at startup. The `"yes"` / `"no"` fallback arms were removed from moneyline and halftime to prevent latent misrouting to the draw slot.
+The Rust plan loader has `eprintln!` warnings on unhandled semantics — visible at startup. The serializer emits per-target `line` (required for exact scores where `market.line` is NULL).
+
+**`hotpath compile --league <X>`** — dry-run that prints the compiled plan with team-resolved semantics. Flags `⚠️ UNKNOWN SEMANTIC`, `⚠️ GENERIC KEY`, and `⚠️ DUPLICATE SEMANTIC`. Run before live trading to verify the compiler.
 
 ### Decoupled Submitter
 
@@ -230,7 +235,7 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 2. **Fail-closed:** Presign pool miss → error logged on the WS thread (no fallback to unsigned submit). Startup warmup failure → process won't trade. Empty `order_id` with `success: true` from the CLOB → treated as `Err` (not a phantom fill).
 
-3. **Spread evaluation:** `(margin as f64) + spread_line > 0` where the compiler negates the line for the complement ("No"/"Away") side of spread markets. `margin = home - away` for HOME, `-margin` for AWAY.
+3. **Spread evaluation:** Each spread line has a `SpreadSlot { side, line, covers_idx, not_covers_idx }`. At game end: `(margin as f64) + slot.line > 0` → fire `covers_idx`, else fire `not_covers_idx`. Four distinct semantics per line: `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers`. `margin = home - away` for HOME, `-margin` for AWAY.
 
 4. **Totals over crossing:** For a score change from `prev` to `now`, iterate `over_lines` and fire any with `half_int in [prev, now)`. Direct array indexing — no string keys, no HashMap.
 
@@ -261,6 +266,8 @@ polybot2 link build                                 # build links for all live l
 polybot2 link build --horizon-hours 6               # only link games within 6 hours
 polybot2 link build --league-scope all              # include non-live leagues too
 polybot2 link review --run-id N                     # interactive review (opt-out: reject bad matches)
+polybot2 hotpath compile --league epl                # dry-run: print compiled plan with team-resolved semantics
+polybot2 hotpath compile --league mlb --link-run-id 1  # verify plan before trading
 polybot2 hotpath live --league mlb --execution-mode live  # auto-discovers latest run_id
 polybot2 hotpath live --league epl --execution-mode live  # separate process per league
 polybot2 hotpath observe --log-file path/to/hotpath_42_*.jsonl   # live terminal scoreboard

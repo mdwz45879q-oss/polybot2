@@ -1,20 +1,27 @@
 use super::*;
 
 impl DispatchHandle {
-    pub(crate) fn new(cfg: DispatchConfig, registry: Arc<crate::TargetRegistry>) -> Self {
+    pub(crate) fn new(
+        cfg: DispatchConfig,
+        registry: Arc<crate::TargetRegistry>,
+        shared_registry: SharedRegistry,
+    ) -> Self {
         let n = registry.tokens.len();
         Self {
             cfg,
             registry,
+            shared_registry,
             presign_template_catalog: HashMap::new(),
             presign_templates: vec![None; n],
             presign_pool: (0..n).map(|_| None).collect(),
             submit_tx: None,
+            submit_notify: None,
         }
     }
 
-    pub(crate) fn install_submit_tx(&mut self, tx: flume::Sender<SubmitWork>) {
+    pub(crate) fn install_submit_tx(&mut self, tx: rtrb::Producer<SubmitWork>, notify: Arc<tokio::sync::Notify>) {
         self.submit_tx = Some(tx);
+        self.submit_notify = Some(notify);
     }
 
     pub(crate) fn templates_and_pool_mut(
@@ -107,7 +114,8 @@ impl DispatchHandle {
     }
 
     pub(crate) fn replace_registry(&mut self, new_registry: std::sync::Arc<crate::TargetRegistry>) {
-        self.registry = new_registry;
+        self.registry = Arc::clone(&new_registry);
+        self.shared_registry.store(new_registry);
     }
 }
 

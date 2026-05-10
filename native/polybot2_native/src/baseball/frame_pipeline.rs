@@ -121,8 +121,8 @@ fn process_extracted_fields(
 
     // THEN parse: period, scores, completion status.
     let (inning_number, inning_half) = parse_period(free_text);
-    let goals_home: Option<i64> = if home_str.is_empty() { None } else { home_str.parse().ok() };
-    let goals_away: Option<i64> = if away_str.is_empty() { None } else { away_str.parse().ok() };
+    let goals_home = fast_extract::fast_parse_score(home_str);
+    let goals_away = fast_extract::fast_parse_score(away_str);
     let is_completed = if free_text.is_empty() { false } else { is_completed_free_text(free_text) };
     let match_completed = if free_text.is_empty() { None } else { Some(is_completed) };
     let game_state: &'static str = if free_text.is_empty() { "UNKNOWN" } else if is_completed { "FINAL" } else { "LIVE" };

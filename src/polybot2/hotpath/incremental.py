@@ -348,21 +348,23 @@ def discover_new_markets_sync(
     plan_horizon_hours: int | None = None,
     now_ts_utc: int | None = None,
 ) -> IncrementalRefreshResult:
-    # Use a dedicated event loop instead of asyncio.run() — the main thread
-    # may already have a running loop from the Rust/Tokio runtime (PyO3).
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(discover_new_markets(
-            current_plan=current_plan,
-            db=db,
-            gamma_api=gamma_api,
-            live_policy=live_policy,
-            exclude_strategy_keys=exclude_strategy_keys,
-            plan_horizon_hours=plan_horizon_hours,
-            now_ts_utc=now_ts_utc,
-        ))
-    finally:
-        loop.close()
+    # The CLI main() runs inside an asyncio event loop (cli.py:40), and Python
+    # 3.12 prevents any run_until_complete (even on a new loop) while another
+    # loop is running on the same thread. Run the async work in a separate
+    # thread to get a clean event loop.
+    import concurrent.futures
+    coro = discover_new_markets(
+        current_plan=current_plan,
+        db=db,
+        gamma_api=gamma_api,
+        live_policy=live_policy,
+        exclude_strategy_keys=exclude_strategy_keys,
+        plan_horizon_hours=plan_horizon_hours,
+        now_ts_utc=now_ts_utc,
+    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(asyncio.run, coro)
+        return future.result()
 
 
 __all__ = [

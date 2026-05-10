@@ -203,7 +203,6 @@ pub(crate) fn apply_pending_patches(
                     });
                     engine.set_registry(Some(Arc::clone(&new_registry)));
                     dispatch_handle.replace_registry(Arc::clone(&new_registry));
-                    dispatch_handle.send_registry_update(new_registry);
                     if let Ok(mut g) = log.lock() {
                         g.log_patch(result.new_tokens, result.new_targets);
                     }

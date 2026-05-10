@@ -102,80 +102,79 @@ def _parse_outcome_semantic(
     home_polymarket_code: str = "",
     away_polymarket_code: str = "",
 ) -> str:
+    """Dispatch on sports_market_type. Each branch uses only its reliable signal.
+
+    No cross-type label matching — spreads never see the "over"/"under" check,
+    totals never see the team-name check, etc.
+    """
     label = _norm(outcome_label)
-    question_norm = _norm(question)
     slug_norm = _norm(market_slug)
     sports_type = _norm(sports_market_type)
     home_norm = _norm(canonical_home_team)
     away_norm = _norm(canonical_away_team)
     home_code = _norm(home_polymarket_code)
     away_code = _norm(away_polymarket_code)
+    idx = int(outcome_index)
 
-    # ── Phase 1: Unambiguous label values ────────────────────────────
-    # These work for any sport/market type when the label itself is
-    # descriptive (Over/Under, Home/Away, or team names).
-    if "over" in label:
-        return "over"
-    if "under" in label:
-        return "under"
-    if label == "home":
-        return "home"
-    if label == "away":
-        return "away"
-    if home_norm and (home_norm in label or (len(label) >= 4 and label in home_norm)):
-        return "home"
-    if away_norm and (away_norm in label or (len(label) >= 4 and label in away_norm)):
-        return "away"
-
-    # ── Phase 2: Slug-based disambiguation (primary) ─────────────────
-    # Polymarket slugs have deterministic structure. Use them as the
-    # primary source of truth for Yes/No labels on all market types.
-    if label in {"yes", "no"}:
-        is_yes = label == "yes"
-
-        # Spreads: slug contains "-spread-home-" or "-spread-away-"
-        if sports_type in {"spread", "spreads"}:
-            side = _spread_side_from_slug(slug_norm)
-            if side != "unknown":
-                return side if is_yes else ("away" if side == "home" else "home")
-
-        # Three-way (moneyline, halftime result): slug suffix is team code or -draw/-home/-away
-        if sports_type in {"moneyline", "soccer_halftime_result", "halftime_result", "ht_result"}:
-            side = _three_way_side_from_slug(slug_norm, home_code, away_code)
-            if side != "unknown":
-                return f"{side}_yes" if is_yes else f"{side}_no"
-
-        # Totals / corners: outcome index determines over/under
-        if sports_type in {"totals", "total_corners"}:
-            if int(outcome_index) == 0:
-                return "over"
-            if int(outcome_index) == 1:
-                return "under"
-
-        # BTTS: Yes/No map directly
-        if sports_type == "btts":
-            return "yes" if is_yes else "no"
-
-        # NRFI: Yes/No map directly
-        if sports_type == "nrfi":
-            return "yes" if is_yes else "no"
-
-        # Exact score: Yes/No map directly (predicted score is in line/slug)
-        if sports_type == "soccer_exact_score":
-            return "yes" if is_yes else "no"
-
-    # If Phase 1 and 2 didn't resolve, return "unknown" — the Rust
-    # loader's eprintln! warning will surface it. No fuzzy text matching.
-    if label in {"yes", "no"}:
-        return "unknown"
-    if label:
+    # ── Totals / corners: labels "Over" / "Under" (exact match) ──────
+    if sports_type in {"totals", "total_corners"} or is_totals_market_type(sports_type):
+        if label == "over":
+            return "over"
+        if label == "under":
+            return "under"
+        # Fallback: outcome index (0=over, 1=under)
+        if idx == 0:
+            return "over"
+        if idx == 1:
+            return "under"
         return "unknown"
 
-    # ── Phase 3: No label — use outcome_index ────────────────────────
-    if int(outcome_index) == 0 and "over" in question_norm and "under" in question_norm:
-        return "over"
-    if int(outcome_index) == 1 and "over" in question_norm and "under" in question_norm:
-        return "under"
+    # ── Spreads: slug determines side, index determines covers/not-covers ─
+    if sports_type in {"spread", "spreads"}:
+        side = _spread_side_from_slug(slug_norm)
+        if side == "unknown":
+            return "unknown"
+        if idx == 0:
+            return f"{side}_covers"          # e.g. "home_covers", "away_covers"
+        return f"{side}_not_covers"          # e.g. "home_not_covers", "away_not_covers"
+
+    # ── Moneyline: team-name labels (baseball) or slug (soccer 3-way) ─
+    if sports_type == "moneyline":
+        # Baseball: outcome labels are team names
+        if home_norm and (home_norm in label or (len(label) >= 4 and label in home_norm)):
+            return "home"
+        if away_norm and (away_norm in label or (len(label) >= 4 and label in away_norm)):
+            return "away"
+        # Soccer: slug determines side, index determines yes/no
+        side = _three_way_side_from_slug(slug_norm, home_code, away_code)
+        if side != "unknown":
+            return f"{side}_yes" if idx == 0 else f"{side}_no"
+        return "unknown"
+
+    # ── Halftime result: slug determines side ─────────────────────────
+    if sports_type in {"soccer_halftime_result", "halftime_result", "ht_result"}:
+        side = _three_way_side_from_slug(slug_norm, home_code, away_code)
+        if side != "unknown":
+            return f"{side}_yes" if idx == 0 else f"{side}_no"
+        return "unknown"
+
+    # ── BTTS: index 0 = yes, 1 = no ──────────────────────────────────
+    if sports_type == "btts":
+        return "yes" if idx == 0 else "no"
+
+    # ── NRFI: index 0 = yes, 1 = no ──────────────────────────────────
+    if sports_type == "nrfi":
+        return "yes" if idx == 0 else "no"
+
+    # ── Exact score: slug determines score, index determines yes/no ───
+    if sports_type == "soccer_exact_score":
+        score = _parse_exact_score_from_slug(slug_norm)
+        if score is not None:
+            return "exact_yes" if idx == 0 else "exact_no"
+        # "any other score" market
+        if "-exact-score-any" in slug_norm:
+            return "any_other_yes" if idx == 0 else "any_other_no"
+        return "unknown"
 
     return "unknown"
 
@@ -582,9 +581,6 @@ def compile_hotpath_plan(
 
         # Compute effective_line before strategy key assignment.
         effective_line = line_val
-        if sports_market_type == "spread" and line_val is not None:
-            if outcome_semantic == "away":
-                effective_line = -line_val
         if sports_market_type == "soccer_exact_score" and effective_line is None:
             exact_score = _parse_exact_score_from_slug(_norm(market_slug))
             if exact_score is not None:
@@ -600,7 +596,9 @@ def compile_hotpath_plan(
             "home", "away", "home_yes", "home_no", "away_yes", "away_no", "draw_yes", "draw_no",
         }:
             strategy_key = f"{gid}:MONEYLINE:{outcome_semantic.upper()}"
-        elif sports_market_type == "spread" and outcome_semantic in {"home", "away"} and line_val is not None:
+        elif sports_market_type == "spread" and outcome_semantic in {
+            "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+        } and line_val is not None:
             line_key = _line_key(line_val)
             strategy_key = f"{gid}:SPREAD:{outcome_semantic.upper()}:{line_key}"
         elif sports_market_type == "soccer_halftime_result" and outcome_semantic in {
@@ -612,10 +610,14 @@ def compile_hotpath_plan(
         elif sports_market_type == "total_corners" and outcome_semantic in {"over", "under"} and line_val is not None:
             line_key = _line_key(line_val)
             strategy_key = f"{gid}:TOTAL_CORNERS:{outcome_semantic.upper()}:{line_key}"
-        elif sports_market_type == "soccer_exact_score" and outcome_semantic in {"yes", "over"} and effective_line is not None:
+        elif sports_market_type == "soccer_exact_score" and outcome_semantic in {"exact_yes", "exact_no"} and effective_line is not None:
             home_pred = int(effective_line)
             away_pred = int(round((effective_line - int(effective_line)) * 10))
-            strategy_key = f"{gid}:EXACT_SCORE:{home_pred}_{away_pred}"
+            yes_no = "YES" if outcome_semantic == "exact_yes" else "NO"
+            strategy_key = f"{gid}:EXACT_SCORE:{home_pred}_{away_pred}:{yes_no}"
+        elif sports_market_type == "soccer_exact_score" and outcome_semantic in {"any_other_yes", "any_other_no"}:
+            yes_no = "YES" if outcome_semantic == "any_other_yes" else "NO"
+            strategy_key = f"{gid}:EXACT_SCORE:ANY_OTHER:{yes_no}"
         else:
             strategy_key = f"{gid}:{sports_market_type.upper()}:{condition_id}:{outcome_index}"
 
@@ -625,11 +627,15 @@ def compile_hotpath_plan(
             or (sports_market_type == "moneyline" and outcome_semantic in {
                 "home", "away", "home_yes", "home_no", "away_yes", "away_no", "draw_yes", "draw_no",
             })
-            or (sports_market_type == "spread" and outcome_semantic in {"home", "away"})
+            or (sports_market_type == "spread" and outcome_semantic in {
+                "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+            })
             or (sports_market_type == "soccer_halftime_result" and outcome_semantic.endswith(("_yes", "_no")))
             or (sports_market_type == "btts" and outcome_semantic in {"yes", "no"})
             or (sports_market_type == "total_corners" and outcome_semantic in {"over", "under"})
-            or (sports_market_type == "soccer_exact_score" and outcome_semantic in {"yes", "over"})
+            or (sports_market_type == "soccer_exact_score" and outcome_semantic in {
+                "exact_yes", "exact_no", "any_other_yes", "any_other_no",
+            })
         ):
             # Some live snapshots can contain duplicated logical markets (same game+family+side+line).
             # Keep the first deterministic candidate and skip later duplicates instead of hard-failing compile.

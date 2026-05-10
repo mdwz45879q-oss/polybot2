@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
-from typing import Any, Literal
+from typing import Any
 
 
-OutcomeSemantic = Literal["over", "under", "yes", "no", "home", "away", "unknown"]
+# Outcome semantics produced by the compiler. Includes two-way (home, away,
+# over, under, yes, no) and three-way (home_yes, home_no, away_yes, away_no,
+# draw_yes, draw_no) values.
+OutcomeSemantic = str
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,29 +57,6 @@ class HotPathConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class MatchDeltaEvent:
-    universal_id: str
-    action: str
-    recv_monotonic_ns: int
-    stream: str
-    material_change: bool
-    goal_delta_home: int = 0
-    goal_delta_away: int = 0
-    yellow_delta_home: int = 0
-    yellow_delta_away: int = 0
-    red_delta_home: int = 0
-    red_delta_away: int = 0
-    outs_delta: int = 0
-    balls_delta: int = 0
-    strikes_delta: int = 0
-    elapsed_delta_seconds: int = 0
-    inning_changed: bool = False
-    base_state_changed: bool = False
-    match_completed_changed: bool = False
-    period_changed: bool = False
-
-
-@dataclass(frozen=True, slots=True)
 class CompiledTarget:
     condition_id: str
     outcome_index: int
@@ -119,28 +99,11 @@ class CompiledPlan:
     games: tuple[CompiledGamePlan, ...] = field(default_factory=tuple)
 
 
-@dataclass(frozen=True, slots=True)
-class OrderIntent:
-    strategy_key: str
-    token_id: str
-    side: str
-    amount_usdc: float
-    limit_price: float
-    time_in_force: str = "FAK"
-    expire_ts: int | None = None
-    condition_id: str = ""
-    client_order_id: str = ""
-    source_universal_id: str = ""
-    reason: str = ""
-
-
 __all__ = [
     "CompiledGamePlan",
     "CompiledMarket",
     "CompiledPlan",
     "CompiledTarget",
     "HotPathConfig",
-    "MatchDeltaEvent",
-    "OrderIntent",
     "OutcomeSemantic",
 ]

@@ -12,8 +12,6 @@ from polybot2.hotpath.contracts import (
     CompiledPlan,
     CompiledTarget,
     HotPathConfig,
-    MatchDeltaEvent,
-    OrderIntent,
 )
 from polybot2.hotpath.order_policy import OrderPolicy
 from polybot2.hotpath.native_service import NativeHotPathService
@@ -32,9 +30,7 @@ __all__ = [
     "HotPathPlanError",
     "IncrementalRefreshResult",
     "OrderPolicy",
-    "MatchDeltaEvent",
     "NativeHotPathService",
-    "OrderIntent",
     "ScopedLaunchCheck",
     "compile_hotpath_plan",
     "discover_new_markets",

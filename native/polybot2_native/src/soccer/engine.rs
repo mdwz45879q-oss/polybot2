@@ -198,6 +198,8 @@ impl NativeSoccerEngine {
                     let semantic = norm(
                         target_val.get("outcome_semantic").and_then(|v| v.as_str()).unwrap_or(""),
                     );
+                    // Prefer target-level line (exact scores have it), fall back to market-level.
+                    let effective_line = target_val.get("line").and_then(|v| v.as_f64()).or(line);
                     let token_id = target_val
                         .get("token_id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
                     if token_id.is_empty() {
@@ -235,7 +237,7 @@ impl NativeSoccerEngine {
                     match sports_market_type.as_str() {
                         "totals" => {
                             game_has_totals = true;
-                            if let Some(l) = line {
+                            if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
                                     "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
@@ -262,16 +264,28 @@ impl NativeSoccerEngine {
                         }
                         "spread" => {
                             game_has_moneyline = true; // spreads use the same final gate
-                            if let Some(l) = line {
-                                let side = match semantic.as_str() {
-                                    "home" => SpreadSide::Home,
-                                    "away" => SpreadSide::Away,
+                            if let Some(l) = effective_line {
+                                let (side, is_covers) = match semantic.as_str() {
+                                    "home_covers" | "home" => (SpreadSide::Home, true),
+                                    "home_not_covers" => (SpreadSide::Home, false),
+                                    "away_covers" | "away" => (SpreadSide::Away, true),
+                                    "away_not_covers" => (SpreadSide::Away, false),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled spread semantic '{}' for game {}", other, game_id_ref);
                                         continue;
                                     }
                                 };
-                                game_tgt.spreads.push((side, l, tidx));
+                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                    .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
+                                {
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                } else {
+                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                    game_tgt.spreads.push(slot);
+                                }
                             }
                         }
                         "btts" => {
@@ -286,7 +300,7 @@ impl NativeSoccerEngine {
                         }
                         "total_corners" => {
                             game_has_corners = true;
-                            if let Some(l) = line {
+                            if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
                                     "over" => game_tgt.corner_over_lines.push(OverLine { half_int: half, target_idx: tidx }),
@@ -313,21 +327,51 @@ impl NativeSoccerEngine {
                         }
                         "soccer_exact_score" => {
                             game_has_exact_score = true;
-                            // Parse predicted score from strategy_key.
-                            // Generic format: "{gid}:SOCCER_EXACT_SCORE:{condition_id}:{outcome_index}"
-                            // The YES outcome (outcome_index=0) means that exact score wins.
-                            // We parse predicted scores from the market's line field if available,
-                            // or from the question text embedded in strategy_key metadata.
-                            // For now: use line encoding if present (home.away as float, e.g. 1.3 = 1-3),
-                            // otherwise skip (target won't fire but won't break).
-                            if semantic.as_str() == "yes" || semantic.as_str() == "over" {
-                                if let Some(line_val) = line {
-                                    let home_pred = line_val.floor() as i64;
-                                    let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
-                                    game_tgt.exact_scores.push((home_pred, away_pred, tidx));
+                            match semantic.as_str() {
+                                "exact_yes" | "exact_no" => {
+                                    if let Some(line_val) = effective_line {
+                                        let home_pred = line_val.floor() as i64;
+                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        let is_yes = semantic.as_str() == "exact_yes";
+                                        // Find or create slot for this score
+                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
+                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        {
+                                            if is_yes { slot.yes_idx = Some(tidx); }
+                                            else { slot.no_idx = Some(tidx); }
+                                        } else {
+                                            let mut slot = ExactScoreSlot::default();
+                                            slot.home_pred = home_pred;
+                                            slot.away_pred = away_pred;
+                                            if is_yes { slot.yes_idx = Some(tidx); }
+                                            else { slot.no_idx = Some(tidx); }
+                                            game_tgt.exact_scores.push(slot);
+                                        }
+                                    }
                                 }
-                            } else {
-                                eprintln!("[polybot2] WARN: unhandled exact_score semantic '{}' for game {}", semantic, game_id_ref);
+                                "any_other_yes" => game_tgt.any_other_score_yes = Some(tidx),
+                                "any_other_no" => game_tgt.any_other_score_no = Some(tidx),
+                                // Legacy: accept bare "yes"/"over" from old plans
+                                "yes" | "over" => {
+                                    if let Some(line_val) = effective_line {
+                                        let home_pred = line_val.floor() as i64;
+                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
+                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        {
+                                            slot.yes_idx = Some(tidx);
+                                        } else {
+                                            let mut slot = ExactScoreSlot::default();
+                                            slot.home_pred = home_pred;
+                                            slot.away_pred = away_pred;
+                                            slot.yes_idx = Some(tidx);
+                                            game_tgt.exact_scores.push(slot);
+                                        }
+                                    }
+                                }
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled exact_score semantic '{}' for game {}", other, game_id_ref);
+                                }
                             }
                         }
                         _ => {}
@@ -515,20 +559,14 @@ impl NativeSoccerEngine {
         }
         self.game_states[gi] = state;
 
-        // Evaluate into stack-allocated SmallVec.
-        let mut raw_intents = smallvec::SmallVec::<[RawIntent; 4]>::new();
-        self.evaluate_totals_into(gidx, &state, &mut raw_intents);
-        self.evaluate_moneyline_into(gidx, &state, &mut raw_intents);
-        self.evaluate_btts_into(gidx, &state, &mut raw_intents);
-        self.evaluate_corners_into(gidx, &state, &mut raw_intents);
-        self.evaluate_halftime_into(gidx, &state, &mut raw_intents);
-        self.evaluate_exact_score_into(gidx, &state, &mut raw_intents);
-
-        // No cooldown/debounce — presign pool is the sole one-shot gate.
-        let intents: smallvec::SmallVec<[Intent; 4]> = raw_intents
-            .iter()
-            .map(|raw| Intent { target_idx: raw.target_idx })
-            .collect();
+        // Evaluate directly into stack-allocated SmallVec — no intermediate type.
+        let mut intents = smallvec::SmallVec::<[Intent; 4]>::new();
+        self.evaluate_totals_into(gidx, &state, &mut intents);
+        self.evaluate_moneyline_into(gidx, &state, &mut intents);
+        self.evaluate_btts_into(gidx, &state, &mut intents);
+        self.evaluate_corners_into(gidx, &state, &mut intents);
+        self.evaluate_halftime_into(gidx, &state, &mut intents);
+        self.evaluate_exact_score_into(gidx, &state, &mut intents);
 
         if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
             self.cleanup_completed_game_idx(gidx);
@@ -628,6 +666,7 @@ impl NativeSoccerEngine {
                     let semantic = norm(
                         target_val.get("outcome_semantic").and_then(|v| v.as_str()).unwrap_or(""),
                     );
+                    let effective_line = target_val.get("line").and_then(|v| v.as_f64()).or(line);
 
                     let token_idx = match self.token_id_to_idx.get(&token_id) {
                         Some(&idx) => idx,
@@ -651,7 +690,7 @@ impl NativeSoccerEngine {
                     let game_tgt = &mut self.game_targets[gi];
                     match sports_market_type.as_str() {
                         "totals" => {
-                            if let Some(l) = line {
+                            if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
                                     "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
@@ -679,16 +718,28 @@ impl NativeSoccerEngine {
                             self.has_moneyline[gi] = true;
                         }
                         "spread" => {
-                            if let Some(l) = line {
-                                let side = match semantic.as_str() {
-                                    "home" => SpreadSide::Home,
-                                    "away" => SpreadSide::Away,
+                            if let Some(l) = effective_line {
+                                let (side, is_covers) = match semantic.as_str() {
+                                    "home_covers" | "home" => (SpreadSide::Home, true),
+                                    "home_not_covers" => (SpreadSide::Home, false),
+                                    "away_covers" | "away" => (SpreadSide::Away, true),
+                                    "away_not_covers" => (SpreadSide::Away, false),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled spread semantic '{}' for game {}", other, uid);
                                         continue;
                                     }
                                 };
-                                game_tgt.spreads.push((side, l, tidx));
+                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                    .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
+                                {
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                } else {
+                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                    game_tgt.spreads.push(slot);
+                                }
                             }
                             self.has_moneyline[gi] = true;
                         }
@@ -703,7 +754,7 @@ impl NativeSoccerEngine {
                             self.has_btts[gi] = true;
                         }
                         "total_corners" => {
-                            if let Some(l) = line {
+                            if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
                                 match semantic.as_str() {
                                     "over" => game_tgt.corner_over_lines.push(OverLine { half_int: half, target_idx: tidx }),
@@ -731,14 +782,49 @@ impl NativeSoccerEngine {
                             self.has_halftime[gi] = true;
                         }
                         "soccer_exact_score" => {
-                            if semantic.as_str() == "yes" || semantic.as_str() == "over" {
-                                if let Some(line_val) = line {
-                                    let home_pred = line_val.floor() as i64;
-                                    let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
-                                    game_tgt.exact_scores.push((home_pred, away_pred, tidx));
+                            match semantic.as_str() {
+                                "exact_yes" | "exact_no" => {
+                                    if let Some(line_val) = effective_line {
+                                        let home_pred = line_val.floor() as i64;
+                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        let is_yes = semantic.as_str() == "exact_yes";
+                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
+                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        {
+                                            if is_yes { slot.yes_idx = Some(tidx); }
+                                            else { slot.no_idx = Some(tidx); }
+                                        } else {
+                                            let mut slot = ExactScoreSlot::default();
+                                            slot.home_pred = home_pred;
+                                            slot.away_pred = away_pred;
+                                            if is_yes { slot.yes_idx = Some(tidx); }
+                                            else { slot.no_idx = Some(tidx); }
+                                            game_tgt.exact_scores.push(slot);
+                                        }
+                                    }
                                 }
-                            } else {
-                                eprintln!("[polybot2] WARN: unhandled exact_score semantic '{}' for game {}", semantic, uid);
+                                "any_other_yes" => game_tgt.any_other_score_yes = Some(tidx),
+                                "any_other_no" => game_tgt.any_other_score_no = Some(tidx),
+                                "yes" | "over" => {
+                                    if let Some(line_val) = effective_line {
+                                        let home_pred = line_val.floor() as i64;
+                                        let away_pred = ((line_val - line_val.floor()) * 10.0).round() as i64;
+                                        if let Some(slot) = game_tgt.exact_scores.iter_mut()
+                                            .find(|s| s.home_pred == home_pred && s.away_pred == away_pred)
+                                        {
+                                            slot.yes_idx = Some(tidx);
+                                        } else {
+                                            let mut slot = ExactScoreSlot::default();
+                                            slot.home_pred = home_pred;
+                                            slot.away_pred = away_pred;
+                                            slot.yes_idx = Some(tidx);
+                                            game_tgt.exact_scores.push(slot);
+                                        }
+                                    }
+                                }
+                                other => {
+                                    eprintln!("[polybot2] WARN: unhandled exact_score semantic '{}' for game {}", other, uid);
+                                }
                             }
                             self.has_exact_score[gi] = true;
                         }

@@ -1,11 +1,5 @@
 use crate::*;
 use crate::baseball::types::*;
-use crate::kalstrop_types::KalstropFrame;
-use crate::baseball::parse::{
-    get_str, get_i64_opt, get_f64_opt,
-    parse_tick_any,
-    parse_tick_from_kalstrop_update,
-};
 use crate::InlineStr;
 use rustc_hash::FxHashMap;
 
@@ -46,206 +40,6 @@ impl NativeMlbEngine {
         self.nrfi_resolved_games.fill(false);
         self.nrfi_first_inning_observed.fill(false);
         self.final_resolved_games.fill(false);
-    }
-
-    pub fn load_plan(&mut self, plan: &Bound<'_, PyDict>) -> PyResult<()> {
-        self.game_id_to_idx.clear();
-        self.game_ids.clear();
-        self.game_targets.clear();
-        self.target_slots.clear();
-        self.tokens.clear();
-        self.token_id_to_idx.clear();
-        self.strategy_keys.clear();
-        self.registry = None;
-        self.kickoff_ts.clear();
-        self.token_ids_by_game.clear();
-        self.has_totals.clear();
-        self.has_nrfi.clear();
-        self.has_final.clear();
-
-        let games_obj = plan
-            .get_item("games")?
-            .ok_or_else(|| PyValueError::new_err("plan.games is required"))?;
-        let games: &Bound<'_, PyList> = games_obj.downcast()?;
-
-        for game_obj in games.iter() {
-            let game: &Bound<'_, PyDict> = game_obj.downcast()?;
-            let uid = get_str(game, "provider_game_id");
-            if uid.is_empty() {
-                continue;
-            }
-
-            if self.game_ids.len() >= u16::MAX as usize {
-                return Err(PyValueError::new_err("load_plan_game_overflow:u16_max"));
-            }
-            let gidx = GameIdx(self.game_ids.len() as u16);
-            self.game_id_to_idx.insert(uid.clone(), gidx);
-            self.game_ids.push(uid.clone());
-
-            let kickoff = get_i64_opt(game, "kickoff_ts_utc");
-            self.kickoff_ts.push(kickoff);
-
-            let markets_obj = game
-                .get_item("markets")?
-                .ok_or_else(|| PyValueError::new_err("game.markets is required"))?;
-            let markets: &Bound<'_, PyList> = markets_obj.downcast()?;
-
-            let mut game_tgt = GameTargets::default();
-            let mut game_has_totals = false;
-            let mut game_has_nrfi = false;
-            let mut game_has_final = false;
-            let mut token_ids: HashSet<String> = HashSet::new();
-
-            for market_obj in markets.iter() {
-                let market: &Bound<'_, PyDict> = market_obj.downcast()?;
-                let sports_market_type = canonical_market_type(&get_str(market, "sports_market_type"));
-                let line = get_f64_opt(market, "line");
-                let targets_obj = market
-                    .get_item("targets")?
-                    .ok_or_else(|| PyValueError::new_err("market.targets is required"))?;
-                let targets_list: &Bound<'_, PyList> = targets_obj.downcast()?;
-
-                for target_obj in targets_list.iter() {
-                    let target: &Bound<'_, PyDict> = target_obj.downcast()?;
-                    let semantic = norm(&get_str(target, "outcome_semantic"));
-                    let token_id = get_str(target, "token_id");
-                    if token_id.is_empty() {
-                        continue;
-                    }
-                    token_ids.insert(token_id.clone());
-                    let strategy_key = get_str(target, "strategy_key");
-                    if strategy_key.is_empty() {
-                        continue;
-                    }
-
-                    let token_idx = match self.token_id_to_idx.get(&token_id) {
-                        Some(&idx) => idx,
-                        None => {
-                            if self.tokens.len() >= u16::MAX as usize {
-                                return Err(PyValueError::new_err("load_plan_token_overflow:u16_max"));
-                            }
-                            let idx = TokenIdx(self.tokens.len() as u16);
-                            self.tokens.push(TokenSlot { token_id: Arc::from(token_id.as_str()) });
-                            self.token_id_to_idx.insert(token_id.clone(), idx);
-                            idx
-                        }
-                    };
-                    if self.target_slots.len() >= u16::MAX as usize {
-                        return Err(PyValueError::new_err("load_plan_target_overflow:u16_max"));
-                    }
-                    let tidx = TargetIdx(self.target_slots.len() as u16);
-                    self.strategy_keys.insert(strategy_key.clone());
-                    self.target_slots.push(TargetSlot {
-                        token_idx,
-                        strategy_key: Arc::from(strategy_key.as_str()),
-                    });
-
-                    let market_type = sports_market_type.as_str();
-
-                    match market_type {
-                        "totals" => {
-                            game_has_totals = true;
-                            if let Some(l) = line {
-                                let half = l.floor() as u16;
-                                match semantic.as_str() {
-                                    "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    _ => {}
-                                }
-                            }
-                        }
-                        "nrfi" => {
-                            game_has_nrfi = true;
-                            match semantic.as_str() {
-                                "yes" => game_tgt.nrfi_yes = Some(tidx),
-                                "no" => game_tgt.nrfi_no = Some(tidx),
-                                _ => {}
-                            }
-                        }
-                        "moneyline" => {
-                            game_has_final = true;
-                            match semantic.as_str() {
-                                "home" => game_tgt.moneyline_home = Some(tidx),
-                                "away" => game_tgt.moneyline_away = Some(tidx),
-                                _ => {}
-                            }
-                        }
-                        "spread" => {
-                            game_has_final = true;
-                            if let Some(l) = line {
-                                let side = match semantic.as_str() {
-                                    "home" => SpreadSide::Home,
-                                    "away" => SpreadSide::Away,
-                                    _ => continue,
-                                };
-                                game_tgt.spreads.push((side, l, tidx));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            game_tgt.over_lines.sort_by_key(|ol| ol.half_int);
-            game_tgt.under_lines.sort_by_key(|ol| ol.half_int);
-
-            self.game_targets.push(game_tgt);
-            self.has_totals.push(game_has_totals);
-            self.has_nrfi.push(game_has_nrfi);
-            self.has_final.push(game_has_final);
-
-            if !token_ids.is_empty() {
-                let mut token_list = token_ids.into_iter().collect::<Vec<_>>();
-                token_list.sort();
-                token_list.dedup();
-                self.token_ids_by_game.push(token_list);
-            } else {
-                self.token_ids_by_game.push(Vec::new());
-            }
-        }
-
-        let num_games = self.game_ids.len();
-        self.rows = vec![None; num_games];
-        self.game_states = vec![GameState::default(); num_games];
-        self.totals_final_under_emitted = vec![false; num_games];
-        self.nrfi_resolved_games = vec![false; num_games];
-        self.nrfi_first_inning_observed = vec![false; num_games];
-        self.final_resolved_games = vec![false; num_games];
-
-        // Freeze the registry. Cloned via `clone_registry()` for sharing with
-        // `DispatchHandle` and `OrderSubmitter` at runtime startup.
-        self.registry = Some(Arc::new(TargetRegistry {
-            tokens: self.tokens.clone(),
-            targets: self.target_slots.clone(),
-        }));
-
-        Ok(())
-    }
-
-    fn process_score_event(
-        &mut self,
-        py: Python<'_>,
-        event: &Bound<'_, PyAny>,
-        recv_monotonic_ns: i64,
-    ) -> PyResult<PyObject> {
-        let tick = parse_tick_any(event, recv_monotonic_ns);
-        let result = self.process_tick(tick);
-        let out = PyDict::new_bound(py);
-        let decision = if result.intents.is_empty() { "no_action" } else { "action" };
-        out.set_item("decision", decision)?;
-        let intent_list = PyList::empty_bound(py);
-        // Resolve strategy_key + token_id strings at the FFI boundary. The
-        // engine itself never allocates these strings on the success path.
-        for intent in &result.intents {
-            let target = &self.target_slots[intent.target_idx.0 as usize];
-            let token = &self.tokens[target.token_idx.0 as usize];
-            let row = PyDict::new_bound(py);
-            row.set_item("strategy_key", &*target.strategy_key)?;
-            row.set_item("token_id", &*token.token_id)?;
-            intent_list.append(row)?;
-        }
-        out.set_item("intents", intent_list)?;
-        Ok(out.into_py(py))
     }
 }
 
@@ -289,9 +83,6 @@ impl NativeMlbEngine {
 
 impl NativeMlbEngine {
     /// Load a compiled plan from a JSON string. Same schema as the PyO3
-    /// `load_plan` but without Python dependency. Used by bench_support
-    /// and as the shared core for merge_plan's JSON parsing.
-    #[cfg_attr(not(feature = "bench-support"), allow(dead_code))]
     pub(crate) fn load_plan_from_json(&mut self, plan_json: &str) -> Result<(), String> {
         self.game_id_to_idx.clear();
         self.game_ids.clear();
@@ -407,7 +198,7 @@ impl NativeMlbEngine {
                                 match semantic.as_str() {
                                     "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
                                     "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
-                                    _ => {}
+                                    other => { eprintln!("[polybot2] WARN: unhandled baseball semantic '{}' key={}",other,strategy_key); }
                                 }
                             }
                         }
@@ -416,7 +207,7 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "yes" => game_tgt.nrfi_yes = Some(tidx),
                                 "no" => game_tgt.nrfi_no = Some(tidx),
-                                _ => {}
+                                other => { eprintln!("[polybot2] WARN: unhandled baseball nrfi semantic '{}'", other); }
                             }
                         }
                         "moneyline" => {
@@ -424,18 +215,30 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "home" => game_tgt.moneyline_home = Some(tidx),
                                 "away" => game_tgt.moneyline_away = Some(tidx),
-                                _ => {}
+                                other => { eprintln!("[polybot2] WARN: unhandled baseball moneyline semantic '{}'", other); }
                             }
                         }
                         "spread" => {
                             game_has_final = true;
                             if let Some(l) = line {
-                                let side = match semantic.as_str() {
-                                    "home" => SpreadSide::Home,
-                                    "away" => SpreadSide::Away,
+                                let (side, is_covers) = match semantic.as_str() {
+                                    "home_covers" | "home" => (SpreadSide::Home, true),
+                                    "home_not_covers" => (SpreadSide::Home, false),
+                                    "away_covers" | "away" => (SpreadSide::Away, true),
+                                    "away_not_covers" => (SpreadSide::Away, false),
                                     _ => continue,
                                 };
-                                game_tgt.spreads.push((side, l, tidx));
+                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                    .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
+                                {
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                } else {
+                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                    game_tgt.spreads.push(slot);
+                                }
                             }
                         }
                         _ => {}
@@ -539,13 +342,6 @@ impl NativeMlbEngine {
         // (depth=1, no refill), not by the engine.
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn cleanup_completed_game(&mut self, game_id: &str) {
-        if let Some(&gidx) = self.game_id_to_idx.get(game_id) {
-            self.cleanup_completed_game_idx(gidx);
-        }
-    }
-
     pub(crate) fn is_game_completed(&self, game_id: &str) -> bool {
         if let Some(&gidx) = self.game_id_to_idx.get(game_id) {
             let gi = gidx.0 as usize;
@@ -592,17 +388,11 @@ impl NativeMlbEngine {
 
         let (_prev_state, state) = self.update_game_state(gidx, &tick);
 
-        let mut raw_intents = Vec::new();
-        raw_intents.extend(self.evaluate_totals(gidx, &state));
-        raw_intents.extend(self.evaluate_nrfi(gidx, &state, &delta));
-        raw_intents.extend(self.evaluate_walkoff(gidx, &state));
-        raw_intents.extend(self.evaluate_final(gidx, &state));
-
-        // No cooldown/debounce — presign pool is the sole one-shot gate.
-        let intents: Vec<Intent> = raw_intents
-            .iter()
-            .map(|raw| Intent { target_idx: raw.target_idx })
-            .collect();
+        let mut intents = Vec::new();
+        intents.extend(self.evaluate_totals(gidx, &state));
+        intents.extend(self.evaluate_nrfi(gidx, &state, &delta));
+        intents.extend(self.evaluate_walkoff(gidx, &state));
+        intents.extend(self.evaluate_final(gidx, &state));
 
         let gi = gidx.0 as usize;
         if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
@@ -801,18 +591,12 @@ impl NativeMlbEngine {
         }
         self.game_states[gi] = state;
 
-        // Evaluate into stack-allocated SmallVec.
-        let mut raw_intents = smallvec::SmallVec::<[RawIntent; 4]>::new();
-        self.evaluate_totals_into(gidx, &state, &mut raw_intents);
-        self.evaluate_nrfi_into(gidx, &state, &delta, &mut raw_intents);
-        self.evaluate_walkoff_into(gidx, &state, &mut raw_intents);
-        self.evaluate_final_into(gidx, &state, &mut raw_intents);
-
-        // No cooldown/debounce — presign pool is the sole one-shot gate.
-        let intents: smallvec::SmallVec<[Intent; 4]> = raw_intents
-            .iter()
-            .map(|raw| Intent { target_idx: raw.target_idx })
-            .collect();
+        // Evaluate directly into stack-allocated SmallVec — no intermediate type.
+        let mut intents = smallvec::SmallVec::<[Intent; 4]>::new();
+        self.evaluate_totals_into(gidx, &state, &mut intents);
+        self.evaluate_nrfi_into(gidx, &state, &delta, &mut intents);
+        self.evaluate_walkoff_into(gidx, &state, &mut intents);
+        self.evaluate_final_into(gidx, &state, &mut intents);
 
         if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
             self.cleanup_completed_game_idx(gidx);
@@ -946,7 +730,7 @@ impl NativeMlbEngine {
                                             target_idx: tidx,
                                         });
                                     }
-                                    _ => {}
+                                    other => { eprintln!("[polybot2] WARN: unhandled baseball semantic '{}' key={}",other,strategy_key); }
                                 }
                             }
                             self.has_totals[gi] = true;
@@ -956,7 +740,7 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "yes" => game_tgt.nrfi_yes = Some(tidx),
                                 "no" => game_tgt.nrfi_no = Some(tidx),
-                                _ => {}
+                                other => { eprintln!("[polybot2] WARN: unhandled baseball nrfi semantic '{}'", other); }
                             }
                             self.has_nrfi[gi] = true;
                         }
@@ -964,18 +748,30 @@ impl NativeMlbEngine {
                             match semantic.as_str() {
                                 "home" => game_tgt.moneyline_home = Some(tidx),
                                 "away" => game_tgt.moneyline_away = Some(tidx),
-                                _ => {}
+                                other => { eprintln!("[polybot2] WARN: unhandled baseball moneyline semantic '{}'", other); }
                             }
                             self.has_final[gi] = true;
                         }
                         "spread" => {
                             if let Some(l) = line {
-                                let side = match semantic.as_str() {
-                                    "home" => SpreadSide::Home,
-                                    "away" => SpreadSide::Away,
+                                let (side, is_covers) = match semantic.as_str() {
+                                    "home_covers" | "home" => (SpreadSide::Home, true),
+                                    "home_not_covers" => (SpreadSide::Home, false),
+                                    "away_covers" | "away" => (SpreadSide::Away, true),
+                                    "away_not_covers" => (SpreadSide::Away, false),
                                     _ => continue,
                                 };
-                                game_tgt.spreads.push((side, l, tidx));
+                                if let Some(slot) = game_tgt.spreads.iter_mut()
+                                    .find(|s| s.side == side && (s.line - l).abs() < 1e-9)
+                                {
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                } else {
+                                    let mut slot = SpreadSlot { side, line: l, covers_idx: None, not_covers_idx: None };
+                                    if is_covers { slot.covers_idx = Some(tidx); }
+                                    else { slot.not_covers_idx = Some(tidx); }
+                                    game_tgt.spreads.push(slot);
+                                }
                             }
                             self.has_final[gi] = true;
                         }
@@ -1059,54 +855,51 @@ pub(crate) fn serde_value_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObj
     }
 }
 
-#[allow(dead_code)]
-fn process_single_frame(
-    engine: &mut NativeMlbEngine,
-    frame: &KalstropFrame<'_>,
-    recv_monotonic_ns: i64,
-) -> Option<TickResult> {
-    if frame.msg_type != "next" {
-        return None;
-    }
-    let update = frame
-        .payload
-        .as_ref()
-        .and_then(|p| p.data.as_ref())
-        .and_then(|d| d.update.as_ref())?;
-    let tick = parse_tick_from_kalstrop_update(update, recv_monotonic_ns);
-    Some(engine.process_tick(tick))
-}
-
-#[allow(dead_code)]
-pub(crate) fn process_kalstrop_frame(
-    engine: &mut NativeMlbEngine,
-    text: &str,
-    recv_monotonic_ns: i64,
-) -> Vec<TickResult> {
-    let mut results = Vec::new();
-
-    let first_byte = text.as_bytes().first().copied().unwrap_or(0);
-    if first_byte == b'[' {
-        if let Ok(frames) = serde_json::from_str::<Vec<KalstropFrame<'_>>>(text) {
-            for frame in &frames {
-                if let Some(r) = process_single_frame(engine, frame, recv_monotonic_ns) {
-                    results.push(r);
-                }
-            }
-        }
-    } else if let Ok(frame) = serde_json::from_str::<KalstropFrame<'_>>(text) {
-        if let Some(r) = process_single_frame(engine, &frame, recv_monotonic_ns) {
-            results.push(r);
-        }
-    }
-
-    results
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::baseball::engine::process_kalstrop_frame;
+    use crate::kalstrop_types::KalstropFrame;
+    use crate::baseball::parse::parse_tick_from_kalstrop_update;
+
+    fn process_single_frame(
+        engine: &mut NativeMlbEngine,
+        frame: &KalstropFrame<'_>,
+        recv_monotonic_ns: i64,
+    ) -> Option<TickResult> {
+        if frame.msg_type != "next" {
+            return None;
+        }
+        let update = frame
+            .payload
+            .as_ref()
+            .and_then(|p| p.data.as_ref())
+            .and_then(|d| d.update.as_ref())?;
+        let tick = parse_tick_from_kalstrop_update(update, recv_monotonic_ns);
+        Some(engine.process_tick(tick))
+    }
+
+    fn process_kalstrop_frame(
+        engine: &mut NativeMlbEngine,
+        text: &str,
+        recv_monotonic_ns: i64,
+    ) -> Vec<TickResult> {
+        let mut results = Vec::new();
+        let first_byte = text.as_bytes().first().copied().unwrap_or(0);
+        if first_byte == b'[' {
+            if let Ok(frames) = serde_json::from_str::<Vec<KalstropFrame<'_>>>(text) {
+                for frame in &frames {
+                    if let Some(r) = process_single_frame(engine, frame, recv_monotonic_ns) {
+                        results.push(r);
+                    }
+                }
+            }
+        } else if let Ok(frame) = serde_json::from_str::<KalstropFrame<'_>>(text) {
+            if let Some(r) = process_single_frame(engine, &frame, recv_monotonic_ns) {
+                results.push(r);
+            }
+        }
+        results
+    }
 
     struct GameTargetBuilder<'a> {
         slots: &'a mut Vec<TargetSlot>,

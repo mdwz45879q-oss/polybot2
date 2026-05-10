@@ -52,44 +52,41 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
         }
     }
 
-    // Extract shared state for spawned tasks.
     let sdk_client = sub.sdk_runtime.take().map(|r| r.client);
-    let mut registry = sub.registry;
     let log = sub.log;
     let health = sub.health.clone();
-    let submit_rx = sub.submit_rx;
+    let mut submit_rx = sub.submit_rx;
+    let shared_registry = sub.shared_registry;
+    let submit_notify = sub.submit_notify;
+    let stop_flag = sub.stop_flag;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SUBMITS));
 
-    loop {
-        let batch = match submit_rx.recv_async().await {
-            Err(_) => break, // channel closed
-            Ok(SubmitWork::Stop) => break,
-            Ok(SubmitWork::UpdateRegistry(new_reg)) => {
-                registry = new_reg;
-                continue;
+    'outer: loop {
+        submit_notify.notified().await;
+        while let Ok(work) = submit_rx.pop() {
+            match work {
+                SubmitWork::Stop => break 'outer,
+                SubmitWork::Batch(batch) => {
+                    let permit = match Arc::clone(&semaphore).acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => break 'outer,
+                    };
+                    let client = sdk_client.clone();
+                    let reg = shared_registry.load_full();
+                    let lg = Arc::clone(&log);
+                    let hl = health.clone();
+                    tokio::spawn(async move {
+                        submit_batch_task(batch, client, reg, &lg, &hl).await;
+                        drop(permit);
+                    });
+                }
             }
-            Ok(SubmitWork::Batch(b)) => b,
-        };
-
-        // Acquire a slot. Blocks the dispatcher (not the WS thread) if all
-        // slots are in use — the channel buffers in the meantime.
-        let permit = match Arc::clone(&semaphore).acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => break, // semaphore closed
-        };
-
-        let client = sdk_client.clone();
-        let reg = Arc::clone(&registry);
-        let lg = Arc::clone(&log);
-        let hl = health.clone();
-
-        tokio::spawn(async move {
-            submit_batch_task(batch, client, &reg, &lg, &hl).await;
-            drop(permit);
-        });
+        }
+        if stop_flag.load(std::sync::atomic::Ordering::Acquire) {
+            break;
+        }
     }
 
-    // Wait for all in-flight tasks before reporting not-running.
     let _ = semaphore
         .acquire_many(MAX_CONCURRENT_SUBMITS as u32)
         .await;
@@ -97,15 +94,21 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
 }
 
 async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
-    while let Ok(work) = sub.submit_rx.recv_async().await {
-        match work {
-            SubmitWork::Stop => return,
-            SubmitWork::UpdateRegistry(_) => continue,
-            SubmitWork::Batch(b) => {
-                for (target_idx, _) in b {
-                    log_outcome_idx(&sub.log, &sub.registry, target_idx, &Err(err.to_string()));
+    loop {
+        sub.submit_notify.notified().await;
+        while let Ok(work) = sub.submit_rx.pop() {
+            match work {
+                SubmitWork::Stop => return,
+                SubmitWork::Batch(b) => {
+                    let registry = sub.shared_registry.load_full();
+                    for (target_idx, _) in b {
+                        log_outcome_idx(&sub.log, &registry, target_idx, &Err(err.to_string()));
+                    }
                 }
             }
+        }
+        if sub.stop_flag.load(std::sync::atomic::Ordering::Acquire) {
+            return;
         }
     }
 }
@@ -113,7 +116,7 @@ async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
 async fn submit_batch_task(
     batch: SubmitBatch,
     client: Option<SdkClient<SdkAuthenticatedState<SdkAuthNormal>>>,
-    registry: &crate::TargetRegistry,
+    registry: Arc<crate::TargetRegistry>,
     log: &Arc<Mutex<LogWriter>>,
     health: &Arc<Mutex<crate::SubmitterHealth>>,
 ) {
@@ -133,7 +136,7 @@ async fn submit_batch_task(
             Err(e) => Err(format!("submit_failed:{}", e)),
         };
         record_outcome(health, &outcome);
-        log_outcome_idx(log, registry, target_idx, &outcome);
+        log_outcome_idx(log, &registry, target_idx, &outcome);
         return;
     }
 
@@ -159,7 +162,7 @@ async fn submit_batch_task(
                         "batch_submit_failed",
                     );
                     record_outcome(health, &outcome);
-                    log_outcome_idx(log, registry, *tidx, &outcome);
+                    log_outcome_idx(log, &registry, *tidx, &outcome);
                 }
                 if resp_len < chunk_idxs.len() {
                     let err = format!(
@@ -169,7 +172,7 @@ async fn submit_batch_task(
                     );
                     for tidx in &chunk_idxs[resp_len..] {
                         record_outcome(health, &Err(err.clone()));
-                        log_outcome_idx(log, registry, *tidx, &Err(err.clone()));
+                        log_outcome_idx(log, &registry, *tidx, &Err(err.clone()));
                     }
                 }
             }
@@ -177,7 +180,7 @@ async fn submit_batch_task(
                 let err = format!("batch_submit_failed:{}", e);
                 for tidx in chunk_idxs {
                     record_outcome(health, &Err(err.clone()));
-                    log_outcome_idx(log, registry, *tidx, &Err(err.clone()));
+                    log_outcome_idx(log, &registry, *tidx, &Err(err.clone()));
                 }
             }
         }

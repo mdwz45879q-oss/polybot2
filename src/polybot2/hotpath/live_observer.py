@@ -129,7 +129,11 @@ def _bet_label(sk: str) -> str:
             return f"CRN {side[:8]}.."
         return f"CRN {side} {line}".strip()
     if market == "EXACT_SCORE":
-        return f"EXACT {side.replace('_', '-')}"
+        # Keys: EXACT_SCORE:1_3:YES, EXACT_SCORE:ANY_OTHER:NO
+        yes_no = f" {line}" if line else ""
+        if side == "ANY_OTHER":
+            return f"EXACT OTHER{yes_no}"
+        return f"EXACT {side.replace('_', '-')}{yes_no}"
     # Fallback: truncate hex condition_id if present
     if side.startswith("0x") and len(side) > 10:
         return f"{market} {side[:8]}.."

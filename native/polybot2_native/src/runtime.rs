@@ -89,10 +89,8 @@ impl NativeHotPathRuntime {
             }
             _ => {
                 let mut e = NativeMlbEngine::new();
-                let json_mod = py.import_bound("json")?;
-                let plan_any = json_mod.call_method1("loads", (compiled_plan_json,))?;
-                let plan_dict = plan_any.downcast::<PyDict>()?;
-                e.load_plan(plan_dict)?;
+                e.load_plan_from_json(compiled_plan_json)
+                    .map_err(|err| PyValueError::new_err(format!("baseball_load_plan:{}", err)))?;
                 e.reset_runtime_state();
                 SportEngine::Baseball(e)
             }
@@ -135,10 +133,17 @@ impl NativeHotPathRuntime {
                 .ok_or_else(|| {
                     PyValueError::new_err("registry_not_built_after_load_plan")
                 })?;
+            let shared_registry: crate::dispatch::SharedRegistry = Arc::new(
+                arc_swap::ArcSwap::new(Arc::clone(&registry)),
+            );
 
             // Build the WS-thread half: presign pool, no submit_tx yet.
             let mut dispatch_handle =
-                DispatchHandle::new(dispatch_cfg.clone(), Arc::clone(&registry));
+                DispatchHandle::new(
+                    dispatch_cfg.clone(),
+                    Arc::clone(&registry),
+                    Arc::clone(&shared_registry),
+                );
             dispatch_handle.set_presign_templates(self.presign_templates.as_slice());
             dispatch_handle.activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
 
@@ -167,16 +172,20 @@ impl NativeHotPathRuntime {
 
             // Build the submitter-thread half. In Http mode, initialize the SDK
             // runtime and run presign warmup using its client/signer references.
-            let (submit_tx, submit_rx) =
-                flume::unbounded::<crate::dispatch::SubmitWork>();
+            let (submit_producer, submit_consumer) =
+                rtrb::RingBuffer::<crate::dispatch::SubmitWork>::new(64);
+            let submit_notify = Arc::new(tokio::sync::Notify::new());
+            let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let submitter_log_arc = Arc::clone(&log_arc);
             let submitter_health = Arc::new(Mutex::new(SubmitterHealth::default()));
             let mut submitter = OrderSubmitter::new(
                 dispatch_cfg.clone(),
                 submitter_log_arc,
-                submit_rx,
+                submit_consumer,
+                Arc::clone(&submit_notify),
+                Arc::clone(&stop_flag),
                 Arc::clone(&submitter_health),
-                Arc::clone(&registry),
+                Arc::clone(&shared_registry),
             );
 
             let submitter_handle: Option<SubmitterHandle> = if matches!(
@@ -213,7 +222,7 @@ impl NativeHotPathRuntime {
                     self.cached_signer = submitter.signer_ref().ok().map(|s| s.clone());
                 }
 
-                dispatch_handle.install_submit_tx(submit_tx.clone());
+                dispatch_handle.install_submit_tx(submit_producer, Arc::clone(&submit_notify));
 
                 let submit_join = thread::spawn(move || {
                     if let Ok(rt) = TokioBuilder::new_current_thread().enable_all().build() {
@@ -222,7 +231,8 @@ impl NativeHotPathRuntime {
                 });
 
                 Some(SubmitterHandle {
-                    submit_tx,
+                    submit_notify,
+                    stop_flag,
                     join: Some(submit_join),
                     health: submitter_health,
                 })
@@ -231,7 +241,7 @@ impl NativeHotPathRuntime {
                 // dropped; DispatchHandle::dispatch_intent short-circuits to
                 // log "noop" inline and never reaches the channel.
                 drop(submitter);
-                drop(submit_tx);
+                drop(submit_producer);
                 drop(submitter_health);
                 None
             };
@@ -346,7 +356,8 @@ impl NativeHotPathRuntime {
         }
         self.live_worker = None;
         if let Some(sub) = self.submitter.as_mut() {
-            let _ = sub.submit_tx.send(crate::dispatch::SubmitWork::Stop);
+            sub.stop_flag.store(true, std::sync::atomic::Ordering::Release);
+            sub.submit_notify.notify_one();
             if let Some(join) = sub.join.take() {
                 let _ = join.join();
             }

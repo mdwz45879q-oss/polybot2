@@ -1,5 +1,4 @@
-use crate::*;
-use crate::baseball::types::*;
+use crate::baseball::types::Tick;
 use crate::kalstrop_types::KalstropUpdate;
 
 // ---------------------------------------------------------------------------
@@ -33,43 +32,6 @@ pub(crate) fn parse_tick_from_kalstrop_update(
             Some(is_completed_free_text(free_text))
         },
         game_state: normalize_game_state_from_free_text(free_text),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// PyO3 parse paths (Python callers — not the live WS hot path)
-// ---------------------------------------------------------------------------
-
-pub(crate) fn parse_tick_any(event: &Bound<'_, PyAny>, _recv_monotonic_ns: i64) -> Tick {
-    if let Ok(as_dict) = event.downcast::<PyDict>() {
-        return parse_tick_from_dict(as_dict);
-    }
-    parse_tick_from_event(event)
-}
-
-pub(crate) fn parse_tick_from_dict(event: &Bound<'_, PyDict>) -> Tick {
-    let inning_half_str = get_str(event, "inning_half");
-    Tick {
-        universal_id: get_str(event, "universal_id"),
-        goals_home: get_i64_opt(event, "goals_home"),
-        goals_away: get_i64_opt(event, "goals_away"),
-        inning_number: get_i64_opt(event, "inning_number"),
-        inning_half: map_inning_half(&inning_half_str),
-        match_completed: get_bool_opt(event, "match_completed"),
-        game_state: normalize_game_state_from_free_text(&get_str(event, "game_state")),
-    }
-}
-
-fn parse_tick_from_event(event: &Bound<'_, PyAny>) -> Tick {
-    let match_completed = get_attr_bool_opt(event, "match_completed");
-    Tick {
-        universal_id: get_attr_str(event, "universal_id"),
-        goals_home: get_attr_i64_opt(event, "home_score"),
-        goals_away: get_attr_i64_opt(event, "away_score"),
-        inning_number: None,
-        inning_half: "",
-        match_completed,
-        game_state: normalize_game_state_from_free_text(&get_attr_str(event, "game_state")),
     }
 }
 
@@ -162,19 +124,6 @@ fn contains_ascii_ci(haystack: &str, needle: &str) -> bool {
     false
 }
 
-fn map_inning_half(s: &str) -> &'static str {
-    let t = s.trim();
-    if t.eq_ignore_ascii_case("top") {
-        "top"
-    } else if t.eq_ignore_ascii_case("bottom") {
-        "bottom"
-    } else if t.eq_ignore_ascii_case("break") {
-        "break"
-    } else {
-        ""
-    }
-}
-
 /// Detect game completion from `matchStatusDisplay[0].freeText`.
 /// Kalstrop sends "Ended" when a game finishes.
 pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
@@ -197,159 +146,6 @@ pub(crate) fn normalize_game_state_from_free_text(free_text: &str) -> &'static s
         return "FINAL";
     }
     "LIVE"
-}
-
-// ---------------------------------------------------------------------------
-// freeText extraction (PyDict path only)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// PyO3 extraction helpers
-// ---------------------------------------------------------------------------
-
-pub(crate) fn get_str(obj: &Bound<'_, PyDict>, key: &str) -> String {
-    if let Ok(Some(value)) = obj.get_item(key) {
-        if let Ok(text) = value.extract::<String>() {
-            return text;
-        }
-    }
-    String::new()
-}
-
-pub(crate) fn get_i64_opt(obj: &Bound<'_, PyDict>, key: &str) -> Option<i64> {
-    if let Ok(Some(value)) = obj.get_item(key) {
-        if value.is_none() {
-            return None;
-        }
-        if let Ok(v) = value.extract::<i64>() {
-            return Some(v);
-        }
-        if let Ok(v) = value.extract::<f64>() {
-            return Some(v as i64);
-        }
-        if let Ok(v) = value.extract::<String>() {
-            let text = v.trim();
-            if !text.is_empty() {
-                if let Ok(parsed) = text.parse::<i64>() {
-                    return Some(parsed);
-                }
-            }
-        }
-    }
-    None
-}
-
-pub(crate) fn get_bool_opt(obj: &Bound<'_, PyDict>, key: &str) -> Option<bool> {
-    if let Ok(Some(value)) = obj.get_item(key) {
-        if value.is_none() {
-            return None;
-        }
-        if let Ok(v) = value.extract::<bool>() {
-            return Some(v);
-        }
-        if let Ok(v) = value.extract::<i64>() {
-            return Some(v != 0);
-        }
-        if let Ok(v) = value.extract::<String>() {
-            let t = v.trim().to_lowercase();
-            if ["1", "true", "yes", "y", "on"].contains(&t.as_str()) {
-                return Some(true);
-            }
-            if ["0", "false", "no", "n", "off"].contains(&t.as_str()) {
-                return Some(false);
-            }
-        }
-    }
-    None
-}
-
-pub(crate) fn get_f64_opt(obj: &Bound<'_, PyDict>, key: &str) -> Option<f64> {
-    if let Ok(Some(value)) = obj.get_item(key) {
-        if value.is_none() {
-            return None;
-        }
-        if let Ok(v) = value.extract::<f64>() {
-            return Some(v);
-        }
-        if let Ok(v) = value.extract::<i64>() {
-            return Some(v as f64);
-        }
-        if let Ok(v) = value.extract::<String>() {
-            let text = v.trim();
-            if !text.is_empty() {
-                if let Ok(parsed) = text.parse::<f64>() {
-                    return Some(parsed);
-                }
-            }
-        }
-    }
-    None
-}
-
-fn scalar_to_i64(value: &Bound<'_, PyAny>) -> Option<i64> {
-    if value.is_none() {
-        return None;
-    }
-    if let Ok(v) = value.extract::<i64>() {
-        return Some(v);
-    }
-    if let Ok(v) = value.extract::<f64>() {
-        return Some(v as i64);
-    }
-    if let Ok(v) = value.extract::<String>() {
-        let text = v.trim();
-        if !text.is_empty() {
-            if let Ok(parsed) = text.parse::<i64>() {
-                return Some(parsed);
-            }
-        }
-    }
-    None
-}
-
-fn scalar_to_bool(value: &Bound<'_, PyAny>) -> Option<bool> {
-    if value.is_none() {
-        return None;
-    }
-    if let Ok(v) = value.extract::<bool>() {
-        return Some(v);
-    }
-    if let Ok(v) = value.extract::<i64>() {
-        return Some(v != 0);
-    }
-    if let Ok(v) = value.extract::<String>() {
-        let t = v.trim().to_lowercase();
-        if ["1", "true", "yes", "y", "on"].contains(&t.as_str()) {
-            return Some(true);
-        }
-        if ["0", "false", "no", "n", "off"].contains(&t.as_str()) {
-            return Some(false);
-        }
-    }
-    None
-}
-
-fn get_attr_i64_opt(obj: &Bound<'_, PyAny>, key: &str) -> Option<i64> {
-    if let Ok(value) = obj.getattr(key) {
-        return scalar_to_i64(&value);
-    }
-    None
-}
-
-fn get_attr_bool_opt(obj: &Bound<'_, PyAny>, key: &str) -> Option<bool> {
-    if let Ok(value) = obj.getattr(key) {
-        return scalar_to_bool(&value);
-    }
-    None
-}
-
-fn get_attr_str(obj: &Bound<'_, PyAny>, key: &str) -> String {
-    if let Ok(value) = obj.getattr(key) {
-        if let Ok(text) = value.extract::<String>() {
-            return text;
-        }
-    }
-    String::new()
 }
 
 #[cfg(test)]

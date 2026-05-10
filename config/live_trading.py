@@ -67,7 +67,7 @@ HOTPATH_RUNTIME_POLICY = {
         "plan_horizon_hours": 24,
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
-        "provider_catalog_max_age_seconds": 600,
+        "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 300,
     },
     "ucl": {

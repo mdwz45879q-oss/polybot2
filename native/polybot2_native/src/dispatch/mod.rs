@@ -23,6 +23,7 @@ pub(crate) use presign_pool::warm_presign_startup_into;
 pub(crate) use submitter::run_submitter_async;
 pub(crate) use types::{DispatchHandle, OrderSubmitter, PresignTemplateData, SubmitBatch, SubmitWork};
 pub(crate) use types::OrderRequestData;
+pub(crate) use types::SharedRegistry;
 pub(super) use types::PolymarketSdkRuntime;
 
 pub(crate) fn build_dispatch_config(
@@ -81,17 +82,6 @@ pub(crate) fn build_dispatch_config(
         limit_price,
         time_in_force: parse_time_in_force(time_in_force.as_str())?,
     })
-}
-
-/// Wall-clock nanoseconds since UNIX epoch. Retained for future L2 auth header
-/// timestamps and ad-hoc diagnostics; not used on the live path (the WS worker
-/// uses an `Instant`-based monotonic clock for dedup/cooldown deltas).
-#[allow(dead_code)]
-pub(crate) fn now_unix_ns() -> i64 {
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_nanos() as i64,
-        Err(_) => 0,
-    }
 }
 
 pub(crate) fn now_unix_s() -> i64 {

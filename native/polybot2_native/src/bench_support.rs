@@ -15,7 +15,11 @@ pub struct BenchEngine {
     engine: NativeMlbEngine,
     dispatch: DispatchHandle,
     log: Arc<Mutex<LogWriter>>,
-    _rx: Option<flume::Receiver<SubmitWork>>,
+    _rx: Option<rtrb::Consumer<SubmitWork>>,
+}
+
+fn shared_registry_for(registry: Arc<crate::TargetRegistry>) -> crate::dispatch::SharedRegistry {
+    Arc::new(arc_swap::ArcSwap::new(registry))
 }
 
 impl BenchEngine {
@@ -44,7 +48,8 @@ pub fn build_bench_engine_noop(plan_json: &str) -> Result<BenchEngine, String> {
         .clone_registry()
         .ok_or_else(|| "registry_not_built".to_string())?;
     let cfg = DispatchConfig::default(); // Noop mode
-    let dispatch = DispatchHandle::new(cfg, registry);
+    let shared_registry = shared_registry_for(Arc::clone(&registry));
+    let dispatch = DispatchHandle::new(cfg, registry, shared_registry);
     let log = LogWriter::open("/dev/null")
         .map_err(|e| format!("log_open:{}", e))?;
     Ok(BenchEngine {
@@ -66,9 +71,11 @@ pub fn build_bench_engine_with_channel(plan_json: &str) -> Result<BenchEngine, S
         .ok_or_else(|| "registry_not_built".to_string())?;
     let mut cfg = DispatchConfig::default();
     cfg.mode = DispatchMode::Http;
-    let mut dispatch = DispatchHandle::new(cfg, registry);
-    let (tx, rx) = flume::unbounded::<SubmitWork>();
-    dispatch.install_submit_tx(tx);
+    let shared_registry = shared_registry_for(Arc::clone(&registry));
+    let mut dispatch = DispatchHandle::new(cfg, registry, shared_registry);
+    let (tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
+    let notify = Arc::new(tokio::sync::Notify::new());
+    dispatch.install_submit_tx(tx, notify);
     let log = LogWriter::open("/dev/null")
         .map_err(|e| format!("log_open:{}", e))?;
     Ok(BenchEngine {
@@ -296,16 +303,15 @@ mod tests {
                 .build()
         }
 
-        let (tx, _rx) = flume::unbounded::<crate::dispatch::SubmitWork>();
+        let (mut tx, mut _rx) = rtrb::RingBuffer::<crate::dispatch::SubmitWork>::new(16384);
 
-        // Measures: SmallVec batch construction + unbounded channel send.
-        // Does NOT measure engine eval, presign pop, or HTTP.
         run_timed("dispatch_channel_send (1 intent)", 10000, || {
             let signed = make_dummy_signed_order();
             let mut batch = crate::dispatch::SubmitBatch::new();
             batch.push((TargetIdx(0), Box::new(signed)));
             let work = crate::dispatch::SubmitWork::Batch(batch);
-            let _ = tx.send(work);
+            let _ = tx.push(work);
+            while _rx.pop().is_ok() {}
         });
 
         run_timed("dispatch_channel_send (4 intents)", 10000, || {
@@ -314,7 +320,8 @@ mod tests {
                 batch.push((TargetIdx(i), Box::new(make_dummy_signed_order())));
             }
             let work = crate::dispatch::SubmitWork::Batch(batch);
-            let _ = tx.send(work);
+            let _ = tx.push(work);
+            while _rx.pop().is_ok() {}
         });
     }
 

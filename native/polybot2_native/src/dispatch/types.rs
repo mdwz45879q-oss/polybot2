@@ -3,6 +3,8 @@ use crate::log_writer::LogWriter;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+pub(crate) type SharedRegistry = Arc<arc_swap::ArcSwap<crate::TargetRegistry>>;
+
 #[derive(Clone)]
 pub(crate) struct OrderRequestData {
     pub(crate) token_id: String,
@@ -34,7 +36,6 @@ pub(crate) type SubmitBatch = smallvec::SmallVec<[(crate::TargetIdx, Box<SdkSign
 /// `Batch` arrivals up to `MAX_BATCH_SIZE` before posting.
 pub(crate) enum SubmitWork {
     Batch(SubmitBatch),
-    UpdateRegistry(Arc<crate::TargetRegistry>),
     Stop,
 }
 
@@ -43,6 +44,7 @@ pub(crate) enum SubmitWork {
 pub(crate) struct DispatchHandle {
     pub(crate) cfg: DispatchConfig,
     pub(super) registry: Arc<crate::TargetRegistry>,
+    pub(super) shared_registry: SharedRegistry,
     /// Catalog of templates indexed by raw token_id string. Set once via
     /// `prewarm_presign` from Python; survives across plan loads.
     pub(super) presign_template_catalog: HashMap<String, OrderRequestData>,
@@ -52,17 +54,20 @@ pub(crate) struct DispatchHandle {
     /// Presign pool, indexed by `TokenIdx`. One slot per unique token (depth=1).
     /// `Option::take()` is the pop operation — zero overhead for a one-shot pool.
     pub(super) presign_pool: Vec<Option<Box<SdkSignedOrder>>>,
-    pub(super) submit_tx: Option<flume::Sender<SubmitWork>>,
+    pub(super) submit_tx: Option<rtrb::Producer<SubmitWork>>,
+    pub(super) submit_notify: Option<Arc<tokio::sync::Notify>>,
 }
 
 /// Submitter-thread half: owns the SDK client and consumes work from the
 /// channel. All HTTP and serialization happen here, off the WS thread.
 pub(crate) struct OrderSubmitter {
     pub(super) cfg: DispatchConfig,
-    pub(super) registry: Arc<crate::TargetRegistry>,
+    pub(super) shared_registry: SharedRegistry,
     pub(super) sdk_runtime: Option<PolymarketSdkRuntime>,
     pub(super) cached_signer: Option<super::CachedSigner>,
-    pub(super) submit_rx: flume::Receiver<SubmitWork>,
+    pub(super) submit_rx: rtrb::Consumer<SubmitWork>,
+    pub(super) submit_notify: Arc<tokio::sync::Notify>,
+    pub(super) stop_flag: Arc<std::sync::atomic::AtomicBool>,
     pub(super) log: Arc<Mutex<LogWriter>>,
     pub(super) health: Arc<Mutex<crate::SubmitterHealth>>,
 }
