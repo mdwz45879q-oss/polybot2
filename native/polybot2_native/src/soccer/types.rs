@@ -88,7 +88,7 @@ pub(crate) struct SoccerGameState {
 pub(crate) struct SoccerLiveTickResult {
     pub(crate) game_idx: GameIdx,
     pub(crate) state: SoccerGameState,
-    pub(crate) intents: smallvec::SmallVec<[Intent; 4]>,
+    pub(crate) intents: smallvec::SmallVec<[Intent; 32]>,
 }
 
 /// Per-game BoltOdds state row for frame-level deduplication.

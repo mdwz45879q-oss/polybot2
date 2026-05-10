@@ -83,7 +83,7 @@ pub(crate) struct TickResult {
 pub(crate) struct LiveTickResult {
     pub(crate) game_idx: GameIdx,
     pub(crate) state: GameState,
-    pub(crate) intents: smallvec::SmallVec<[Intent; 4]>,
+    pub(crate) intents: smallvec::SmallVec<[Intent; 32]>,
     pub(crate) material: bool,
 }
 

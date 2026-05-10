@@ -1,4 +1,7 @@
 use super::*;
+use super::fast_submit_client::{build_orders_body_from_slices, FastClobSubmitClient};
+use super::presign_pool::prepare_payload_from_signed;
+use super::sdk_exec::{map_post_response, sign_order_batch};
 use crate::log_writer::LogWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -708,5 +711,254 @@ fn submitter_error_drain_uses_shared_registry_snapshot() {
         "log contents: {}",
         text
     );
+}
+
+// ---------------------------------------------------------------------------
+// Live execution tests (FastClobSubmitClient against real CLOB)
+// ---------------------------------------------------------------------------
+
+fn env_enabled(name: &str) -> bool {
+    matches!(
+        std::env::var(name)
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn env_or_default(name: &str, default: &str) -> String {
+    let val = std::env::var(name).unwrap_or_default();
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        default.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn contains_min_notional_rejection(err: &str) -> bool {
+    let lowered = err.to_ascii_lowercase();
+    lowered.contains("market buys must be greater than $1")
+        || (lowered.contains("marketable buy order") && lowered.contains("min size"))
+        || lowered.contains("min notional")
+        || (lowered.contains("invalid amount") && lowered.contains("min size"))
+}
+
+fn contains_min_size_rejection(err: &str) -> bool {
+    let lowered = err.to_ascii_lowercase();
+    (lowered.contains("minimum") && lowered.contains("shares"))
+        || lowered.contains("min size")
+        || lowered.contains("minimum order size")
+        || (lowered.contains("lower than the minimum") && lowered.contains("size"))
+}
+
+async fn build_live_fast_client() -> Option<(FastClobSubmitClient, OrderSubmitter)> {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        return None;
+    }
+    let cfg = DispatchConfig {
+        mode: DispatchMode::Http,
+        clob_host: env_or_default("POLY_EXEC_CLOB_HOST", "https://clob.polymarket.com"),
+        api_key: env_or_default("POLY_EXEC_API_KEY", ""),
+        api_secret: env_or_default("POLY_EXEC_API_SECRET", ""),
+        api_passphrase: env_or_default("POLY_EXEC_API_PASSPHRASE", ""),
+        funder: env_or_default("POLY_EXEC_FUNDER", ""),
+        signature_type: env_or_default("POLY_EXEC_SIGNATURE_TYPE", "1")
+            .parse::<i64>()
+            .unwrap_or(1),
+        presign_private_key: env_or_default("POLY_EXEC_PRESIGN_PRIVATE_KEY", ""),
+        ..DispatchConfig::default()
+    };
+    if cfg.api_key.trim().is_empty()
+        || cfg.api_secret.trim().is_empty()
+        || cfg.api_passphrase.trim().is_empty()
+        || cfg.presign_private_key.trim().is_empty()
+    {
+        return None;
+    }
+
+    let log = temp_log();
+    let (_tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(4);
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let health = Arc::new(Mutex::new(crate::SubmitterHealth::default()));
+    let registry = empty_registry();
+    let shared_registry = shared_registry_for(registry);
+    let mut sub = OrderSubmitter::new(cfg.clone(), log, rx, stop_flag, health, shared_registry);
+    sub.ensure_sdk_runtime_async().await.ok()?;
+
+    let signer_address = sub.signer_ref().ok()?.address().to_checksum(None);
+    let fast_client = FastClobSubmitClient::new(&cfg, signer_address).ok()?;
+    Some((fast_client, sub))
+}
+
+#[test]
+fn live_fast_submit_single_min_notional_rejection() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!("skipping live fast submit test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+        return;
+    }
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    assert!(!token_id.trim().is_empty(), "POLYBOT2_LIVE_EXEC_TOKEN_ID required");
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let err = tokio_rt.block_on(async {
+        let (fast_client, sub) = build_live_fast_client().await.expect("live client setup");
+        let request = OrderRequestData {
+            token_id: token_id.clone(),
+            side: "buy_yes".to_string(),
+            amount_usdc: 0.5,
+            limit_price: 0.5,
+            time_in_force: OrderTimeInForce::FAK,
+            size_shares: 1.0,
+        };
+        let client_ref = sub.sdk_client_ref().expect("sdk client");
+        let signer = sub.signer_ref().expect("signer");
+        let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+
+        let result = fast_client.post_order_bytes_single(payload.order_json).await;
+        match result {
+            Ok(resp) => map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
+                .expect_err("sub-$1 notional should be rejected"),
+            Err(e) => e,
+        }
+    });
+    assert!(
+        contains_min_notional_rejection(&err),
+        "unexpected rejection: {}",
+        err
+    );
+}
+
+#[test]
+fn live_fast_submit_single_fok_min_notional_rejection() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!("skipping live fast submit FOK test");
+        return;
+    }
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    assert!(!token_id.trim().is_empty(), "POLYBOT2_LIVE_EXEC_TOKEN_ID required");
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let err = tokio_rt.block_on(async {
+        let (fast_client, sub) = build_live_fast_client().await.expect("live client setup");
+        let request = OrderRequestData {
+            token_id: token_id.clone(),
+            side: "buy_yes".to_string(),
+            amount_usdc: 0.5,
+            limit_price: 0.5,
+            time_in_force: OrderTimeInForce::FOK,
+            size_shares: 1.0,
+        };
+        let client_ref = sub.sdk_client_ref().expect("sdk client");
+        let signer = sub.signer_ref().expect("signer");
+        let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+
+        let result = fast_client.post_order_bytes_single(payload.order_json).await;
+        match result {
+            Ok(resp) => map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
+                .expect_err("FOK sub-$1 should be rejected"),
+            Err(e) => e,
+        }
+    });
+    assert!(
+        contains_min_notional_rejection(&err),
+        "unexpected FOK rejection: {}",
+        err
+    );
+}
+
+#[test]
+fn live_fast_submit_single_gtc_min_size_rejection() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!("skipping live fast submit GTC test");
+        return;
+    }
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    assert!(!token_id.trim().is_empty(), "POLYBOT2_LIVE_EXEC_TOKEN_ID required");
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let err = tokio_rt.block_on(async {
+        let (fast_client, sub) = build_live_fast_client().await.expect("live client setup");
+        let request = OrderRequestData {
+            token_id: token_id.clone(),
+            side: "buy_yes".to_string(),
+            amount_usdc: 1.0,
+            limit_price: 0.5,
+            time_in_force: OrderTimeInForce::GTC,
+            size_shares: 2.0,
+        };
+        let client_ref = sub.sdk_client_ref().expect("sdk client");
+        let signer = sub.signer_ref().expect("signer");
+        let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+
+        let result = fast_client.post_order_bytes_single(payload.order_json).await;
+        match result {
+            Ok(resp) => map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
+                .expect_err("GTC with small size should be rejected"),
+            Err(e) => e,
+        }
+    });
+    assert!(
+        contains_min_size_rejection(&err),
+        "unexpected GTC rejection: {}",
+        err
+    );
+}
+
+#[test]
+fn live_fast_submit_batch_rejection() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!("skipping live fast submit batch test");
+        return;
+    }
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    assert!(!token_id.trim().is_empty(), "POLYBOT2_LIVE_EXEC_TOKEN_ID required");
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    tokio_rt.block_on(async {
+        let (fast_client, sub) = build_live_fast_client().await.expect("live client setup");
+        let request = OrderRequestData {
+            token_id: token_id.clone(),
+            side: "buy_yes".to_string(),
+            amount_usdc: 0.5,
+            limit_price: 0.5,
+            time_in_force: OrderTimeInForce::FAK,
+            size_shares: 1.0,
+        };
+        let client_ref = sub.sdk_client_ref().expect("sdk client");
+        let signer = sub.signer_ref().expect("signer");
+        let signed = sign_order_batch(client_ref, signer, &request, 2).await.expect("sign batch");
+        let mut payloads: Vec<Vec<u8>> = Vec::new();
+        for s in signed {
+            let p = prepare_payload_from_signed(s).expect("serialize");
+            payloads.push(p.order_json);
+        }
+        let slices: Vec<&[u8]> = payloads.iter().map(|b| b.as_slice()).collect();
+        let body = build_orders_body_from_slices(&slices);
+
+        let responses = fast_client.post_orders_bytes(body).await.expect("http batch call");
+        assert_eq!(responses.len(), 2, "batch should return 2 responses");
+        for (i, resp) in responses.iter().enumerate() {
+            let outcome = map_post_response(resp.success, resp.order_id.clone(), resp.error_msg.clone(), "batch_submit_failed");
+            assert!(outcome.is_err(), "batch order {} should be rejected: {:?}", i, outcome);
+        }
+    });
 }
 

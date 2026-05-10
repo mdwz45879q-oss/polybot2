@@ -84,8 +84,8 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
                 SubmitWork::Stop => break 'outer,
                 SubmitWork::Batch(batch) => {
                     let client = submit_client.clone();
-                    let reg = shared_registry.load_full();
-                    submit_batch_task(batch, client, reg, &log, Arc::clone(&semaphore)).await;
+                    let reg_guard = shared_registry.load();
+                    submit_batch_task(batch, client, &*reg_guard, &log, Arc::clone(&semaphore)).await;
                 }
             }
         }
@@ -107,9 +107,9 @@ async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
             match work {
                 SubmitWork::Stop => return,
                 SubmitWork::Batch(b) => {
-                    let registry = sub.shared_registry.load_full();
+                    let reg_guard = sub.shared_registry.load();
                     for (target_idx, _) in b {
-                        log_outcome_idx(&sub.log, &registry, target_idx, &Err(err.to_string()));
+                        log_outcome_idx(&sub.log, &*reg_guard, target_idx, &Err(err.to_string()));
                     }
                 }
             }
@@ -126,7 +126,7 @@ async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
 async fn submit_batch_task(
     batch: SubmitBatch,
     client: Option<Arc<FastClobSubmitClient>>,
-    registry: Arc<crate::TargetRegistry>,
+    registry: &crate::TargetRegistry,
     log: &Arc<Mutex<LogWriter>>,
     semaphore: Arc<tokio::sync::Semaphore>,
 ) {

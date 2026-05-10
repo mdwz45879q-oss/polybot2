@@ -1,7 +1,7 @@
 use crate::baseball::types::*;
 use crate::*;
 
-fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 4]>) {
+fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 32]>) {
     if let Some(tidx) = slot {
         out.push(Intent { target_idx: tidx });
     }
@@ -27,7 +27,7 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_totals[gi] {
@@ -89,7 +89,7 @@ impl NativeMlbEngine {
         gidx: GameIdx,
         state: &GameState,
         delta: &DeltaEvent,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_nrfi[gi] {
@@ -142,7 +142,7 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if self.final_resolved_games[gi] {
@@ -166,7 +166,7 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if self.final_resolved_games[gi] {
@@ -218,7 +218,7 @@ impl NativeMlbEngine {
 #[cfg(test)]
 impl NativeMlbEngine {
     pub(crate) fn evaluate_totals(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
-        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_totals_into(gidx, state, &mut out);
         out.into_vec()
     }
@@ -229,19 +229,19 @@ impl NativeMlbEngine {
         state: &GameState,
         delta: &DeltaEvent,
     ) -> Vec<Intent> {
-        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_nrfi_into(gidx, state, delta, &mut out);
         out.into_vec()
     }
 
     pub(crate) fn evaluate_walkoff(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
-        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_walkoff_into(gidx, state, &mut out);
         out.into_vec()
     }
 
     pub(crate) fn evaluate_final(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
-        let mut out = smallvec::SmallVec::<[Intent; 4]>::new();
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_final_into(gidx, state, &mut out);
         out.into_vec()
     }

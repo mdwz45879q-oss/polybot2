@@ -4,7 +4,7 @@ use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use memchr::memchr;
 use polymarket_client_sdk_v2::clob::types::response::PostOrderResponse;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
 use sha2::Sha256;
@@ -19,8 +19,8 @@ const HMAC_B64_LEN: usize = 44;
 
 pub(crate) struct FastClobSubmitClient {
     http: ReqwestClient,
-    order_url: String,
-    orders_url: String,
+    order_url: reqwest::Url,
+    orders_url: reqwest::Url,
     poly_address: HeaderValue,
     poly_api_key: HeaderValue,
     poly_passphrase: HeaderValue,
@@ -33,8 +33,10 @@ impl FastClobSubmitClient {
         signer_address_checksum: String,
     ) -> Result<Self, String> {
         let host = normalize_host(cfg.clob_host.as_str());
-        let order_url = format!("{}order", host);
-        let orders_url = format!("{}orders", host);
+        let order_url = reqwest::Url::parse(&format!("{}order", host))
+            .map_err(|e| format!("submitter_invalid_order_url:{}", e))?;
+        let orders_url = reqwest::Url::parse(&format!("{}orders", host))
+            .map_err(|e| format!("submitter_invalid_orders_url:{}", e))?;
         let poly_address = HeaderValue::from_str(signer_address_checksum.as_str())
             .map_err(|e| format!("submitter_invalid_poly_address:{}", e))?;
         let poly_api_key = HeaderValue::from_str(cfg.api_key.trim())
@@ -79,7 +81,7 @@ impl FastClobSubmitClient {
 
         let response = self
             .http
-            .request(Method::POST, self.order_url.as_str())
+            .request(Method::POST, self.order_url.clone())
             .header(POLY_ADDRESS, self.poly_address.clone())
             .header(POLY_API_KEY, self.poly_api_key.clone())
             .header(POLY_PASSPHRASE, self.poly_passphrase.clone())
@@ -100,26 +102,36 @@ impl FastClobSubmitClient {
         &self,
         body: Vec<u8>,
     ) -> Result<Vec<PostOrderResponse>, String> {
-        self.send_json(Method::POST, self.orders_url.as_str(), "/orders", body)
+        self.send_json(Method::POST, self.orders_url.clone(), "/orders", body)
             .await
     }
 
     async fn send_json<T: DeserializeOwned>(
         &self,
         method: Method,
-        url: &str,
+        url: reqwest::Url,
         path: &str,
         body: Vec<u8>,
     ) -> Result<T, String> {
         let timestamp = timestamp_now_seconds();
-        let signature =
-            self.signature_for_parts(timestamp, method.as_str(), path, body.as_slice())?;
-        let headers = self.headers(timestamp, signature.as_str())?;
+        let mut ts_buf = itoa::Buffer::new();
+        let ts_text = ts_buf.format(timestamp);
+        let timestamp_header = HeaderValue::from_str(ts_text)
+            .map_err(|e| format!("submitter_invalid_timestamp_header:{}", e))?;
+        let (sig_bytes, sig_len) =
+            self.hmac_signature_b64_into_stack(timestamp, method.as_str(), path, &body)?;
+        let signature_header = HeaderValue::from_bytes(&sig_bytes[..sig_len])
+            .map_err(|e| format!("submitter_invalid_signature_header:{}", e))?;
 
         let response = self
             .http
             .request(method, url)
-            .headers(headers)
+            .header(POLY_ADDRESS, self.poly_address.clone())
+            .header(POLY_API_KEY, self.poly_api_key.clone())
+            .header(POLY_PASSPHRASE, self.poly_passphrase.clone())
+            .header(POLY_SIGNATURE, signature_header)
+            .header(POLY_TIMESTAMP, timestamp_header)
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
             .body(body)
             .send()
             .await
@@ -130,25 +142,7 @@ impl FastClobSubmitClient {
         parse_json_response(status, raw.as_ref())
     }
 
-    fn headers(&self, timestamp: i64, signature: &str) -> Result<HeaderMap, String> {
-        let mut headers = HeaderMap::with_capacity(6);
-        headers.insert(POLY_ADDRESS, self.poly_address.clone());
-        headers.insert(POLY_API_KEY, self.poly_api_key.clone());
-        headers.insert(POLY_PASSPHRASE, self.poly_passphrase.clone());
-        headers.insert(
-            POLY_SIGNATURE,
-            HeaderValue::from_str(signature)
-                .map_err(|e| format!("submitter_invalid_signature_header:{}", e))?,
-        );
-        headers.insert(
-            POLY_TIMESTAMP,
-            HeaderValue::from_str(timestamp.to_string().as_str())
-                .map_err(|e| format!("submitter_invalid_timestamp_header:{}", e))?,
-        );
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        Ok(headers)
-    }
-
+    #[cfg(test)]
     pub(crate) fn signature_for_parts(
         &self,
         timestamp: i64,

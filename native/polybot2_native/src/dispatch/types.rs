@@ -35,7 +35,7 @@ pub(crate) struct PresignTemplateData {
 /// case is 1–4 intents per frame; `SmallVec` avoids a heap allocation on the
 /// WS thread for that range.
 pub(crate) type SubmitBatch =
-    smallvec::SmallVec<[(crate::TargetIdx, Box<PreparedOrderPayload>); 4]>;
+    smallvec::SmallVec<[(crate::TargetIdx, Box<PreparedOrderPayload>); 16]>;
 
 /// Channel payload from WS thread to submitter thread. One `Batch` is built
 /// per material WS frame; the submitter may further coalesce subsequent

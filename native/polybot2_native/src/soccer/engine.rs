@@ -624,7 +624,7 @@ impl NativeSoccerEngine {
         self.game_states[gi] = state;
 
         // Evaluate directly into stack-allocated SmallVec — no intermediate type.
-        let mut intents = smallvec::SmallVec::<[Intent; 4]>::new();
+        let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_totals_into(gidx, &state, &mut intents);
         self.evaluate_moneyline_into(gidx, &state, &mut intents);
         self.evaluate_btts_into(gidx, &state, &mut intents);

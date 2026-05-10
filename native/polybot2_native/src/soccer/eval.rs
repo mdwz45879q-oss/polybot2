@@ -3,7 +3,7 @@
 use crate::soccer::types::*;
 use crate::*;
 
-fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 4]>) {
+fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 32]>) {
     if let Some(tidx) = slot {
         out.push(Intent { target_idx: tidx });
     }
@@ -18,7 +18,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_totals[gi] {
@@ -66,7 +66,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if self.final_resolved_games[gi] {
@@ -121,16 +121,13 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if self.btts_resolved_games[gi] {
             return;
         }
         if !self.has_btts[gi] {
-            return;
-        }
-        if !state.match_completed.unwrap_or(false) {
             return;
         }
         let (home, away) = match (state.home, state.away) {
@@ -141,10 +138,11 @@ impl NativeSoccerEngine {
         let targets = &self.game_targets[gi];
         if home > 0 && away > 0 {
             push_if_some(targets.btts_yes, out);
-        } else {
+            self.btts_resolved_games[gi] = true;
+        } else if state.match_completed.unwrap_or(false) {
             push_if_some(targets.btts_no, out);
+            self.btts_resolved_games[gi] = true;
         }
-        self.btts_resolved_games[gi] = true;
     }
 
     // ---------------------------------------------------------------
@@ -155,7 +153,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if !self.has_corners[gi] {
@@ -207,7 +205,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if self.halftime_resolved[gi] {
@@ -250,7 +248,7 @@ impl NativeSoccerEngine {
         &mut self,
         gidx: GameIdx,
         state: &SoccerGameState,
-        out: &mut smallvec::SmallVec<[Intent; 4]>,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
         if self.exact_score_resolved[gi] {
