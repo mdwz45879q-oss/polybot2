@@ -7,6 +7,11 @@ use std::sync::{Arc, Mutex};
 const MAX_CONCURRENT_SUBMITS: usize = 3;
 const MAX_CLOB_BATCH: usize = 15;
 
+struct ChunkScratch {
+    body_buf: Vec<u8>,
+    idxs_buf: Vec<crate::TargetIdx>,
+}
+
 fn with_submitter_health<F>(health: &Arc<Mutex<crate::SubmitterHealth>>, mut f: F)
 where
     F: FnMut(&mut crate::SubmitterHealth),
@@ -75,6 +80,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
     let shared_registry = sub.shared_registry;
     let stop_flag = sub.stop_flag;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SUBMITS));
+    let mut scratch = ChunkScratch { body_buf: Vec::new(), idxs_buf: Vec::new() };
 
     'outer: loop {
         let mut had_work = false;
@@ -85,7 +91,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
                 SubmitWork::Batch(batch) => {
                     let client = submit_client.clone();
                     let reg_guard = shared_registry.load();
-                    submit_batch_task(batch, client, &*reg_guard, &log, Arc::clone(&semaphore)).await;
+                    submit_batch_task(batch, client, &*reg_guard, &log, Arc::clone(&semaphore), &mut scratch).await;
                 }
             }
         }
@@ -129,6 +135,7 @@ async fn submit_batch_task(
     registry: &crate::TargetRegistry,
     log: &Arc<Mutex<LogWriter>>,
     semaphore: Arc<tokio::sync::Semaphore>,
+    scratch: &mut ChunkScratch,
 ) {
     let batch_len = batch.len();
     if batch_len == 0 {
@@ -219,22 +226,24 @@ async fn submit_batch_task(
     }
 
     // Large multi-order: post_orders with chunking at CLOB limit, posted concurrently.
-    let target_idxs: smallvec::SmallVec<[crate::TargetIdx; 4]> =
-        batch.iter().map(|(idx, _)| *idx).collect();
-    let mut prepared_orders: Vec<Vec<u8>> = batch
-        .into_iter()
-        .map(|(_, prepared)| prepared.order_json)
-        .collect();
-    let mut chunk_jobs: Vec<(Vec<crate::TargetIdx>, Vec<u8>)> = Vec::new();
-
+    // Uses scratch buffers to avoid per-burst allocations after the first game-end frame.
+    let num_chunks = (batch_len + MAX_CLOB_BATCH - 1) / MAX_CLOB_BATCH;
+    let mut chunk_jobs: Vec<(Vec<crate::TargetIdx>, Vec<u8>)> = Vec::with_capacity(num_chunks);
+    let mut items = batch.into_iter();
     let mut offset = 0usize;
-    while !prepared_orders.is_empty() {
-        let chunk_len = prepared_orders.len().min(MAX_CLOB_BATCH);
-        let chunk_orders: Vec<Vec<u8>> = prepared_orders.drain(..chunk_len).collect();
-        let chunk_slices: Vec<&[u8]> = chunk_orders.iter().map(|b| b.as_slice()).collect();
-        let chunk_body = build_orders_body_from_slices(chunk_slices.as_slice());
-        let chunk_idxs = target_idxs[offset..offset + chunk_len].to_vec();
-        chunk_jobs.push((chunk_idxs, chunk_body));
+    while offset < batch_len {
+        let chunk_len = (batch_len - offset).min(MAX_CLOB_BATCH);
+        scratch.idxs_buf.clear();
+        scratch.body_buf.clear();
+        scratch.body_buf.push(b'[');
+        for i in 0..chunk_len {
+            let (tidx, prepared) = items.next().unwrap();
+            scratch.idxs_buf.push(tidx);
+            if i > 0 { scratch.body_buf.push(b','); }
+            scratch.body_buf.extend_from_slice(&prepared.order_json);
+        }
+        scratch.body_buf.push(b']');
+        chunk_jobs.push((scratch.idxs_buf.clone(), scratch.body_buf.clone()));
         offset += chunk_len;
     }
 

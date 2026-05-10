@@ -268,6 +268,13 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                     "hot-patch applied: cycle=%d new_markets=%d new_targets=%d presigned=%d",
                     iteration, result.markets_discovered, len(result.new_targets), count,
                 )
+                if result.new_plan:
+                    seen_cids: set[str] = set()
+                    for game in result.new_plan.games:
+                        for market in game.markets:
+                            if market.condition_id in result.new_condition_ids and market.condition_id not in seen_cids:
+                                seen_cids.add(market.condition_id)
+                                logger.info("  + %s", market.question)
             else:
                 logger.info("incremental refresh cycle=%d: no new markets (events_fetched=%d)", iteration, result.events_fetched)
 
