@@ -1,0 +1,51 @@
+[
+{
+    "name": "gaurdians_angels", 
+    "sport": "baseball", 
+    "league": "mlb",
+    "kickoff_et": "18:10",
+    "v1_fixture_id": "c902bddb-ce4f-45d3-acaa-db211d422e9f", 
+    "boltodds_game_label": "Cleveland Guardians vs Los Angeles Angels, 2026-05-11, 06"
+},
+{
+    "name": "orioles_yankees", 
+    "sport": "baseball", 
+    "league": "mlb",
+    "kickoff_et": "18:35",
+    "v1_fixture_id": "04073a13-5a12-437f-a31b-2dab9a9438d8", 
+    "boltodds_game_label": "Baltimore Orioles vs New York Yankees, 2026-05-11, 06"
+},
+{
+    "name": "jays_rays", 
+    "sport": "baseball", 
+    "league": "mlb",
+    "kickoff_et": "19:07",
+    "v1_fixture_id": "c7491982-4d30-455d-8cba-b6139b1c0b0b", 
+    "boltodds_game_label": "Toronto Blue Jays vs Tampa Bay Rays, 2026-05-11, 07"
+},
+{
+    "name": "rangers_diamondbacks", 
+    "sport": "baseball", 
+    "league": "mlb",
+    "kickoff_et": "20:05",
+    "v1_fixture_id": "e31931fa-47bd-4edb-adce-2fad4d434303", 
+    "boltodds_game_label": "Texas Rangers vs Arizona Diamondbacks, 2026-05-11, 08"
+},
+{
+    "name": "astros_mariners", 
+    "sport": "baseball", 
+    "league": "mlb",
+    "kickoff_et": "20:10",
+    "v1_fixture_id": "b383f687-329d-4fc0-8fff-f158a0549c5d", 
+    "boltodds_game_label": "Houston Astros vs Seattle Mariners, 2026-05-11, 08"
+},
+{
+    "name": "dodger_giants", 
+    "sport": "baseball", 
+    "league": "mlb",
+    "kickoff_et": "22:10",
+    "v1_fixture_id": "917f0c1c-0859-4f75-862e-1f9f0f8bcece", 
+    "boltodds_game_label": "Los Angeles Dodgers vs San Francisco Giants, 2026-05-11, 10"
+}
+]
+
