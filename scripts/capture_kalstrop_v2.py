@@ -75,6 +75,19 @@ def v1_auth_qs():
     })
 
 
+def v2_auth_headers():
+    if not CLIENT_ID or not SECRET_RAW:
+        return {}
+    ts = str(int(time.time()))
+    hashed = hashlib.sha256(SECRET_RAW.encode()).hexdigest()
+    sig = _hmac.new(hashed.encode(), f"{CLIENT_ID}:{ts}".encode(), hashlib.sha256).hexdigest()
+    return {
+        "X-Client-ID": CLIENT_ID,
+        "X-Timestamp": ts,
+        "Authorization": f"Bearer {sig}",
+    }
+
+
 def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30):
     """Step 4: resolve event_id → BetGenius fixture_id. Retries on 502."""
     deadline = time.time() + max(max_wait, 0)
@@ -83,7 +96,7 @@ def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30)
         attempt += 1
         try:
             r = requests.get(f"{V2_API}/fixtures/{event_id}/providers",
-                             params={"sport": "football"}, timeout=15)
+                             params={"sport": "football"}, headers=v2_auth_headers(), timeout=15)
             if r.status_code == 200:
                 bg = r.json().get("providers", {}).get("bet_genius", {})
                 fid = bg.get("fixture_id")
@@ -201,7 +214,8 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
         print(f"  [v2] error: {data}")
 
     try:
-        sio.connect(V2_BASE, socketio_path=V2_SIO_PATH, transports=["websocket"])
+        sio.connect(V2_BASE, socketio_path=V2_SIO_PATH, transports=["websocket"],
+                    headers=v2_auth_headers())
         while not stop_flag[0]:
             sio.sleep(1)
     except Exception as e:
