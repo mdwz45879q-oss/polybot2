@@ -1,0 +1,44 @@
+[
+  {
+    "name": "rc_celta_de_vigo_vs_levante_ud",
+    "sport": "soccer",
+    "league": "laliga",
+    "kickoff_et": "13:00",
+    "v1_fixture_id": "07d22bd1-b5ba-4de2-b79c-1dec5f31159a",
+    "v2_event_id": "7573347",
+    "v2_category_slug": "spain",
+    "v2_tournament_slug": "spanish-la-liga-primera",
+    "v2_home_team": "Celta Vigo",
+    "v2_away_team": "Levante",
+    "v2_scheduled_date": "2026-05-12",
+    "boltodds_game_label": "Celta Vigo vs Levante, 2026-05-12, 01"
+  },
+  {
+    "name": "real_betis_vs_elche",
+    "sport": "soccer",
+    "league": "laliga",
+    "kickoff_et": "14:00",
+    "v1_fixture_id": "43724502-1e56-423d-85d2-93401fb1951d",
+    "v2_event_id": "7573349",
+    "v2_category_slug": "spain",
+    "v2_tournament_slug": "spanish-la-liga-primera",
+    "v2_home_team": "Real Betis",
+    "v2_away_team": "Elche",
+    "v2_scheduled_date": "2026-05-12",
+    "boltodds_game_label": "Elche vs Real Betis, 2026-05-12, 02"
+  },
+  {
+    "name": "osasuna_vs_atletico_madrid",
+    "sport": "soccer",
+    "league": "laliga",
+    "kickoff_et": "15:30",
+    "v1_fixture_id": "c3d78267-40aa-4988-9e70-c79f8ae0683e",
+    "boltodds_game_label": "Osasuna vs Atletico Madrid, 2026-05-12, 03",
+    "v2_event_id": "7573352",
+    "v2_category_slug": "spain",
+    "v2_tournament_slug": "spanish-la-liga-primera",
+    "v2_home_team": "Osasuna",
+    "v2_away_team": "Atletico Madrid",
+    "v2_scheduled_date": "2026-05-12"
+  }
+]
