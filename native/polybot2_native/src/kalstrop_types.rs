@@ -36,14 +36,28 @@ pub(crate) struct KalstropMatchSummary<'a> {
     pub home_score: Option<&'a str>,
     #[serde(rename = "awayScore")]
     pub away_score: Option<&'a str>,
-    /// Only the first freeText from matchStatusDisplay, deserialized without
-    /// allocating a Vec for the array.
     #[serde(
         rename = "matchStatusDisplay",
         default,
         deserialize_with = "deserialize_first_free_text"
     )]
     pub first_free_text: Option<&'a str>,
+    #[serde(default)]
+    pub statistics: Option<KalstropStatistics>,
+}
+
+#[derive(Deserialize, Default)]
+pub(crate) struct KalstropStatistics {
+    #[serde(default)]
+    pub corners: Option<KalstropCorners>,
+}
+
+#[derive(Deserialize, Default)]
+pub(crate) struct KalstropCorners {
+    #[serde(default)]
+    pub home: Option<i64>,
+    #[serde(default)]
+    pub away: Option<i64>,
 }
 
 /// Custom deserializer that reads a JSON array of objects and extracts

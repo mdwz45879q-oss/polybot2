@@ -17,6 +17,7 @@ import json
 import re
 import sqlite3
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -151,6 +152,7 @@ def match_games(
     by_provider: dict[str, list[dict]],
     league: str,
     alias_index: dict,
+    verbose: bool = False,
 ) -> list[dict]:
     """Match games across providers by canonical team names + start time."""
     # Flatten all games with canonical names
@@ -159,24 +161,51 @@ def match_games(
         for g in games:
             canon_home = resolve_team(g["home_raw"], provider, alias_index)
             canon_away = resolve_team(g["away_raw"], provider, alias_index)
+            if verbose:
+                h_method = "alias" if (provider, g["home_raw"].strip().lower()) in alias_index else "fuzzy"
+                a_method = "alias" if (provider, g["away_raw"].strip().lower()) in alias_index else "fuzzy"
+                print(f"  {provider:12s} {g['home_raw']} → {canon_home} ({h_method}) | {g['away_raw']} → {canon_away} ({a_method})")
             entries.append({
                 **g,
                 "canon_home": canon_home,
                 "canon_away": canon_away,
             })
 
-    def _teams_match(a_home: str, a_away: str, b_home: str, b_away: str) -> bool:
-        """Check if two team pairs refer to the same game (exact or substring, either order)."""
-        def _pair_match(h1: str, a1: str, h2: str, a2: str) -> bool:
-            return _name_match(h1, h2) and _name_match(a1, a2)
-        return _pair_match(a_home, a_away, b_home, b_away) or _pair_match(a_home, a_away, b_away, b_home)
+    NOISE_WORDS = frozenset({
+        "fc", "cf", "sc", "rc", "ud", "cd", "ca", "de", "la", "el", "del",
+        "von", "the", "sad", "fk", "sk", "if", "bk", "us", "ss", "as", "ac",
+        "afc", "ssc", "rcd", "sd", "se", "club", "sporting", "real",
+    })
+
+    def _strip_accents(s: str) -> str:
+        return "".join(
+            c for c in unicodedata.normalize("NFD", s)
+            if unicodedata.category(c) != "Mn"
+        )
 
     def _name_match(a: str, b: str) -> bool:
         if a == b:
             return True
         if a in b or b in a:
             return True
-        return False
+        na = _strip_accents(a)
+        nb = _strip_accents(b)
+        if na == nb:
+            return True
+        if na in nb or nb in na:
+            return True
+        a_words = set(na.split()) - NOISE_WORDS
+        b_words = set(nb.split()) - NOISE_WORDS
+        if not a_words or not b_words:
+            return False
+        shorter, longer = (a_words, b_words) if len(a_words) <= len(b_words) else (b_words, a_words)
+        return shorter.issubset(longer)
+
+    def _teams_match(a_home: str, a_away: str, b_home: str, b_away: str) -> bool:
+        """Check if two team pairs refer to the same game (word-overlap, either order)."""
+        def _pair_match(h1: str, a1: str, h2: str, a2: str) -> bool:
+            return _name_match(h1, h2) and _name_match(a1, a2)
+        return _pair_match(a_home, a_away, b_home, b_away) or _pair_match(a_home, a_away, b_away, b_home)
 
     # Group by team match with time tolerance — allows same-provider duplicates
     groups: list[list[dict]] = []
@@ -206,22 +235,25 @@ def match_games(
             providers.setdefault(g["provider"], []).append(g)
 
         # Resolve duplicates: if a provider has 2 entries (flipped home/away),
-        # pick the one matching a reference provider's home/away order.
+        # pick the one whose home_raw matches a reference provider's home_raw.
         # If no reference, keep both (user resolves manually).
-        ref_home = None
-        for p in ["kalstrop_v1", "kalstrop_v2"]:
-            if p in providers and len(providers[p]) == 1:
-                ref_home = providers[p][0]["canon_home"]
+        ref_home_raw = None
+        ref_canon_home = None
+        for rp in ["kalstrop_v1", "kalstrop_v2"]:
+            if rp in providers and len(providers[rp]) == 1:
+                ref_home_raw = _strip_accents(providers[rp][0]["home_raw"].strip().lower())
+                ref_canon_home = providers[rp][0]["canon_home"]
                 break
 
         resolved: dict[str, dict] = {}
         for p, entries_list in providers.items():
             if len(entries_list) == 1:
                 resolved[p] = entries_list[0]
-            elif ref_home is not None:
-                # Pick the entry whose canon_home matches the reference
+            elif ref_home_raw is not None:
+                # Pick the entry whose home_raw matches the reference home
                 for e in entries_list:
-                    if e["canon_home"] == ref_home:
+                    e_home = _strip_accents(e["home_raw"].strip().lower())
+                    if _name_match(e_home, ref_home_raw):
                         resolved[p] = e
                         break
                 if p not in resolved:
@@ -234,7 +266,7 @@ def match_games(
 
         canon_home = group[0]["canon_home"]
         canon_away = group[0]["canon_away"]
-        if ref_home and ref_home != canon_home:
+        if ref_canon_home and not _name_match(ref_canon_home, canon_home):
             canon_home, canon_away = canon_away, canon_home
 
         entry = {
@@ -348,6 +380,8 @@ def main():
     ap.add_argument("--config-dir", default="", help="Config directory (default: auto-detect)")
     ap.add_argument("--tz", default="utc", choices=["utc", "et"],
                     help="Timezone for date range (default: utc)")
+    ap.add_argument("--verbose", "-v", action="store_true",
+                    help="Print canonical name resolution and match details")
     args = ap.parse_args()
 
     config_dir = args.config_dir or str(Path(__file__).resolve().parents[1] / "config")
@@ -391,7 +425,7 @@ def main():
         provider_summary = ", ".join(f"{k}={len(v)}" for k, v in sorted(by_provider.items()))
         print(f"[{league}] Found {total} games across providers: {provider_summary}")
 
-        matched = match_games(by_provider, league, alias_index)
+        matched = match_games(by_provider, league, alias_index, verbose=args.verbose)
         print_summary(matched, league)
 
         entries = emit_json(matched, league, sport)

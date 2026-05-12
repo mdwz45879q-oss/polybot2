@@ -54,8 +54,16 @@ def build_sports_provider(
 
     if p == "kalstrop_v2":
         from polybot2.sports.kalstrop_v2 import KalstropV2Provider, KalstropV2ProviderConfig
+        client_id, shared_secret_raw, source = resolve_kalstrop_credentials_from_env()
+        if not client_id or not shared_secret_raw:
+            raise ValueError("missing_kalstrop_credentials_for_v2")
+        if logger is not None:
+            logger.info("Kalstrop V2 credentials source=%s", source)
         return KalstropV2Provider(
-            config=KalstropV2ProviderConfig(),
+            config=KalstropV2ProviderConfig(
+                client_id=client_id,
+                shared_secret_raw=shared_secret_raw,
+            ),
         )
 
     raise ValueError(f"unsupported_provider:{p}")

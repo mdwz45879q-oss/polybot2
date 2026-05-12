@@ -293,6 +293,40 @@ impl NativeHotPathRuntime {
                         }
                     })
                 }
+                "kalstrop_v2" => {
+                    let base_url = cfg.kalstrop_v2_base_url.clone()
+                        .unwrap_or_else(|| "https://stats.kalstropservice.com".to_string());
+                    let sio_path = cfg.kalstrop_v2_sio_path.clone()
+                        .unwrap_or_else(|| "/socket.io".to_string());
+                    let v2_client_id = cfg.kalstrop_client_id.clone().unwrap_or_default();
+                    let v2_secret = cfg.kalstrop_shared_secret_raw.clone().unwrap_or_default();
+                    let v2_cfg = crate::ws_kalstrop_v2::KalstropV2WorkerConfig {
+                        base_url,
+                        sio_path,
+                        client_id: v2_client_id,
+                        shared_secret_raw: v2_secret,
+                    };
+                    thread::spawn(move || {
+                        if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build()
+                        {
+                            runtime.block_on(crate::ws_kalstrop_v2::run_kalstrop_v2_worker_async(
+                                &mut worker_engine,
+                                v2_cfg,
+                                worker_dispatch_handle,
+                                subs_clone,
+                                health_clone,
+                                command_rx,
+                                patch_rx,
+                                worker_log_arc,
+                            ));
+                        } else {
+                            crate::ws::with_health(&health_clone, |h| {
+                                h.running = false;
+                                h.last_error = "tokio_runtime_create_failed".to_string();
+                            });
+                        }
+                    })
+                }
                 _ => {
                     // Default: Kalstrop V1 worker
                     thread::spawn(move || {

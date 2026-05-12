@@ -7,6 +7,8 @@ pub(crate) struct V1Extract<'a> {
     pub home_score: &'a str,
     pub away_score: &'a str,
     pub free_text: &'a str,
+    pub corners_home: Option<i64>,
+    pub corners_away: Option<i64>,
 }
 
 #[inline(always)]
@@ -56,6 +58,12 @@ static FINDER_HOME_SCORE: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"homeScore\""));
 static FINDER_AWAY_SCORE: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"awayScore\""));
+static FINDER_CORNERS: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"corners\""));
+static FINDER_HOME: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"home\""));
+static FINDER_AWAY: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"away\""));
 
 fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
     if from >= haystack.len() {
@@ -92,6 +100,35 @@ fn find_key_value_start(
                 }
                 if p < len && bytes[p] == b'"' {
                     return Some(p + 1);
+                }
+            }
+            pos = idx + 1;
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+fn find_key_integer(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<(i64, usize)> {
+    let mut pos = from;
+    while pos + key_len < bytes.len() {
+        if let Some(idx) = find_with(finder, bytes, pos) {
+            let mut p = idx + key_len;
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+            if p < bytes.len() && bytes[p] == b':' {
+                p += 1;
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+                let negative = p < bytes.len() && bytes[p] == b'-';
+                if negative { p += 1; }
+                let start = p;
+                let mut acc: i64 = 0;
+                while p < bytes.len() && bytes[p].is_ascii_digit() {
+                    acc = acc.wrapping_mul(10).wrapping_add((bytes[p] - b'0') as i64);
+                    p += 1;
+                }
+                if p > start {
+                    return Some((if negative { -acc } else { acc }, p));
                 }
             }
             pos = idx + 1;
@@ -176,8 +213,20 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     }
 
     if let Some(start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, bytes, pos) {
-        if let Some((val, _end)) = extract_string_value(bytes, start) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
             away_score = Some(std::str::from_utf8(val).ok()?);
+            pos = end;
+        }
+    }
+
+    let mut corners_home: Option<i64> = None;
+    let mut corners_away: Option<i64> = None;
+    if let Some(corners_pos) = find_with(&FINDER_CORNERS, bytes, pos) {
+        if let Some((h, end)) = find_key_integer(&FINDER_HOME, 6, bytes, corners_pos) {
+            corners_home = Some(h);
+            if let Some((a, _)) = find_key_integer(&FINDER_AWAY, 6, bytes, end) {
+                corners_away = Some(a);
+            }
         }
     }
 
@@ -186,6 +235,8 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
         home_score: home_score.unwrap_or(""),
         away_score: away_score.unwrap_or(""),
         free_text: free_text.unwrap_or(""),
+        corners_home,
+        corners_away,
     })
 }
 
@@ -201,6 +252,8 @@ mod tests {
         assert_eq!(result.home_score, "3");
         assert_eq!(result.away_score, "1");
         assert_eq!(result.free_text, "4th inning top");
+        assert_eq!(result.corners_home, None);
+        assert_eq!(result.corners_away, None);
     }
 
     #[test]
@@ -229,5 +282,17 @@ mod tests {
         assert_eq!(fast_parse_score("1a"), None);
         assert_eq!(fast_parse_score("a1"), None);
         assert_eq!(fast_parse_score("1234"), Some(1234)); // fallback path
+    }
+
+    #[test]
+    fn test_soccer_v1_frame_with_corners() {
+        let frame = r#"{"id":"v1_sub","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"87c39b80-625c-4d79-8e29-fcea7d9ee421","matchSummary":{"matchStatusDisplay":[{"freeText":"2nd half"}],"homeScore":"3","awayScore":"2","statistics":{"corners":{"home":5,"away":3},"redCards":{"home":0,"away":0}}}}}}}"#;
+        let result = fast_extract_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "87c39b80-625c-4d79-8e29-fcea7d9ee421");
+        assert_eq!(result.home_score, "3");
+        assert_eq!(result.away_score, "2");
+        assert_eq!(result.free_text, "2nd half");
+        assert_eq!(result.corners_home, Some(5));
+        assert_eq!(result.corners_away, Some(3));
     }
 }

@@ -32,14 +32,18 @@ class KalstropV2ProviderConfig:
         api_base: str = "https://stats.kalstropservice.com/api/v2",
         catalog_sport_slugs: Sequence[str] = ("football",),
         request_timeout_seconds: float = 15.0,
+        client_id: str = "",
+        shared_secret_raw: str = "",
     ):
         self.api_base = str(api_base).rstrip("/")
         self.catalog_sport_slugs = tuple(catalog_sport_slugs)
         self.request_timeout_seconds = float(request_timeout_seconds)
+        self.client_id = str(client_id).strip()
+        self.shared_secret_raw = str(shared_secret_raw).strip()
 
 
 class KalstropV2Provider(SportsDataProviderBase):
-    """Kalstrop V2 provider — catalog via REST, no live streaming yet."""
+    """Kalstrop V2 provider — catalog via REST with HMAC auth."""
 
     def __init__(
         self,
@@ -53,6 +57,12 @@ class KalstropV2Provider(SportsDataProviderBase):
         )
         self._cfg = config
         self._catalog_by_uid: dict[str, ProviderGameRecord] = {}
+
+    def _auth_headers(self) -> dict[str, str]:
+        from polybot2.sports.kalstrop_auth import kalstrop_auth_headers
+        if not self._cfg.client_id or not self._cfg.shared_secret_raw:
+            return {}
+        return kalstrop_auth_headers(self._cfg.client_id, self._cfg.shared_secret_raw)
 
     def load_game_catalog(self) -> list[ProviderGameRecord]:
         records: list[ProviderGameRecord] = []
@@ -91,7 +101,7 @@ class KalstropV2Provider(SportsDataProviderBase):
         self, sport_slug: str,
     ) -> list[tuple[str, str, str, str]]:
         url = f"{self._cfg.api_base}/sports/{sport_slug}/competitions"
-        resp = self._client.get(url)
+        resp = self._client.get(url, headers=self._auth_headers())
         if resp.status_code != 200:
             raise KalstropV2SyncError(
                 f"competitions fetch failed: HTTP {resp.status_code} for {url}"
@@ -137,7 +147,7 @@ class KalstropV2Provider(SportsDataProviderBase):
         import time as _time
         for attempt in range(3):
             try:
-                resp = self._client.get(url)
+                resp = self._client.get(url, headers=self._auth_headers())
             except Exception as exc:
                 if attempt < 2:
                     _time.sleep(0.5 * (attempt + 1))
@@ -211,8 +221,8 @@ class KalstropV2Provider(SportsDataProviderBase):
             game_label=game_label or f"{home_name} vs {away_name}",
             orig_teams=f"{home_name} vs {away_name}",
             sport_raw=sport_slug,
-            league_raw=tournament_name,
-            category_name=category_name,
+            league_raw=tournament_slug,
+            category_name=category_slug,
             category_country_code="",
             when_raw=start_time_raw,
             home_team_raw=home_name,

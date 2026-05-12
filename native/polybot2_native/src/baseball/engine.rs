@@ -742,6 +742,7 @@ impl NativeMlbEngine {
         }
 
         Ok(MergePlanResult {
+            new_games: 0,
             new_tokens: new_token_count,
             new_targets: new_target_count,
         })

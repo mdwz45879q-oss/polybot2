@@ -2,17 +2,34 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
 class OrderPolicy:
-    """Execution profile injected from live trading policy."""
+    """Execution profile injected from live trading policy.
+
+    ``market_overrides`` maps ``sports_market_type`` → dict of fields to
+    override.  Unspecified fields inherit from the league default.
+    """
 
     amount_usdc: float = 5.0
     size_shares: float = 5.0
     limit_price: float = 0.52
     time_in_force: str = "FAK"
+    market_overrides: dict[str, dict[str, float | str]] = field(default_factory=dict)
+
+    def for_market_type(self, sports_market_type: str) -> OrderPolicy:
+        """Return a policy with overrides applied for this market type."""
+        overrides = self.market_overrides.get(sports_market_type, {})
+        if not overrides:
+            return self
+        return OrderPolicy(
+            amount_usdc=float(overrides.get("amount_usdc", self.amount_usdc)),
+            size_shares=float(overrides.get("size_shares", self.size_shares)),
+            limit_price=float(overrides.get("limit_price", self.limit_price)),
+            time_in_force=str(overrides.get("time_in_force", self.time_in_force)),
+        )
 
 
 __all__ = ["OrderPolicy"]

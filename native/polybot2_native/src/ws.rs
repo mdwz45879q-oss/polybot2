@@ -3,7 +3,7 @@ use crate::dispatch::DispatchHandle;
 use crate::log_writer::LogWriter;
 use tokio_tungstenite::connect_async_tls_with_config;
 
-fn kalstrop_signature(client_id: &str, shared_secret_raw: &str, timestamp: &str) -> String {
+pub(crate) fn kalstrop_signature(client_id: &str, shared_secret_raw: &str, timestamp: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(shared_secret_raw.as_bytes());
     let hashed_secret = hex::encode(hasher.finalize());
@@ -187,11 +187,15 @@ pub(crate) fn apply_pending_patches(
     patch_rx: &flume::Receiver<crate::PatchPayload>,
     health: &Arc<Mutex<RuntimeHealth>>,
     log: &Arc<Mutex<LogWriter>>,
-) {
+) -> bool {
+    let mut new_games_added = false;
     while let Ok(mut patch) = patch_rx.try_recv() {
         match engine.merge_plan(&patch.plan_json) {
             Ok(result) => {
-                if result.new_targets > 0 || result.new_tokens > 0 {
+                if result.new_games > 0 {
+                    new_games_added = true;
+                }
+                if result.new_targets > 0 || result.new_tokens > 0 || result.new_games > 0 {
                     dispatch_handle.extend_for_patch(
                         &mut patch.new_templates,
                         &mut patch.new_presigned,
@@ -206,6 +210,9 @@ pub(crate) fn apply_pending_patches(
                     if let Ok(mut g) = log.lock() {
                         g.log_patch(result.new_tokens, result.new_targets);
                     }
+                    if result.new_games > 0 {
+                        eprintln!("[polybot2] merge_plan: {} new game(s) added", result.new_games);
+                    }
                 }
             }
             Err(err) => {
@@ -215,6 +222,7 @@ pub(crate) fn apply_pending_patches(
             }
         }
     }
+    new_games_added
 }
 
 pub(crate) async fn run_live_worker_async(
@@ -255,8 +263,8 @@ pub(crate) async fn run_live_worker_async(
             }
             candidate_changed |= changed;
         }
-        apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
-        if candidate_changed || Instant::now() >= next_subscription_refresh {
+        let new_games = apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
+        if candidate_changed || new_games || Instant::now() >= next_subscription_refresh {
             next_subscription_refresh = Instant::now() + subscription_refresh_interval;
             if let Err(e) = refresh_active_subscriptions(
                 engine,
@@ -377,9 +385,9 @@ pub(crate) async fn run_live_worker_async(
                     }
                 }
             }
-            apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
+            let new_games_inner = apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
             let mut active_changed = false;
-            if candidate_changed_inner || Instant::now() >= next_subscription_refresh {
+            if candidate_changed_inner || new_games_inner || Instant::now() >= next_subscription_refresh {
                 next_subscription_refresh = Instant::now() + subscription_refresh_interval;
                 match refresh_active_subscriptions(
                     engine,

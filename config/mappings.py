@@ -1,5 +1,5 @@
 from baseball_mappings import TEAM_MAP_MLB
-from soccer_mappings import TEAM_MAP_BUN, TEAM_MAP_EPL, TEAM_MAP_UCL
+from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA
 
 
 MAPPING_VERSION = "v1"
@@ -36,8 +36,15 @@ LEAGUES = {
     "bundesliga": {
         "polymarket_league_code": "bun",
         "sport_family": "soccer",
-        "provider": "kalstrop_v1",
+        "provider": "kalstrop_v2",
     },
+    ## Bundesliga (catalog-only, not in LIVE_BETTING_LEAGUES — team mappings incomplete)
+    "laliga": {
+        "polymarket_league_code": "lal",
+        "sport_family": "soccer",
+        "provider": "kalstrop_v2",
+    },
+
 }
 
 # Unambiguous provider league name → canonical league key.
@@ -48,20 +55,41 @@ PROVIDER_LEAGUE_ALIASES = {
         "bundesliga": "bundesliga",
     },
     "kalstrop_v2":{
-        "uefa champions league": "ucl",
+        "uefa-champions-league": "ucl",
+        "english-premier-league": "epl",
+        "spanish-la-liga-primera": "laliga"
     },
     "boltodds":{
         "epl": "epl",
+        "mlb": "mlb",
+        "bundesliga": "bundesliga",
+        "champions league": "ucl",
+        "la liga": "laliga"
     },
 }
 
 # Country-qualified disambiguation for ambiguous provider league names.
-# Format: { provider: { (country, league_name): canonical_key } }
+# Format: { provider: { "country|league_name": canonical_key } }
 # country is matched case-insensitively against Kalstrop category.name.
 PROVIDER_LEAGUE_COUNTRY = {
     "kalstrop_v1": {
+        "england|premier league": "epl",
+        "spain|laliga": "laliga",
     },
-    "kalstrop_v2":{
+}
+
+KALSTROP_V2_SLUGS = {
+    "laliga": {
+        "category_slug": "spain",
+        "tournament_slug": "spanish-la-liga-primera",
+    },
+    "bundesliga": {
+        "category_slug": "germany", 
+        "tournament_slug": "german-bundesliga",
+    },
+    "ucl": {
+        "category_slug": "europe",
+        "tournament_slug": "uefa-champions-league",
     },
 }
 # =============================================================================
@@ -69,9 +97,10 @@ PROVIDER_LEAGUE_COUNTRY = {
 # =============================================================================
 TEAM_MAP = {
     "mlb": TEAM_MAP_MLB,
-    "bundesliga": TEAM_MAP_BUN,
+    "bundesliga": TEAM_MAP_BUNDESLIGA,
     "epl": TEAM_MAP_EPL,
     "ucl": TEAM_MAP_UCL,
+    "laliga": TEAM_MAP_LALIGA,
 }
 
 # =============================================================================

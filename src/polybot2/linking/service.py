@@ -204,9 +204,12 @@ class LinkService:
         # Try country-qualified disambiguation first (PROVIDER_LEAGUE_COUNTRY).
         canonical_league = ""
         if category_name:
-            provider_country_map = mapping.provider_league_country.get(_norm(provider), {})
-            country_key = (_norm(category_name), _norm(league_signal))
-            canonical_league = _norm(str(provider_country_map.get(country_key, "")))
+            raw_country_map = mapping.provider_league_country.get(_norm(provider), {})
+            # Support both "country|league" string keys and (country, league) tuple keys
+            country_key_str = f"{_norm(category_name)}|{_norm(league_signal)}"
+            country_key_tuple = (_norm(category_name), _norm(league_signal))
+            matched = raw_country_map.get(country_key_str) or raw_country_map.get(country_key_tuple, "")
+            canonical_league = _norm(str(matched))
 
         # Fall back to unambiguous aliases (PROVIDER_LEAGUE_ALIASES).
         if not canonical_league:

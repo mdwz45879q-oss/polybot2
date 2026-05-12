@@ -112,13 +112,13 @@ class NativeHotPathService:
         return resolved
 
     def set_subscriptions(self, universal_ids: list[str]) -> None:
-        resolved = self._resolve_subscriptions(universal_ids)
+        cleaned = sorted({str(uid or "").strip() for uid in universal_ids if str(uid or "").strip()})
         with self._lock:
-            self._subscriptions = list(resolved)
+            self._subscriptions = cleaned
         bridge = self._runtime_bridge
         if bridge is not None:
             try:
-                bridge.set_subscriptions(list(resolved))
+                bridge.set_subscriptions(cleaned)
             except Exception as exc:
                 self._append_error(f"runtime_set_subscriptions:{type(exc).__name__}:{exc}")
 
@@ -313,13 +313,14 @@ class NativeHotPathService:
             if not token_id or token_id in seen_tokens:
                 continue
             seen_tokens.add(token_id)
+            p = policy.for_market_type(str(target.sports_market_type or ""))
             templates.append({
                 "token_id": token_id,
                 "side": "buy_yes",
-                "amount_usdc": float(policy.amount_usdc),
-                "size_shares": float(policy.size_shares),
-                "limit_price": float(policy.limit_price),
-                "time_in_force": str(policy.time_in_force),
+                "amount_usdc": float(p.amount_usdc),
+                "size_shares": float(p.size_shares),
+                "limit_price": float(p.limit_price),
+                "time_in_force": str(p.time_in_force),
             })
         plan_json = json.dumps(
             serialize_compiled_plan(result.new_plan),
@@ -340,6 +341,17 @@ class NativeHotPathService:
             )
             with self._lock:
                 self._compiled_plan = result.new_plan
+            if result.new_plan:
+                new_game_ids = {
+                    g.provider_game_id
+                    for g in result.new_plan.games
+                    if g.provider_game_id
+                }
+                current_subs = set(self._subscriptions)
+                added = new_game_ids - current_subs
+                if added:
+                    self._subscriptions = sorted(current_subs | added)
+                    bridge.set_subscriptions(list(self._subscriptions))
             return count
         except Exception as exc:
             self._append_error(

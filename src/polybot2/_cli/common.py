@@ -71,12 +71,14 @@ def _resolve_provider_name(
 
 def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tuple[OrderPolicy, bool, bool]:
     cfg = dict((getattr(live_policy, "hotpath_execution_by_league", {}) or {}).get(str(league_key), {}) or {})
+    market_overrides = dict(cfg.get("market_overrides", {}) or {})
     return (
         OrderPolicy(
             amount_usdc=float(cfg.get("amount_usdc", 5.0)),
             size_shares=float(cfg.get("size_shares", 5.0)),
             limit_price=float(cfg.get("limit_price", 0.52)),
             time_in_force=str(cfg.get("time_in_force", "FAK") or "FAK"),
+            market_overrides=market_overrides,
         ),
         bool(cfg.get("require_presign", True)),
         bool(cfg.get("presign_fallback_on_miss", False)),
@@ -107,6 +109,7 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPol
     seen: set[tuple[str, str, float, float, str, str]] = set()
     for game in tuple(compiled_plan.games):
         for market in tuple(game.markets):
+            policy = order_policy.for_market_type(market.sports_market_type)
             for target in tuple(market.targets):
                 token_id = str(target.token_id or "").strip()
                 if not token_id:
@@ -114,9 +117,9 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPol
                 key = (
                     token_id,
                     "buy_yes",
-                    float(order_policy.amount_usdc),
-                    float(order_policy.limit_price),
-                    str(order_policy.time_in_force),
+                    float(policy.amount_usdc),
+                    float(policy.limit_price),
+                    str(policy.time_in_force),
                     str(target.condition_id or ""),
                 )
                 if key in seen:
@@ -126,12 +129,12 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPol
                     OrderRequest(
                         token_id=token_id,
                         side="buy_yes",
-                        amount_usdc=float(order_policy.amount_usdc),
-                        limit_price=float(order_policy.limit_price),
-                        time_in_force=str(order_policy.time_in_force),
+                        amount_usdc=float(policy.amount_usdc),
+                        limit_price=float(policy.limit_price),
+                        time_in_force=str(policy.time_in_force),
                         client_order_id=f"hp_template_{len(out) + 1}",
                         condition_id=str(target.condition_id or ""),
-                        size_shares=float(order_policy.size_shares),
+                        size_shares=float(policy.size_shares),
                     )
                 )
     return out

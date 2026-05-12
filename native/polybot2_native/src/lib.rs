@@ -4,11 +4,15 @@ pub(crate) mod boltodds_types;
 mod dispatch;
 pub(crate) mod fast_extract;
 mod kalstrop_types;
+pub(crate) mod kalstrop_v2_frame_pipeline;
+pub(crate) mod kalstrop_v2_sio;
+pub(crate) mod kalstrop_v2_types;
 mod log_writer;
 mod runtime;
 mod soccer;
 mod ws;
 pub(crate) mod ws_boltodds;
+pub(crate) mod ws_kalstrop_v2;
 
 #[cfg(feature = "bench-support")]
 #[doc(hidden)]
@@ -233,6 +237,10 @@ struct RuntimeStartConfig {
     boltodds_api_key: Option<String>,
     #[serde(default)]
     boltodds_ws_url: Option<String>,
+    #[serde(default)]
+    kalstrop_v2_base_url: Option<String>,
+    #[serde(default)]
+    kalstrop_v2_sio_path: Option<String>,
 }
 
 #[derive(Default, Deserialize, Clone)]
@@ -384,6 +392,7 @@ struct NativeHotPathRuntime {
 }
 
 pub(crate) struct MergePlanResult {
+    pub(crate) new_games: usize,
     pub(crate) new_tokens: usize,
     pub(crate) new_targets: usize,
 }

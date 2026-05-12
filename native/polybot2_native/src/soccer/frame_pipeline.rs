@@ -121,6 +121,10 @@ fn process_single_frame_live(
     let half = parse_half(free_text);
     let goals_home = crate::fast_extract::fast_parse_score(home_str);
     let goals_away = crate::fast_extract::fast_parse_score(away_str);
+    let corners = summary.and_then(|s| s.statistics.as_ref())
+        .and_then(|st| st.corners.as_ref());
+    let corners_home = corners.and_then(|c| c.home);
+    let corners_away = corners.and_then(|c| c.away);
     let is_completed = if free_text.is_empty() {
         false
     } else {
@@ -146,8 +150,8 @@ fn process_single_frame_live(
         free_text,
         goals_home,
         goals_away,
-        None, // corners_home (V1 doesn't provide corner data)
-        None, // corners_away
+        corners_home,
+        corners_away,
         half,
         match_completed,
         game_state,

@@ -166,49 +166,62 @@ pub(crate) async fn warm_presign_startup_into(
     let total_timeout_s = base_s + per_key_s * key_work.len() as f64;
     let timeout = Duration::from_secs_f64(total_timeout_s);
 
-    let handles: Vec<_> = key_work
-        .into_iter()
-        .map(|(idx, template)| {
-            let c = client.clone();
-            let s = signer.clone();
-            tokio::spawn(async move {
-                let result = super::sdk_exec::sign_order_batch(&c, &s, &template, 1).await;
-                (idx, template.token_id, result)
-            })
-        })
-        .collect();
+    const BATCH_SIZE: usize = 10;
+    const BATCH_DELAY_MS: u64 = 200;
 
-    let results = tokio::time::timeout(timeout, futures_util::future::join_all(handles))
-        .await
-        .map_err(|_| {
-            let detail = templates
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, t)| {
-                    t.as_ref().map(|tpl| {
-                        format!(
-                            "{}:{}",
-                            redact_token_id(&tpl.token_id),
-                            if pool[idx].is_some() { 1 } else { 0 }
-                        )
-                    })
+    let deadline = tokio::time::Instant::now() + timeout;
+
+    for chunk in key_work.chunks(BATCH_SIZE) {
+        let handles: Vec<_> = chunk
+            .iter()
+            .map(|(idx, template)| {
+                let c = client.clone();
+                let s = signer.clone();
+                let tpl = template.clone();
+                let i = *idx;
+                tokio::spawn(async move {
+                    let result = super::sdk_exec::sign_order_batch(&c, &s, &tpl, 1).await;
+                    (i, tpl.token_id, result)
                 })
-                .collect::<Vec<_>>()
-                .join(",");
-            format!(
-                "presign_startup_warm_timeout:timeout_s={:.3} detail={}",
-                total_timeout_s, detail
-            )
-        })?;
+            })
+            .collect();
 
-    for result in results {
-        let (idx, token_id, batch_result) =
-            result.map_err(|e| format!("presign_task_panicked:{}", e))?;
-        let signed_orders = batch_result
-            .map_err(|e| format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e))?;
-        if let Some(signed) = signed_orders.into_iter().next() {
-            pool[idx] = Some(Box::new(prepare_payload_from_signed(signed)?));
+        let results = tokio::time::timeout_at(deadline, futures_util::future::join_all(handles))
+            .await
+            .map_err(|_| {
+                let detail = templates
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, t)| {
+                        t.as_ref().map(|tpl| {
+                            format!(
+                                "{}:{}",
+                                redact_token_id(&tpl.token_id),
+                                if pool[idx].is_some() { 1 } else { 0 }
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    "presign_startup_warm_timeout:timeout_s={:.3} detail={}",
+                    total_timeout_s, detail
+                )
+            })?;
+
+        for result in results {
+            let (idx, token_id, batch_result) =
+                result.map_err(|e| format!("presign_task_panicked:{}", e))?;
+            let signed_orders = batch_result.map_err(|e| {
+                format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
+            })?;
+            if let Some(signed) = signed_orders.into_iter().next() {
+                pool[idx] = Some(Box::new(prepare_payload_from_signed(signed)?));
+            }
         }
+
+        // Rate-limit pause between batches to avoid 429 from CLOB /tick-size
+        tokio::time::sleep(Duration::from_millis(BATCH_DELAY_MS)).await;
     }
 
     for (idx, template_slot) in templates.iter().enumerate() {

@@ -131,7 +131,13 @@ def sync_provider_games(
         )
     else:
         from polybot2.sports.kalstrop_v2 import KalstropV2Provider, KalstropV2ProviderConfig
-        client = KalstropV2Provider(config=KalstropV2ProviderConfig())
+        v2_client_id, v2_secret, _v2_source = resolve_kalstrop_credentials_from_env()
+        if not v2_client_id or not v2_secret:
+            return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_kalstrop_credentials")
+        client = KalstropV2Provider(config=KalstropV2ProviderConfig(
+            client_id=v2_client_id,
+            shared_secret_raw=v2_secret,
+        ))
     try:
         records = client.load_game_catalog()
     except Exception as exc:

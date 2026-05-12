@@ -1,57 +1,44 @@
-//! BoltOdds WebSocket worker.
-//! Mirrors the structure of `ws.rs` (V1 Kalstrop) but with BoltOdds-specific
-//! connection handshake, subscribe protocol, and frame dispatch.
+//! Kalstrop V2 Socket.IO worker.
+//! Connects to the BetGenius live stats endpoint via Socket.IO,
+//! subscribes to fixture rooms, and processes genius_update frames
+//! through the soccer engine.
 
-use crate::boltodds_frame_pipeline::{process_boltodds_frame_sync, BoltOddsPendingLog};
+use crate::kalstrop_v2_frame_pipeline::{process_v2_frame_sync, V2PendingLog};
+use crate::kalstrop_v2_sio::{self, SioFrame};
 use crate::dispatch::DispatchHandle;
 use crate::log_writer::LogWriter;
 use crate::ws::{apply_pending_patches, with_health};
 use crate::*;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
-use tokio_tungstenite::connect_async_tls_with_config;
 use tokio_tungstenite::tungstenite::Message;
 
-pub(crate) struct BoltOddsWorkerConfig {
-    pub ws_url: String,
-    pub api_key: String,
+pub(crate) struct KalstropV2WorkerConfig {
+    pub base_url: String,
+    pub sio_path: String,
+    pub client_id: String,
+    pub shared_secret_raw: String,
 }
 
-/// Build the subscribe payload for BoltOdds WS.
-fn boltodds_subscribe_payload(game_labels: &[String]) -> String {
-    let msg = json!({
-        "action": "subscribe",
-        "filters": {
-            "games": game_labels
-        }
-    });
-    msg.to_string()
-}
-
-/// Main BoltOdds WS worker loop. Runs on a dedicated thread.
-///
-/// Takes `&mut SportEngine` (must be `SportEngine::Soccer` variant). This
-/// allows reusing `apply_pending_patches` from `ws.rs` directly.
-pub(crate) async fn run_boltodds_worker_async(
+pub(crate) async fn run_kalstrop_v2_worker_async(
     engine: &mut SportEngine,
-    cfg: BoltOddsWorkerConfig,
+    cfg: KalstropV2WorkerConfig,
     mut dispatch_handle: DispatchHandle,
     subscriptions: Arc<RwLock<Vec<String>>>,
     health: Arc<Mutex<RuntimeHealth>>,
-    initial_game_labels: Vec<String>,
     command_rx: flume::Receiver<LiveWorkerCommand>,
     patch_rx: flume::Receiver<PatchPayload>,
     log: Arc<Mutex<LogWriter>>,
 ) {
     let worker_clock_origin = Instant::now();
-    let mut game_labels = initial_game_labels;
+    let mut fixture_ids: Vec<String> = Vec::new();
     let mut running = true;
     let mut reconnect_count: u32 = 0;
 
-    // Store labels in subscriptions Arc for health reporting.
-    if let Ok(mut lock) = subscriptions.write() {
-        *lock = game_labels.clone();
+    // Initialize fixture_ids from subscriptions.
+    if let Ok(lock) = subscriptions.read() {
+        fixture_ids = lock.clone();
     }
 
     while running {
@@ -62,10 +49,10 @@ pub(crate) async fn run_boltodds_worker_async(
                     with_health(&health, |h| h.running = false);
                     return;
                 }
-                Ok(LiveWorkerCommand::SetCandidateSubscriptions(labels)) => {
-                    game_labels = labels;
+                Ok(LiveWorkerCommand::SetCandidateSubscriptions(next)) => {
+                    fixture_ids = next;
                     if let Ok(mut lock) = subscriptions.write() {
-                        *lock = game_labels.clone();
+                        *lock = fixture_ids.clone();
                     }
                 }
                 Err(flume::TryRecvError::Empty) => break,
@@ -77,7 +64,7 @@ pub(crate) async fn run_boltodds_worker_async(
         }
         let _ = apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
 
-        if game_labels.is_empty() {
+        if fixture_ids.is_empty() {
             with_health(&health, |h| {
                 h.running = true;
                 h.last_error.clear();
@@ -86,15 +73,13 @@ pub(crate) async fn run_boltodds_worker_async(
             continue;
         }
 
-        // --- Connect ---
-        let url = format!("{}?key={}", cfg.ws_url, cfg.api_key);
-        let (mut ws, _) = match connect_async_tls_with_config(url.as_str(), None, true, None).await
-        {
-            Ok(v) => v,
+        // --- Connect via Socket.IO ---
+        let mut conn = match kalstrop_v2_sio::connect(&cfg.base_url, &cfg.sio_path, &cfg.client_id, &cfg.shared_secret_raw).await {
+            Ok(c) => c,
             Err(e) => {
                 with_health(&health, |h| {
                     h.reconnects += 1;
-                    h.last_error = format!("boltodds_ws_connect:{}", e);
+                    h.last_error = e.clone();
                 });
                 let backoff_ms = std::cmp::min(2000u64 * (1u64 << reconnect_count.min(5)), 60_000);
                 tokio_sleep(Duration::from_millis(backoff_ms)).await;
@@ -103,51 +88,32 @@ pub(crate) async fn run_boltodds_worker_async(
             }
         };
 
-        // --- Handshake: wait for socket_connected ack ---
-        let handshake_ok = match tokio::time::timeout(Duration::from_secs(10), ws.next()).await {
-            Ok(Some(Ok(Message::Text(text)))) => {
-                // Expect the first frame to contain "socket_connected"
-                text.contains("socket_connected")
+        // --- Subscribe to all fixtures ---
+        let mut subscribe_ok = true;
+        for fid in &fixture_ids {
+            if let Err(e) = kalstrop_v2_sio::subscribe(&mut conn, fid, "", "10").await {
+                with_health(&health, |h| {
+                    h.reconnects += 1;
+                    h.last_error = e.clone();
+                });
+                subscribe_ok = false;
+                break;
             }
-            Ok(Some(Ok(Message::Binary(bytes)))) => std::str::from_utf8(bytes.as_ref())
-                .map(|s| s.contains("socket_connected"))
-                .unwrap_or(false),
-            _ => false,
-        };
-        if !handshake_ok {
-            with_health(&health, |h| {
-                h.reconnects += 1;
-                h.last_error = "boltodds_handshake_failed".to_string();
-            });
-            let _ = ws.close(None).await;
+        }
+        if !subscribe_ok {
             let backoff_ms = std::cmp::min(2000u64 * (1u64 << reconnect_count.min(5)), 60_000);
             tokio_sleep(Duration::from_millis(backoff_ms)).await;
             reconnect_count += 1;
             continue;
         }
 
-        // --- Subscribe ---
-        let sub_msg = boltodds_subscribe_payload(&game_labels);
-        if let Err(e) = ws.send(Message::Text(sub_msg.into())).await {
-            with_health(&health, |h| {
-                h.reconnects += 1;
-                h.last_error = format!("boltodds_subscribe_send:{}", e);
-            });
-            let backoff_ms = std::cmp::min(2000u64 * (1u64 << reconnect_count.min(5)), 60_000);
-            tokio_sleep(Duration::from_millis(backoff_ms)).await;
-            reconnect_count += 1;
-            continue;
-        }
-
-        // Successful handshake + subscribe — reset backoff.
         reconnect_count = 0;
-
         with_health(&health, |h| {
             h.running = true;
             h.last_error.clear();
         });
         if let Ok(mut g) = log.lock() {
-            g.log_ws_connect(&game_labels);
+            g.log_ws_connect(&fixture_ids);
         }
 
         // --- Event loop ---
@@ -160,14 +126,18 @@ pub(crate) async fn run_boltodds_worker_async(
                         running = false;
                         break 'event_loop;
                     }
-                    Ok(LiveWorkerCommand::SetCandidateSubscriptions(labels)) => {
-                        // Re-subscribe with new labels
-                        game_labels = labels.clone();
+                    Ok(LiveWorkerCommand::SetCandidateSubscriptions(next)) => {
+                        let new_ids: Vec<String> = next.iter()
+                            .filter(|id| !fixture_ids.contains(id))
+                            .cloned()
+                            .collect();
+                        fixture_ids = next;
                         if let Ok(mut lock) = subscriptions.write() {
-                            *lock = game_labels.clone();
+                            *lock = fixture_ids.clone();
                         }
-                        let msg = boltodds_subscribe_payload(&game_labels);
-                        let _ = ws.send(Message::Text(msg.into())).await;
+                        for fid in &new_ids {
+                            let _ = kalstrop_v2_sio::subscribe(&mut conn, fid, "", "10").await;
+                        }
                     }
                     Err(flume::TryRecvError::Empty) => break,
                     Err(flume::TryRecvError::Disconnected) => {
@@ -177,11 +147,10 @@ pub(crate) async fn run_boltodds_worker_async(
                 }
             }
 
-            // Apply patches
             let _ = apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
 
-            // Frame drain loop — collect pending logs, flush after drain.
-            let mut pending_logs = smallvec::SmallVec::<[BoltOddsPendingLog; 4]>::new();
+            // Frame drain loop
+            let mut pending_logs = smallvec::SmallVec::<[V2PendingLog; 4]>::new();
             let mut first_read = true;
             loop {
                 let wait = if first_read {
@@ -189,11 +158,11 @@ pub(crate) async fn run_boltodds_worker_async(
                 } else {
                     Duration::ZERO
                 };
-                let next = tokio::time::timeout(wait, ws.next()).await;
+                let next = tokio::time::timeout(wait, conn.ws.next()).await;
                 let msg = match next {
                     Err(_) => break, // timeout — go to housekeeping
                     Ok(None) => {
-                        reconn_reason = "boltodds_stream_closed".to_string();
+                        reconn_reason = "v2_sio_stream_closed".to_string();
                         with_health(&health, |h| {
                             h.reconnects += 1;
                             h.last_error = reconn_reason.clone();
@@ -201,7 +170,7 @@ pub(crate) async fn run_boltodds_worker_async(
                         break 'event_loop;
                     }
                     Ok(Some(Err(e))) => {
-                        reconn_reason = format!("boltodds_ws_read:{}", e);
+                        reconn_reason = format!("v2_sio_ws_read:{}", e);
                         with_health(&health, |h| {
                             h.reconnects += 1;
                             h.last_error = reconn_reason.clone();
@@ -212,48 +181,45 @@ pub(crate) async fn run_boltodds_worker_async(
                 };
                 first_read = false;
 
-                let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
-                match &msg {
-                    Message::Text(text) => {
+                let text = match &msg {
+                    Message::Text(t) => t.as_str(),
+                    Message::Binary(b) => match std::str::from_utf8(b.as_ref()) {
+                        Ok(s) => s,
+                        Err(_) => continue,
+                    },
+                    Message::Close(_) => {
+                        reconn_reason = "v2_sio_close_received".to_string();
+                        break 'event_loop;
+                    }
+                    _ => continue,
+                };
+
+                match kalstrop_v2_sio::classify_frame(text) {
+                    SioFrame::GeniusUpdate(payload) => {
+                        let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                         if let SportEngine::Soccer(ref mut e) = engine {
-                            if let Some(tl) = process_boltodds_frame_sync(
-                                e,
-                                text.as_ref(),
-                                source_recv_ns,
-                                &mut dispatch_handle,
-                                &log,
+                            if let Some(tl) = process_v2_frame_sync(
+                                e, payload, source_recv_ns, &mut dispatch_handle, &log,
                             ) {
                                 pending_logs.push(tl);
                             }
                         }
                     }
-                    Message::Binary(bytes) => {
-                        if let Ok(text) = std::str::from_utf8(bytes.as_ref()) {
-                            if let SportEngine::Soccer(ref mut e) = engine {
-                                if let Some(tl) = process_boltodds_frame_sync(
-                                    e,
-                                    text,
-                                    source_recv_ns,
-                                    &mut dispatch_handle,
-                                    &log,
-                                ) {
-                                    pending_logs.push(tl);
-                                }
-                            }
+                    SioFrame::Ping => {
+                        if let Err(e) = kalstrop_v2_sio::send_pong(&mut conn).await {
+                            reconn_reason = e;
+                            break 'event_loop;
                         }
                     }
-                    Message::Ping(p) => {
-                        let _ = ws.send(Message::Pong(p.clone())).await;
+                    SioFrame::Subscribed(_payload) => {
+                        // Initial state delivered on subscribe — logged but not processed
+                        // (engine will process subsequent genius_update frames)
                     }
-                    Message::Close(_) => {
-                        reconn_reason = "boltodds_close_received".to_string();
-                        break 'event_loop;
-                    }
-                    _ => {}
+                    SioFrame::ConnectAck | SioFrame::Other => {}
                 }
             }
 
-            // Flush deferred tick logs after drain (off the hot path).
+            // Flush deferred tick logs after drain
             if !pending_logs.is_empty() {
                 if let SportEngine::Soccer(ref e) = engine {
                     if let Ok(mut g) = log.lock() {
@@ -278,18 +244,13 @@ pub(crate) async fn run_boltodds_worker_async(
                 pending_logs.clear();
             }
 
-            // Flush log buffer
             if let Ok(mut g) = log.lock() {
                 g.flush();
             }
         }
 
         // Disconnected — log and reconnect
-        let reconnects = if let Ok(h) = health.lock() {
-            h.reconnects
-        } else {
-            0
-        };
+        let reconnects = if let Ok(h) = health.lock() { h.reconnects } else { 0 };
         if let Ok(mut g) = log.lock() {
             g.log_ws_disconnect(&reconn_reason, reconnects);
         }

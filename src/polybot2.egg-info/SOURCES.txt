@@ -45,6 +45,7 @@ src/polybot2/hotpath/native_engine.py
 src/polybot2/hotpath/native_service.py
 src/polybot2/hotpath/observe.py
 src/polybot2/hotpath/order_policy.py
+src/polybot2/hotpath/v2_resolver.py
 src/polybot2/linking/__init__.py
 src/polybot2/linking/actionable.py
 src/polybot2/linking/contracts.py
@@ -60,6 +61,7 @@ src/polybot2/sports/base.py
 src/polybot2/sports/boltodds.py
 src/polybot2/sports/contracts.py
 src/polybot2/sports/factory.py
+src/polybot2/sports/kalstrop_auth.py
 src/polybot2/sports/kalstrop_v1.py
 src/polybot2/sports/kalstrop_v2.py
 tests/test_polybot2_cli_smoke.py

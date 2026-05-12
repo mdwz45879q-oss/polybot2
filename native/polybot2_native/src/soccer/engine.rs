@@ -665,6 +665,7 @@ impl NativeSoccerEngine {
             .and_then(|v| v.as_array())
             .ok_or_else(|| "merge_plan_missing_games".to_string())?;
 
+        let mut new_game_count = 0usize;
         let mut new_token_count = 0usize;
         let mut new_target_count = 0usize;
         let mut dirty_games: HashSet<usize> = HashSet::new();
@@ -678,8 +679,38 @@ impl NativeSoccerEngine {
             if uid.is_empty() {
                 continue;
             }
-            let Some(&gidx) = self.game_id_to_idx.get(uid) else {
-                continue;
+            let gidx = match self.game_id_to_idx.get(uid) {
+                Some(&idx) => idx,
+                None => {
+                    if self.game_ids.len() >= u16::MAX as usize {
+                        eprintln!("[polybot2] WARN: merge_plan game overflow u16_max, skipping {}", uid);
+                        continue;
+                    }
+                    let idx = GameIdx(self.game_ids.len() as u16);
+                    let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
+                    self.game_id_to_idx.insert(uid.to_string(), idx);
+                    self.game_ids.push(uid.to_string());
+                    self.kickoff_ts.push(kickoff);
+                    self.game_targets.push(SoccerGameTargets::default());
+                    self.has_totals.push(false);
+                    self.has_moneyline.push(false);
+                    self.has_btts.push(false);
+                    self.has_corners.push(false);
+                    self.has_halftime.push(false);
+                    self.has_exact_score.push(false);
+                    self.token_ids_by_game.push(Vec::new());
+                    self.rows.push(None);
+                    self.game_states.push(SoccerGameState::default());
+                    self.totals_final_under_emitted.push(false);
+                    self.final_resolved_games.push(false);
+                    self.btts_resolved_games.push(false);
+                    self.corners_final_under_emitted.push(false);
+                    self.halftime_resolved.push(false);
+                    self.exact_score_resolved.push(false);
+                    self.boltodds_rows.push(None);
+                    new_game_count += 1;
+                    idx
+                }
             };
             let gi = gidx.0 as usize;
 
@@ -969,6 +1000,7 @@ impl NativeSoccerEngine {
         }
 
         Ok(MergePlanResult {
+            new_games: new_game_count,
             new_tokens: new_token_count,
             new_targets: new_target_count,
         })
@@ -1538,5 +1570,65 @@ mod tests {
             Some(false),
         );
         assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn merge_plan_adds_new_game() {
+        let mut engine = NativeSoccerEngine::new();
+        let initial = plan_json_one_game(
+            "game_1",
+            &format!(
+                r#"{{"sports_market_type":"btts","line":null,"targets":[{},{}]}}"#,
+                target_json("t1", "yes", "g1:BTTS:YES"),
+                target_json("t2", "no", "g1:BTTS:NO"),
+            ),
+        );
+        engine.load_plan_from_json(&initial).unwrap();
+        assert_eq!(engine.game_ids.len(), 1);
+
+        let patch = plan_json_one_game(
+            "game_2",
+            &format!(
+                r#"{{"sports_market_type":"btts","line":null,"targets":[{},{}]}}"#,
+                target_json("t3", "yes", "g2:BTTS:YES"),
+                target_json("t4", "no", "g2:BTTS:NO"),
+            ),
+        );
+        let result = engine.merge_plan(&patch).unwrap();
+        assert_eq!(result.new_games, 1);
+        assert_eq!(result.new_targets, 2);
+        assert_eq!(result.new_tokens, 2);
+        assert_eq!(engine.game_ids.len(), 2);
+        assert!(engine.game_id_to_idx.contains_key("game_2"));
+        assert!(engine.has_btts[1]);
+    }
+
+    #[test]
+    fn merge_plan_mix_existing_and_new_games() {
+        let mut engine = NativeSoccerEngine::new();
+        let initial = plan_json_one_game(
+            "game_1",
+            &format!(
+                r#"{{"sports_market_type":"btts","line":null,"targets":[{},{}]}}"#,
+                target_json("t1", "yes", "g1:BTTS:YES"),
+                target_json("t2", "no", "g1:BTTS:NO"),
+            ),
+        );
+        engine.load_plan_from_json(&initial).unwrap();
+
+        let patch = format!(
+            r#"{{"games":[{{"provider_game_id":"game_1","kickoff_ts_utc":null,"markets":[{{"sports_market_type":"totals","line":5.5,"targets":[{},{}]}}]}},{{"provider_game_id":"game_new","kickoff_ts_utc":1700000000,"markets":[{{"sports_market_type":"moneyline","line":null,"targets":[{},{},{}]}}]}}]}}"#,
+            target_json("t5", "over", "g1:TOTAL:OVER:5.5"),
+            target_json("t6", "under", "g1:TOTAL:UNDER:5.5"),
+            target_json("t7", "home_yes", "gn:MONEYLINE:HOME_YES"),
+            target_json("t8", "away_yes", "gn:MONEYLINE:AWAY_YES"),
+            target_json("t9", "draw_yes", "gn:MONEYLINE:DRAW_YES"),
+        );
+        let result = engine.merge_plan(&patch).unwrap();
+        assert_eq!(result.new_games, 1);
+        assert_eq!(result.new_targets, 5);
+        assert_eq!(engine.game_ids.len(), 2);
+        assert!(engine.has_totals[0]);
+        assert!(engine.has_moneyline[1]);
     }
 }

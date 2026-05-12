@@ -121,7 +121,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     Refresh loop (no restart): targeted Gamma API fetch for known
     event IDs → diff → hot-patch new targets into the running engine.
     """
-    from polybot2.hotpath.incremental import discover_new_markets_sync
+    from pathlib import Path
+    from polybot2.hotpath.incremental import discover_new_markets_sync, IncrementalRefreshResult
+    from polybot2.hotpath.v2_resolver import (
+        build_pending_games, try_resolve_games, compile_for_resolved_game,
+        resolution_time_delta_seconds,
+    )
     from polybot2.linking import load_mapping as _load_mapping
 
     _load_dotenv(logger)
@@ -166,19 +171,13 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     prev_term = signal.signal(signal.SIGTERM, _handle_signal)
     iteration = 0
 
+    is_v2_league = (provider_name == "kalstrop_v2")
+    resolved_prematch_ids: set[str] = set()
+    rust_started = False
     hotpath: _NativeHotPathService | None = None
     try:
-        # --- Compile plan and start hotpath ---
+        # --- Build provider + execution + hotpath service (shared by V2 and non-V2) ---
         with open_database(runtime) as db:
-            compiled_plan = compile_hotpath_plan(
-                db=db,
-                provider=provider_name,
-                league=league_key,
-                run_id=run_id,
-                live_policy=live_policy,
-                now_ts_utc=int(time.time()),
-                plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
-            )
             resolver = BindingResolver(db=db)
             resolver.reload()
 
@@ -206,77 +205,196 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             execution_mode=execution_mode, config=hp_cfg,
             binding_resolver=resolver,
         )
-        hotpath.set_compiled_plan(compiled_plan)
         hotpath.set_order_policy(order_policy)
 
-        plan_uids = [
-            str(g.provider_game_id) for g in tuple(compiled_plan.games)
-            if str(g.provider_game_id or "").strip()
-        ]
-        env_uids = [
-            x.strip()
-            for x in str(os.getenv("POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS") or "").split(",")
-            if x.strip()
-        ]
-        wanted = _apply_env_uid_filter(uids=sorted(set(plan_uids)), env_uids=env_uids)
-
-        if hasattr(hotpath, "set_runtime_timing_policy"):
-            hotpath.set_runtime_timing_policy(
-                subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
-                subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
+        if is_v2_league:
+            logger.info(
+                "V2 league %s: waiting for game(s) to go live before starting hotpath (run_id=%d, refresh=%ds)",
+                league_key, run_id, refresh_interval,
             )
-        hotpath.set_subscriptions(wanted)
+        else:
+            # --- Non-V2: compile plan and start immediately ---
+            with open_database(runtime) as db:
+                compiled_plan = compile_hotpath_plan(
+                    db=db,
+                    provider=provider_name,
+                    league=league_key,
+                    run_id=run_id,
+                    live_policy=live_policy,
+                    now_ts_utc=int(time.time()),
+                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                )
+            hotpath.set_compiled_plan(compiled_plan)
 
-        template_orders = _build_hotpath_template_orders(
-            compiled_plan=compiled_plan, order_policy=order_policy,
-        )
-        if template_orders and hasattr(hotpath, "prewarm_presign"):
-            hotpath.prewarm_presign(template_orders)
+            plan_uids = [
+                str(g.provider_game_id) for g in tuple(compiled_plan.games)
+                if str(g.provider_game_id or "").strip()
+            ]
+            env_uids = [
+                x.strip()
+                for x in str(os.getenv("POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS") or "").split(",")
+                if x.strip()
+            ]
+            wanted = _apply_env_uid_filter(uids=sorted(set(plan_uids)), env_uids=env_uids)
 
-        n_targets = sum(len(m.targets) for g in compiled_plan.games for m in g.markets)
-        logger.info(
-            "hotpath starting: run_id=%d games=%d targets=%d subs=%d refresh=%ds",
-            run_id, len(compiled_plan.games), n_targets, len(wanted), refresh_interval,
-        )
-        hotpath.start()
+            if hasattr(hotpath, "set_runtime_timing_policy"):
+                hotpath.set_runtime_timing_policy(
+                    subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
+                    subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
+                )
+            hotpath.set_subscriptions(wanted)
 
-        # --- Incremental refresh loop ---
+            template_orders = _build_hotpath_template_orders(
+                compiled_plan=compiled_plan, order_policy=order_policy,
+            )
+            if template_orders and hasattr(hotpath, "prewarm_presign"):
+                hotpath.prewarm_presign(template_orders)
+
+            n_targets = sum(len(m.targets) for g in compiled_plan.games for m in g.markets)
+            logger.info(
+                "hotpath starting: run_id=%d games=%d targets=%d subs=%d refresh=%ds",
+                run_id, len(compiled_plan.games), n_targets, len(wanted), refresh_interval,
+            )
+            hotpath.start()
+            rust_started = True
+
+        # --- V2 credentials (loaded once) ---
+        v2_client_id = ""
+        v2_shared_secret_raw = ""
+        if is_v2_league:
+            from polybot2.sports.factory import resolve_kalstrop_credentials_from_env
+            v2_client_id, v2_shared_secret_raw, _ = resolve_kalstrop_credentials_from_env()
+
+        # --- Main loop (1s ticks, independent timers for V2 resolution + market refresh) ---
+        v2_resolve_interval = 30
+        market_refresh_interval = refresh_interval
+        last_v2_check = 0.0
+        last_market_refresh = 0.0
+
         while not stop_requested:
-            for _ in range(refresh_interval):
-                if stop_requested:
-                    break
-                time.sleep(1.0)
+            time.sleep(1.0)
             if stop_requested:
                 break
+            now = time.time()
 
-            iteration += 1
-            try:
-                with open_database(runtime) as db:
-                    result = discover_new_markets_sync(
-                        current_plan=hotpath._compiled_plan,
-                        db=db,
-                        live_policy=live_policy,
-                        plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+            # --- V2 resolution step (every v2_resolve_interval, only for due games) ---
+            if is_v2_league and (now - last_v2_check) >= v2_resolve_interval:
+                last_v2_check = now
+                try:
+                    with open_database(runtime) as db:
+                        pending = build_pending_games(
+                            db=db, league=league_key, run_id=run_id,
+                            provider=provider_name, already_resolved=resolved_prematch_ids,
+                        )
+                    due = [g for g in pending if g.start_ts_utc is not None and g.start_ts_utc <= int(now)]
+                    if due:
+                        resolution = try_resolve_games(
+                            due, client_id=v2_client_id, shared_secret_raw=v2_shared_secret_raw,
+                        )
+                        for fg in resolution.finished:
+                            resolved_prematch_ids.add(fg.prematch_event_id)
+                            logger.info(
+                                "V2 game finished: %s (%s vs %s) — skipping",
+                                fg.prematch_event_id, fg.home_raw, fg.away_raw,
+                            )
+                        for resolved in resolution.resolved:
+                            resolved_prematch_ids.add(resolved.pending.prematch_event_id)
+                            delta_s = resolution_time_delta_seconds(resolved)
+                            logger.info(
+                                "V2 resolved: %s → fixture_id=%s (%s vs %s, status=%s, time_delta=%ds)",
+                                resolved.pending.prematch_event_id, resolved.fixture_id,
+                                resolved.resolved_home, resolved.resolved_away,
+                                resolved.match_status, delta_s,
+                            )
+                            with open_database(runtime) as db:
+                                game_plan = compile_for_resolved_game(
+                                    resolved=resolved, db=db, run_id=run_id,
+                                    provider=provider_name, league=league_key,
+                                    live_policy=live_policy,
+                                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                                )
+                            if game_plan is None:
+                                logger.warning("V2 resolved %s but no targets compiled", resolved.fixture_id)
+                                continue
+                            n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
+                            if not rust_started:
+                                hotpath.set_compiled_plan(game_plan)
+                                hotpath.set_subscriptions([resolved.fixture_id])
+                                if hasattr(hotpath, "set_runtime_timing_policy"):
+                                    hotpath.set_runtime_timing_policy(
+                                        subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
+                                        subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
+                                    )
+                                template_orders = _build_hotpath_template_orders(
+                                    compiled_plan=game_plan, order_policy=order_policy,
+                                )
+                                if template_orders and hasattr(hotpath, "prewarm_presign"):
+                                    hotpath.prewarm_presign(template_orders)
+                                logger.info(
+                                    "hotpath starting (V2 first game): run_id=%d targets=%d fixture_id=%s",
+                                    run_id, n_tgt, resolved.fixture_id,
+                                )
+                                hotpath.start()
+                                rust_started = True
+                            else:
+                                new_targets = tuple(
+                                    t for g in game_plan.games for m in g.markets for t in m.targets
+                                )
+                                refresh_result = IncrementalRefreshResult(
+                                    new_plan=game_plan,
+                                    new_targets=new_targets,
+                                    new_condition_ids=frozenset(
+                                        m.condition_id for g in game_plan.games for m in g.markets
+                                    ),
+                                    events_fetched=0,
+                                    markets_discovered=len(new_targets),
+                                    targets_inserted=len(new_targets),
+                                )
+                                count = hotpath.apply_incremental_refresh(refresh_result, order_policy)
+                                logger.info(
+                                    "V2 game patched: fixture_id=%s targets=%d presigned=%d",
+                                    resolved.fixture_id, n_tgt, count,
+                                )
+                    elif pending and not rust_started:
+                        due_times = [g.start_ts_utc for g in pending if g.start_ts_utc is not None]
+                        if due_times:
+                            next_kickoff = min(due_times)
+                            wait_min = max(0, (next_kickoff - int(now)) // 60)
+                            logger.info("V2: next game in ~%d min, %d game(s) pending", wait_min, len(pending))
+                except Exception as exc:
+                    logger.warning("V2 resolution failed (continuing): %s: %s", type(exc).__name__, exc)
+
+            # --- Incremental market refresh (every market_refresh_interval, only if Rust running) ---
+            if rust_started and (now - last_market_refresh) >= market_refresh_interval:
+                last_market_refresh = now
+                iteration += 1
+                try:
+                    with open_database(runtime) as db:
+                        result = discover_new_markets_sync(
+                            current_plan=hotpath._compiled_plan,
+                            db=db,
+                            live_policy=live_policy,
+                            plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                        )
+                except Exception as exc:
+                    logger.warning("incremental refresh failed (continuing): %s: %s", type(exc).__name__, exc)
+                    continue
+
+                if result.new_targets:
+                    count = hotpath.apply_incremental_refresh(result, order_policy)
+                    logger.info(
+                        "hot-patch applied: cycle=%d new_markets=%d new_targets=%d presigned=%d",
+                        iteration, result.markets_discovered, len(result.new_targets), count,
                     )
-            except Exception as exc:
-                logger.warning("incremental refresh failed (continuing): %s: %s", type(exc).__name__, exc)
-                continue
-
-            if result.new_targets:
-                count = hotpath.apply_incremental_refresh(result, order_policy)
-                logger.info(
-                    "hot-patch applied: cycle=%d new_markets=%d new_targets=%d presigned=%d",
-                    iteration, result.markets_discovered, len(result.new_targets), count,
-                )
-                if result.new_plan:
-                    seen_cids: set[str] = set()
-                    for game in result.new_plan.games:
-                        for market in game.markets:
-                            if market.condition_id in result.new_condition_ids and market.condition_id not in seen_cids:
-                                seen_cids.add(market.condition_id)
-                                logger.info("  + %s", market.question)
-            else:
-                logger.info("incremental refresh cycle=%d: no new markets (events_fetched=%d)", iteration, result.events_fetched)
+                    if result.new_plan:
+                        seen_cids: set[str] = set()
+                        for game in result.new_plan.games:
+                            for market in game.markets:
+                                if market.condition_id in result.new_condition_ids and market.condition_id not in seen_cids:
+                                    seen_cids.add(market.condition_id)
+                                    logger.info("  + %s", market.question)
+                else:
+                    logger.info("incremental refresh cycle=%d: no new markets (events_fetched=%d)", iteration, result.events_fetched)
 
     except HotPathPlanError as exc:
         logger.error("plan compile failed: code=%s message=%s", exc.code, exc)
