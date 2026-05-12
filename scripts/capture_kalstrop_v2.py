@@ -214,8 +214,9 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
         print(f"  [v2] error: {data}")
 
     try:
-        sio.connect(V2_BASE, socketio_path=V2_SIO_PATH, transports=["websocket"],
-                    headers=v2_auth_headers())
+        from urllib.parse import urlencode as _ue
+        _sio_qs = _ue({"product": "genius-stats", **v2_auth_headers()})
+        sio.connect(f"{V2_BASE}?{_sio_qs}", socketio_path=V2_SIO_PATH, transports=["websocket"])
         while not stop_flag[0]:
             sio.sleep(1)
     except Exception as e:
