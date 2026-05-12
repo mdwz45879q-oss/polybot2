@@ -166,8 +166,8 @@ pub(crate) async fn warm_presign_startup_into(
     let total_timeout_s = base_s + per_key_s * key_work.len() as f64;
     let timeout = Duration::from_secs_f64(total_timeout_s);
 
-    const BATCH_SIZE: usize = 10;
-    const BATCH_DELAY_MS: u64 = 200;
+    const BATCH_SIZE: usize = 5;
+    const BATCH_DELAY_MS: u64 = 500;
 
     let deadline = tokio::time::Instant::now() + timeout;
 
