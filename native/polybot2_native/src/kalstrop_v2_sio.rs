@@ -106,7 +106,7 @@ pub(crate) async fn subscribe(
         "sportId": sport_id,
         "competitionId": competition_id,
     });
-    let payload = format!("42[\"genius_subscribe\",{}]", params);
+    let payload = format!("42[\"subscribe\",{}]", params);
     conn.ws
         .send(Message::Text(payload))
         .await
@@ -121,7 +121,7 @@ pub(crate) async fn unsubscribe(
         "fixtureId": fixture_id,
         "activeContent": "court",
     });
-    let payload = format!("42[\"genius_unsubscribe\",{}]", params);
+    let payload = format!("42[\"unsubscribe\",{}]", params);
     conn.ws
         .send(Message::Text(payload))
         .await
