@@ -185,7 +185,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
             "sportId": provider.get("sport_id"),
             "competitionId": provider.get("competition_id"),
         }
-        sio.emit("subscribe", params)
+        sio.emit("genius_subscribe", params)
         print(f"  [v2] subscribed to fixture_id={fixture_id}")
 
     @sio.on("subscribed")
@@ -223,7 +223,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
         print(f"  [v2] {type(e).__name__}: {e}")
     finally:
         try:
-            sio.emit("unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
+            sio.emit("genius_unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
             sio.disconnect()
         except Exception:
             pass
