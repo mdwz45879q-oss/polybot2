@@ -108,7 +108,9 @@ fn find_key_integer(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) 
 pub(crate) fn fast_extract_v2(frame: &str) -> Option<V2Extract<'_>> {
     let bytes = frame.as_bytes();
 
-    if find_with(&FINDER_GENIUS_UPDATE, bytes, 0).is_none() {
+    // When called from the frame pipeline, the genius_update wrapper is already
+    // stripped by classify_frame — only check for the fixture_id key instead.
+    if find_with(&FINDER_FIXTURE_ID, bytes, 0).is_none() {
         return None;
     }
 
@@ -159,9 +161,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_genius_update() {
-        let frame = r#"42["genius_update",{"data":{"betGeniusFixtureId":"12483313","scoreboardInfo":{"matchStatus":"InPlay","currentPhase":"FirstHalf","awayScore":0,"homeScore":0},"matchInfo":{},"court":{}},"sport":"Football"}]"#;
-        let result = fast_extract_v2(frame).unwrap();
+    fn test_extract_stripped_payload() {
+        // This is how process_v2_frame_sync calls it — payload after classify_frame strips the event wrapper
+        let payload = r#"{"data":{"betGeniusFixtureId":"12483313","scoreboardInfo":{"matchStatus":"InPlay","currentPhase":"FirstHalf","awayScore":0,"homeScore":0},"matchInfo":{},"court":{}},"sport":"Football"}"#;
+        let result = fast_extract_v2(payload).unwrap();
         assert_eq!(result.fixture_id, "12483313");
         assert_eq!(result.home_score, 0);
         assert_eq!(result.away_score, 0);
@@ -169,9 +172,17 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_score_change() {
-        let frame = r#"42["genius_update",{"data":{"betGeniusFixtureId":"99999","scoreboardInfo":{"currentPhase":"SecondHalf","awayScore":1,"homeScore":2}}}]"#;
+    fn test_extract_full_frame() {
+        // Also works with the full 42[...] wrapper (e.g. if called on raw frame)
+        let frame = r#"42["genius_update",{"data":{"betGeniusFixtureId":"12483313","scoreboardInfo":{"matchStatus":"InPlay","currentPhase":"FirstHalf","awayScore":0,"homeScore":0},"matchInfo":{},"court":{}},"sport":"Football"}]"#;
         let result = fast_extract_v2(frame).unwrap();
+        assert_eq!(result.fixture_id, "12483313");
+    }
+
+    #[test]
+    fn test_extract_score_change() {
+        let payload = r#"{"data":{"betGeniusFixtureId":"99999","scoreboardInfo":{"currentPhase":"SecondHalf","awayScore":1,"homeScore":2}}}"#;
+        let result = fast_extract_v2(payload).unwrap();
         assert_eq!(result.fixture_id, "99999");
         assert_eq!(result.home_score, 2);
         assert_eq!(result.away_score, 1);
@@ -180,15 +191,15 @@ mod tests {
 
     #[test]
     fn test_extract_halftime() {
-        let frame = r#"42["genius_update",{"data":{"betGeniusFixtureId":"123","scoreboardInfo":{"currentPhase":"HalfTime","awayScore":0,"homeScore":1}}}]"#;
-        let result = fast_extract_v2(frame).unwrap();
+        let payload = r#"{"data":{"betGeniusFixtureId":"123","scoreboardInfo":{"currentPhase":"HalfTime","awayScore":0,"homeScore":1}}}"#;
+        let result = fast_extract_v2(payload).unwrap();
         assert_eq!(result.current_phase, "HalfTime");
     }
 
     #[test]
     fn test_extract_fulltime() {
-        let frame = r#"42["genius_update",{"data":{"betGeniusFixtureId":"123","scoreboardInfo":{"currentPhase":"PostMatch","awayScore":2,"homeScore":3}}}]"#;
-        let result = fast_extract_v2(frame).unwrap();
+        let payload = r#"{"data":{"betGeniusFixtureId":"123","scoreboardInfo":{"currentPhase":"PostMatch","awayScore":2,"homeScore":3}}}"#;
+        let result = fast_extract_v2(payload).unwrap();
         assert_eq!(result.current_phase, "PostMatch");
         assert_eq!(result.home_score, 3);
         assert_eq!(result.away_score, 2);
@@ -197,8 +208,8 @@ mod tests {
     #[test]
     fn test_reject_non_update() {
         assert!(fast_extract_v2("2").is_none());
-        assert!(fast_extract_v2(r#"40{"sid":"abc"}"#).is_none());
-        assert!(fast_extract_v2(r#"42["subscribed",{"status":"success"}]"#).is_none());
+        assert!(fast_extract_v2(r#"{"sid":"abc"}"#).is_none());
+        assert!(fast_extract_v2(r#"{"status":"success"}"#).is_none());
     }
 
     #[test]

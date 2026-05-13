@@ -58,6 +58,10 @@ class KalstropV2Provider(SportsDataProviderBase):
         self._cfg = config
         self._catalog_by_uid: dict[str, ProviderGameRecord] = {}
 
+    @property
+    def config(self) -> KalstropV2ProviderConfig:
+        return self._cfg
+
     def _auth_headers(self) -> dict[str, str]:
         from polybot2.sports.kalstrop_auth import kalstrop_auth_headers
         if not self._cfg.client_id or not self._cfg.shared_secret_raw:
