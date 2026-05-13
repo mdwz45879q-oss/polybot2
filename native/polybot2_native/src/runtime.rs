@@ -15,7 +15,7 @@ fn detect_league_from_plan(plan_json: &str) -> &'static str {
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(plan_json) {
         if let Some(league) = val.get("league").and_then(|v| v.as_str()) {
             return match league {
-                "epl" | "ucl" | "bundesliga" | "la_liga" => "soccer",
+                "epl" | "ucl" | "bundesliga" | "laliga" | "la_liga" | "ligue1" | "serie_a" => "soccer",
                 _ => "baseball",
             };
         }
