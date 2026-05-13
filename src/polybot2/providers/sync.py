@@ -103,7 +103,7 @@ def sync_provider_games(
     # Normalize legacy "kalstrop" to "kalstrop_v1"
     if p == "kalstrop":
         p = "kalstrop_v1"
-    if p not in {"boltodds", "kalstrop_v1", "kalstrop_v2"}:
+    if p not in {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"}:
         return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="unsupported_provider")
 
     client: Any
@@ -129,6 +129,16 @@ def sync_provider_games(
                 catalog_fixture_first=10,
             )
         )
+    elif p == "kalstrop_opta":
+        from polybot2.sports.kalstrop_opta import KalstropOptaProvider, KalstropOptaProviderConfig
+        opta_client_id, opta_secret, _opta_source = resolve_kalstrop_credentials_from_env()
+        if not opta_client_id or not opta_secret:
+            return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_kalstrop_credentials")
+        client = KalstropOptaProvider(config=KalstropOptaProviderConfig(
+            client_id=opta_client_id,
+            shared_secret_raw=opta_secret,
+            catalog_sport_slugs=("football", "baseball"),
+        ))
     else:
         from polybot2.sports.kalstrop_v2 import KalstropV2Provider, KalstropV2ProviderConfig
         v2_client_id, v2_secret, _v2_source = resolve_kalstrop_credentials_from_env()

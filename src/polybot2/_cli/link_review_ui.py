@@ -29,8 +29,8 @@ try:  # optional dependency in local env
 except Exception:  # pragma: no cover - fallback if rich is absent
     _RICH_AVAILABLE = False
 
-_PROVIDER_TIMEZONE = {"boltodds": "ET", "kalstrop_v1": "UTC", "kalstrop_v2": "UTC"}
-_PROVIDER_ID_LABEL = {"boltodds": "universal_id", "kalstrop_v1": "fixture_id", "kalstrop_v2": "event_id"}
+_PROVIDER_TIMEZONE = {"boltodds": "ET", "kalstrop_v1": "UTC", "kalstrop_v2": "UTC", "kalstrop_opta": "UTC"}
+_PROVIDER_ID_LABEL = {"boltodds": "universal_id", "kalstrop_v1": "fixture_id", "kalstrop_v2": "event_id", "kalstrop_opta": "event_id"}
 
 
 def _resolution_style(state: str) -> str:

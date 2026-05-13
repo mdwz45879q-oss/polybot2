@@ -71,6 +71,9 @@ def run_provider_sync(args: Any, *, logger: logging.Logger) -> int:
             for cfg in mapping.leagues.values()
             if str(cfg.get("provider", "")).strip()
         })
+        # Always include kalstrop_opta for catalog coverage (capture planning, comparison)
+        if "kalstrop_opta" not in providers:
+            providers = sorted(set(providers) | {"kalstrop_opta"})
         if not providers:
             logger.error("no providers configured in LEAGUES")
             return 1

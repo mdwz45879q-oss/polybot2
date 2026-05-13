@@ -66,6 +66,20 @@ def build_sports_provider(
             ),
         )
 
+    if p == "kalstrop_opta":
+        from polybot2.sports.kalstrop_opta import KalstropOptaProvider, KalstropOptaProviderConfig
+        client_id, shared_secret_raw, source = resolve_kalstrop_credentials_from_env()
+        if not client_id or not shared_secret_raw:
+            raise ValueError("missing_kalstrop_credentials_for_opta")
+        if logger is not None:
+            logger.info("Kalstrop Opta credentials source=%s", source)
+        return KalstropOptaProvider(
+            config=KalstropOptaProviderConfig(
+                client_id=client_id,
+                shared_secret_raw=shared_secret_raw,
+            ),
+        )
+
     raise ValueError(f"unsupported_provider:{p}")
 
 

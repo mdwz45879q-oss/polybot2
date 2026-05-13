@@ -77,6 +77,8 @@ pub(crate) struct SoccerGameState {
     pub(crate) away: Option<i64>,
     pub(crate) total: Option<i64>,
     pub(crate) prev_total: Option<i64>,
+    pub(crate) prev_home: Option<i64>,
+    pub(crate) prev_away: Option<i64>,
     pub(crate) half: &'static str,
     pub(crate) match_completed: Option<bool>,
     pub(crate) game_state: &'static str,

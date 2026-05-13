@@ -1,16 +1,18 @@
-"""Kalstrop V2 (BetGenius) provider — catalog discovery via REST.
+"""Kalstrop Opta provider — catalog discovery via REST.
 
-V2 covers top-tier soccer leagues (EPL, La Liga, Bundesliga, UCL, etc.).
-Live streaming (Socket.IO) is not yet implemented.
+Opta covers football (EPL, La Liga, Bundesliga, UCL, Serie A, Ligue 1, etc.)
+and baseball (MLB, NPB, KBO). Same HMAC auth as Genius (V2).
 
-Catalog discovery follows the V2 API hierarchy:
+Catalog discovery follows the Opta API hierarchy:
   Step 1: GET /sports → sport slugs
-  Step 2: GET /sports/{sport}/competitions → categories + tournaments
-  Step 3: GET /sports/{sport}/competitions/{category}/{tournament}/fixtures → fixtures
+  Step 2: GET /sports/{sport}/competitions → categories + tournaments (numeric IDs)
+  Step 3: GET /sports/{sport}/competitions/{category_id}/{tournament_id}/fixtures → fixtures
 """
 
 from __future__ import annotations
 
+import logging
+import time as _time
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
@@ -20,17 +22,17 @@ from polybot2.sports.base import SportsDataProviderBase
 from polybot2.sports.contracts import ProviderGameRecord, SportsProviderConfig
 
 
-class KalstropV2SyncError(Exception):
-    """Raised when V2 catalog discovery fails at the root level."""
+class KalstropOptaSyncError(Exception):
+    """Raised when Opta catalog discovery fails at the root level."""
 
 
-class KalstropV2ProviderConfig:
+class KalstropOptaProviderConfig:
 
     def __init__(
         self,
         *,
-        api_base: str = "https://stats.kalstropservice.com/api/v2/genius",
-        catalog_sport_slugs: Sequence[str] = ("football",),
+        api_base: str = "https://stats.kalstropservice.com/api/v2/opta",
+        catalog_sport_slugs: Sequence[str] = ("football", "baseball"),
         request_timeout_seconds: float = 15.0,
         client_id: str = "",
         shared_secret_raw: str = "",
@@ -42,16 +44,16 @@ class KalstropV2ProviderConfig:
         self.shared_secret_raw = str(shared_secret_raw).strip()
 
 
-class KalstropV2Provider(SportsDataProviderBase):
-    """Kalstrop V2 provider — catalog via REST with HMAC auth."""
+class KalstropOptaProvider(SportsDataProviderBase):
+    """Kalstrop Opta provider — catalog via REST with HMAC auth."""
 
     def __init__(
         self,
-        config: KalstropV2ProviderConfig,
+        config: KalstropOptaProviderConfig,
     ):
         super().__init__(
             config=SportsProviderConfig(
-                provider_name="kalstrop_v2",
+                provider_name="kalstrop_opta",
                 request_timeout_seconds=float(config.request_timeout_seconds),
             ),
         )
@@ -68,11 +70,11 @@ class KalstropV2Provider(SportsDataProviderBase):
         records: list[ProviderGameRecord] = []
         for sport_slug in self._cfg.catalog_sport_slugs:
             tournaments = self._discover_tournaments(sport_slug)
-            for category_name, category_slug, tournament_name, tournament_slug in tournaments:
-                fixtures = self._fetch_fixtures(sport_slug, category_slug, tournament_slug)
+            for cat_name, cat_id, tourn_name, tourn_id in tournaments:
+                fixtures = self._fetch_fixtures(sport_slug, cat_id, tourn_id)
                 for fixture in fixtures:
                     rec = self._parse_fixture(
-                        fixture, sport_slug, category_name, category_slug, tournament_name, tournament_slug,
+                        fixture, sport_slug, cat_name, cat_id, tourn_name, tourn_id,
                     )
                     if rec is not None:
                         records.append(rec)
@@ -100,15 +102,16 @@ class KalstropV2Provider(SportsDataProviderBase):
     def _discover_tournaments(
         self, sport_slug: str,
     ) -> list[tuple[str, str, str, str]]:
+        """Returns [(cat_name, cat_id, tourn_name, tourn_id), ...]."""
         url = f"{self._cfg.api_base}/sports/{sport_slug}/competitions"
         resp = self._client.get(url, headers=self._auth_headers())
         if resp.status_code != 200:
-            raise KalstropV2SyncError(
+            raise KalstropOptaSyncError(
                 f"competitions fetch failed: HTTP {resp.status_code} for {url}"
             )
         data = resp.json()
         if not isinstance(data, dict):
-            raise KalstropV2SyncError(
+            raise KalstropOptaSyncError(
                 f"competitions fetch returned non-dict for {url}"
             )
 
@@ -118,8 +121,8 @@ class KalstropV2Provider(SportsDataProviderBase):
                 continue
             category = comp.get("category", {})
             cat_name = str(category.get("name") or "").strip()
-            cat_slug = str(category.get("slug") or "").strip()
-            if not cat_slug:
+            cat_id = str(category.get("id") or "").strip()
+            if not cat_id:
                 continue
             for tourn in comp.get("tournaments", []):
                 if not isinstance(tourn, dict):
@@ -131,20 +134,19 @@ class KalstropV2Provider(SportsDataProviderBase):
                 if match_count <= 0:
                     continue
                 t_name = str(tourn.get("name") or "").strip()
-                t_slug = str(tourn.get("slug") or "").strip()
-                if not t_slug:
+                t_id = str(tourn.get("id") or "").strip()
+                if not t_id:
                     continue
-                result.append((cat_name, cat_slug, t_name, t_slug))
+                result.append((cat_name, cat_id, t_name, t_id))
         return result
 
     def _fetch_fixtures(
-        self, sport_slug: str, category_slug: str, tournament_slug: str,
+        self, sport_slug: str, category_id: str, tournament_id: str,
     ) -> list[dict[str, Any]]:
         url = (
             f"{self._cfg.api_base}/sports/{sport_slug}"
-            f"/competitions/{category_slug}/{tournament_slug}/fixtures"
+            f"/competitions/{category_id}/{tournament_id}/fixtures"
         )
-        import time as _time
         for attempt in range(3):
             try:
                 resp = self._client.get(url, headers=self._auth_headers())
@@ -152,9 +154,8 @@ class KalstropV2Provider(SportsDataProviderBase):
                 if attempt < 2:
                     _time.sleep(0.5 * (attempt + 1))
                     continue
-                import logging
                 logging.getLogger(__name__).warning(
-                    "V2 fixture fetch failed for %s/%s: %s", category_slug, tournament_slug, exc,
+                    "Opta fixture fetch failed for %s/%s: %s", category_id, tournament_id, exc,
                 )
                 return []
             if resp.status_code == 200:
@@ -163,9 +164,8 @@ class KalstropV2Provider(SportsDataProviderBase):
             if resp.status_code >= 500 and attempt < 2:
                 _time.sleep(0.5 * (attempt + 1))
                 continue
-            import logging
             logging.getLogger(__name__).warning(
-                "V2 fixture fetch HTTP %d for %s/%s", resp.status_code, category_slug, tournament_slug,
+                "Opta fixture fetch HTTP %d for %s/%s", resp.status_code, category_id, tournament_id,
             )
             return []
         return []
@@ -174,27 +174,30 @@ class KalstropV2Provider(SportsDataProviderBase):
         self,
         fixture: dict[str, Any],
         sport_slug: str,
-        category_name: str,
-        category_slug: str,
-        tournament_name: str,
-        tournament_slug: str,
+        cat_name: str,
+        cat_id: str,
+        tourn_name: str,
+        tourn_id: str,
     ) -> ProviderGameRecord | None:
         event_id = str(fixture.get("event_id") or "").strip()
         if not event_id:
             return None
-        competitors = fixture.get("competitors", {})
-        if not isinstance(competitors, dict):
-            return None
-        home = competitors.get("home", {})
-        away = competitors.get("away", {})
-        home_name = str(home.get("name") or "").strip()
-        away_name = str(away.get("name") or "").strip()
-        if not home_name or not away_name:
-            return None
+        competitors = fixture.get("competitors") or {}
+        home_obj = competitors.get("home") or {}
+        away_obj = competitors.get("away") or {}
+        home_name = str(home_obj.get("name") or "").strip() if isinstance(home_obj, dict) else ""
+        away_name = str(away_obj.get("name") or "").strip() if isinstance(away_obj, dict) else ""
 
-        match_status = str(fixture.get("match_status") or "").strip().upper()
-        if match_status in ("ENDED", "FINISHED", "COMPLETED"):
-            return None
+        # Baseball fixtures have null competitors — parse from game label
+        if not home_name or not away_name:
+            game_name = str(fixture.get("name") or "").strip()
+            if " at " in game_name:
+                away_name, home_name = game_name.split(" at ", 1)
+            elif " vs " in game_name.lower():
+                parts = game_name.split(" vs ", 1) if " vs " in game_name else game_name.split(" Vs ", 1)
+                home_name, away_name = parts[0].strip(), parts[1].strip()
+            if not home_name or not away_name:
+                return None
 
         game_label = str(fixture.get("name") or "").strip()
         fixture_slug = str(fixture.get("slug") or "").strip()
@@ -210,19 +213,19 @@ class KalstropV2Provider(SportsDataProviderBase):
             alias_values.add(game_label)
         if fixture_slug:
             alias_values.add(fixture_slug)
-        home_slug = str(home.get("slug") or "").strip()
-        away_slug = str(away.get("slug") or "").strip()
+        home_slug = str(home_obj.get("slug") or "").strip() if isinstance(home_obj, dict) else ""
+        away_slug = str(away_obj.get("slug") or "").strip() if isinstance(away_obj, dict) else ""
         if home_slug and away_slug:
             alias_values.add(f"{home_slug}-vs-{away_slug}")
 
         return ProviderGameRecord(
-            provider="kalstrop_v2",
+            provider="kalstrop_opta",
             provider_game_id=event_id,
             game_label=game_label or f"{home_name} vs {away_name}",
             orig_teams=f"{home_name} vs {away_name}",
             sport_raw=sport_slug,
-            league_raw=tournament_slug,
-            category_name=category_slug,
+            league_raw=f"{tourn_name}|{tourn_id}",
+            category_name=f"{cat_name}|{cat_id}",
             category_country_code="",
             when_raw=start_time_raw,
             home_team_raw=home_name,
@@ -232,8 +235,8 @@ class KalstropV2Provider(SportsDataProviderBase):
             parse_reason="|".join(parse_parts),
             aliases=tuple(sorted(alias_values)),
             raw_payload=dict(fixture) | {
-                "_category_slug": category_slug,
-                "_tournament_slug": tournament_slug,
+                "_category_id": cat_id,
+                "_tournament_id": tourn_id,
             },
         )
 
@@ -252,4 +255,4 @@ class KalstropV2Provider(SportsDataProviderBase):
             return None
 
 
-__all__ = ["KalstropV2Provider", "KalstropV2ProviderConfig", "KalstropV2SyncError"]
+__all__ = ["KalstropOptaProvider", "KalstropOptaProviderConfig", "KalstropOptaSyncError"]

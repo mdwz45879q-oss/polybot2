@@ -53,7 +53,7 @@ except ImportError:
 # Kalstrop endpoints
 V1_WS = "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"
 V2_BASE = "https://stats.kalstropservice.com"
-V2_API = f"{V2_BASE}/api/v2"
+V2_API = f"{V2_BASE}/api/v2/genius"
 V2_SIO_PATH = "/socket.io"
 
 # Credentials from env
@@ -185,7 +185,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
             "sportId": provider.get("sport_id"),
             "competitionId": provider.get("competition_id"),
         }
-        sio.emit("subscribe", params)
+        sio.emit("genius_subscribe", params)
         print(f"  [v2] subscribed to fixture_id={fixture_id}")
 
     @sio.on("subscribed")
@@ -223,7 +223,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
         print(f"  [v2] {type(e).__name__}: {e}")
     finally:
         try:
-            sio.emit("unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
+            sio.emit("genius_unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
             sio.disconnect()
         except Exception:
             pass

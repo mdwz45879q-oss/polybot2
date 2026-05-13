@@ -21,7 +21,7 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     provider_sub = provider_p.add_subparsers(dest="provider_command", required=True)
     provider_sync = provider_sub.add_parser("sync", help="Sync provider games")
     provider_sync.add_argument("--db", type=str, default="", help="Override SQLite DB path")
-    provider_sync.add_argument("--provider", type=str, choices=["boltodds", "kalstrop_v1", "kalstrop_v2"], default="")
+    provider_sync.add_argument("--provider", type=str, choices=["boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"], default="")
     link_p = sub.add_parser("link", help="Deterministic linking commands")
     link_sub = link_p.add_subparsers(dest="link_command", required=True)
 

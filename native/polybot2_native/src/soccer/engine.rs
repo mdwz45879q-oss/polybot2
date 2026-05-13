@@ -604,6 +604,8 @@ impl NativeSoccerEngine {
             away: prev.away,
             total: prev.total,
             prev_total: prev.total,
+            prev_home: prev.home,
+            prev_away: prev.away,
             half: resolved_half,
             match_completed: completed,
             game_state: gs,

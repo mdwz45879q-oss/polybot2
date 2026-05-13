@@ -251,13 +251,7 @@ impl NativeSoccerEngine {
         out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
-        if self.exact_score_resolved[gi] {
-            return;
-        }
-        if !self.has_exact_score[gi] {
-            return;
-        }
-        if !state.match_completed.unwrap_or(false) {
+        if self.exact_score_resolved[gi] || !self.has_exact_score[gi] {
             return;
         }
         let (home, away) = match (state.home, state.away) {
@@ -266,17 +260,50 @@ impl NativeSoccerEngine {
         };
 
         let targets = &self.game_targets[gi];
-        let mut any_exact_matched = false;
 
+        // --- Mid-game: fire NO on the slice of newly-impossible scorelines ---
+        if !state.match_completed.unwrap_or(false) {
+            let prev_h = match state.prev_home {
+                Some(ph) => ph,
+                None => return, // first score observation, no delta
+            };
+            let prev_a = match state.prev_away {
+                Some(pa) => pa,
+                None => return,
+            };
+
+            // Home scored: scores with home_pred == prev_home are now impossible
+            if home > prev_h {
+                for slot in &targets.exact_scores {
+                    if slot.home_pred == prev_h && slot.away_pred >= away {
+                        push_if_some(slot.no_idx, out);
+                    }
+                }
+            }
+            // Away scored: scores with away_pred == prev_away are now impossible
+            if away > prev_a {
+                for slot in &targets.exact_scores {
+                    if slot.away_pred == prev_a && slot.home_pred >= home {
+                        push_if_some(slot.no_idx, out);
+                    }
+                }
+            }
+            return;
+        }
+
+        // --- Full time: YES on match, NO on remaining unresolved ---
+        let mut any_exact_matched = false;
         for slot in &targets.exact_scores {
             if home == slot.home_pred && away == slot.away_pred {
-                // This exact score matched — fire YES
                 push_if_some(slot.yes_idx, out);
                 any_exact_matched = true;
-            } else {
-                // This exact score did NOT match — fire NO
+            } else if slot.home_pred >= home && slot.away_pred >= away {
+                // Not yet fired mid-game — fire NO now
                 push_if_some(slot.no_idx, out);
             }
+            // Slots where home_pred < home OR away_pred < away were already
+            // fired NO mid-game. Presign pool prevents double-fire if any
+            // slip through.
         }
 
         // "Any other score" market

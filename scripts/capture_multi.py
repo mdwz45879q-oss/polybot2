@@ -92,8 +92,9 @@ except ImportError:
 
 V1_WS = "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"
 V2_BASE = "https://stats.kalstropservice.com"
-V2_API = f"{V2_BASE}/api/v2"
+V2_API = f"{V2_BASE}/api/v2/genius"
 V2_SIO_PATH = "/socket.io"
+OPTA_API = f"{V2_BASE}/api/v2/opta"
 BOLTODDS_SCORES_WS = "wss://spro.agency/api/livescores"
 
 CLIENT_ID = os.environ.get("KALSTROP_CLIENT_ID") or os.environ.get("CLIENT_ID", "")
@@ -293,7 +294,7 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
             "sportId": provider.get("sport_id"),
             "competitionId": provider.get("competition_id"),
         }
-        sio.emit("subscribe", params)
+        sio.emit("genius_subscribe", params)
         print(f"  [v2] subscribed to fixture_id={fixture_id}")
 
     @sio.on("subscribed")
@@ -331,13 +332,124 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
         print(f"  [v2] {type(e).__name__}: {e}")
     finally:
         try:
-            sio.emit("unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
+            sio.emit("genius_unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
             sio.disconnect()
         except Exception:
             pass
         f.flush()
         f.close()
     print(f"  [v2] captured {count} events")
+
+
+# ─── Opta capture (python-socketio, runs in a thread) ──────────────────
+
+def resolve_opta_provider(event_id: str, sport: str = "football",
+                           max_wait: int = 1800, interval: int = 30):
+    """Resolve Opta event_id → running_ball fixture_id."""
+    from urllib.parse import quote as url_quote
+    encoded_eid = url_quote(str(event_id), safe="")
+    deadline = time.time() + max(max_wait, 0)
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            r = requests.get(
+                f"{OPTA_API}/fixtures/{encoded_eid}/providers",
+                params={"sport": sport},
+                headers=v2_auth_headers(),
+                timeout=15,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                opta = data.get("providers", {}).get("opta", {})
+                rb = opta.get("running_ball", {})
+                fid = rb.get("fixture_id") if isinstance(rb, dict) else None
+                if fid:
+                    print(f"  [opta] resolved event_id={event_id} → fixture_id={fid}")
+                    return {"fixture_id": str(fid)}
+                msg = "missing running_ball.fixture_id"
+            else:
+                msg = f"HTTP {r.status_code}: {r.text[:100]}"
+        except Exception as e:
+            msg = str(e)
+
+        if time.time() >= deadline:
+            print(f"  [opta] gave up resolving event_id={event_id} after {attempt} attempts")
+            return None
+        print(f"  [opta] {event_id}: {msg} — retry in {interval}s (attempt {attempt})")
+        time.sleep(interval)
+
+
+def resolve_opta_contestants(fixture_id: str) -> dict[str, str]:
+    """Resolve contestantId → home/away via /match endpoint."""
+    try:
+        r = requests.get(
+            f"{OPTA_API}/fixtures/{fixture_id}/match",
+            headers=v2_auth_headers(),
+            timeout=15,
+        )
+        if r.status_code != 200:
+            print(f"  [opta] /match HTTP {r.status_code} for fixture_id={fixture_id}")
+            return {}
+        data = r.json()
+        contestants = data.get("matchInfo", {}).get("contestant", [])
+        mapping: dict[str, str] = {}
+        for c in contestants:
+            cid = str(c.get("id") or "").strip()
+            pos = str(c.get("position") or "").strip().lower()
+            name = str(c.get("name") or "").strip()
+            if cid and pos in ("home", "away"):
+                mapping[cid] = pos
+                print(f"  [opta] contestant {cid} = {pos} ({name})")
+        return mapping
+    except Exception as e:
+        print(f"  [opta] /match error for fixture_id={fixture_id}: {e}")
+        return {}
+
+
+def opta_capture_sync(fixture_id: str, contestant_map: dict[str, str],
+                       out_path: Path, stop_flag: list):
+    """Socket.IO capture for Opta stats room."""
+    sio = socketio.Client(reconnection=True, reconnection_attempts=0,
+                          logger=False, engineio_logger=False)
+    count = 0
+    f = out_path.open("a")
+
+    @sio.event
+    def connect():
+        sio.emit("opta_subscribe", {"fixtureId": fixture_id, "room": "stats"})
+        print(f"  [opta] subscribed to fixture_id={fixture_id} room=stats")
+
+    @sio.on("opta_message")
+    def on_opta_message(data):
+        nonlocal count
+        ts_ns = time.time_ns()
+        f.write(json.dumps({"ts_ns": ts_ns, "source": "opta", "event": "opta_message", "data": data}) + "\n")
+        count += 1
+        if count % 50 == 0:
+            f.flush()
+
+    @sio.on("error")
+    def on_error(data):
+        print(f"  [opta] error: {data}")
+
+    try:
+        from urllib.parse import urlencode as _ue
+        _sio_qs = _ue({"product": "opta-stats", **v2_auth_headers()})
+        sio.connect(f"{V2_BASE}?{_sio_qs}", socketio_path=V2_SIO_PATH, transports=["websocket"])
+        while not stop_flag[0]:
+            sio.sleep(1)
+    except Exception as e:
+        print(f"  [opta] {type(e).__name__}: {e}")
+    finally:
+        try:
+            sio.emit("opta_unsubscribe", {"fixtureId": fixture_id, "room": "stats"})
+            sio.disconnect()
+        except Exception:
+            pass
+        f.flush()
+        f.close()
+    print(f"  [opta] captured {count} events")
 
 
 # ─── BoltOdds capture (async websockets, single shared connection) ────────
@@ -624,6 +736,7 @@ def main():
         from zoneinfo import ZoneInfo
 
         v2_threads: list[threading.Thread] = []
+        opta_threads: list[threading.Thread] = []
         V2_LEAD_MINUTES = 10  # start resolution this many minutes before kickoff
 
         def _parse_kickoff_ts(game: dict) -> int | None:
@@ -710,6 +823,56 @@ def main():
                 t.start()
                 v2_threads.append(t)
 
+        # Start Opta threads (all sports — not soccer-gated like V2)
+        for game in games:
+            name = game.get("name", "unknown")
+            opta_event_id = str(game.get("opta_event_id") or "").strip()
+            opta_sport = str(game.get("opta_sport") or "football").strip().lower()
+            game_dir = out_dir / name
+            game_dir.mkdir(parents=True, exist_ok=True)
+
+            if opta_event_id:
+                kickoff_ts = _parse_kickoff_ts(game)
+
+                def _opta_worker(eid=opta_event_id, sport=opta_sport, gdir=game_dir,
+                                  gname=name, kts=kickoff_ts):
+                    # Wait until lead time before kickoff
+                    if kts is not None:
+                        start_resolve_at = kts - (V2_LEAD_MINUTES * 60)
+                        wait_seconds = start_resolve_at - time.time()
+                        if wait_seconds > 0:
+                            print(f"  [opta/{gname}] waiting {wait_seconds:.0f}s until {V2_LEAD_MINUTES}min before kickoff")
+                            while wait_seconds > 0 and not stop_flag[0]:
+                                time.sleep(min(wait_seconds, 5.0))
+                                wait_seconds = start_resolve_at - time.time()
+                            if stop_flag[0]:
+                                return
+
+                    # Step 1: Resolve running_ball fixture_id
+                    print(f"  [opta/{gname}] resolving event_id={eid} (sport={sport})...")
+                    provider = resolve_opta_provider(eid, sport=sport,
+                                                      max_wait=args.resolve_timeout, interval=15)
+                    if not provider:
+                        print(f"  [opta/{gname}] resolution failed")
+                        return
+                    if stop_flag[0]:
+                        return
+
+                    fixture_id = provider["fixture_id"]
+
+                    # Step 2: Resolve contestant → home/away mapping
+                    print(f"  [opta/{gname}] resolving contestants for fixture_id={fixture_id}...")
+                    contestant_map = resolve_opta_contestants(fixture_id)
+
+                    if stop_flag[0]:
+                        return
+                    print(f"  [opta/{gname}] capturing...")
+                    opta_capture_sync(fixture_id, contestant_map, gdir / "opta_raw.jsonl", stop_flag)
+
+                t = threading.Thread(target=_opta_worker, daemon=True)
+                t.start()
+                opta_threads.append(t)
+
         # V1 + BoltOdds in async loop
         async def run_all():
             tasks = []
@@ -759,6 +922,8 @@ def main():
             pass
 
         for t in v2_threads:
+            t.join(timeout=5)
+        for t in opta_threads:
             t.join(timeout=5)
 
     # Single-game mode

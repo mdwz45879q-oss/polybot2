@@ -199,15 +199,20 @@ class LinkService:
         league_raw = _norm(row.get("league_raw") or "")
         sport_raw = _norm(row.get("sport_raw") or "")
         category_name = str(row.get("category_name") or "").strip()
-        league_signal = league_raw or sport_raw
+
+        # Strip composite "Name|ID" suffix for league resolution (Opta encoding).
+        # Backward-compatible: if no "|", rsplit returns the whole string.
+        league_raw_name = league_raw.rsplit("|", 1)[0].strip() if "|" in league_raw else league_raw
+        category_name_stripped = category_name.rsplit("|", 1)[0].strip() if "|" in category_name else category_name
+        league_signal = league_raw_name or sport_raw
 
         # Try country-qualified disambiguation first (PROVIDER_LEAGUE_COUNTRY).
         canonical_league = ""
-        if category_name:
+        if category_name_stripped:
             raw_country_map = mapping.provider_league_country.get(_norm(provider), {})
             # Support both "country|league" string keys and (country, league) tuple keys
-            country_key_str = f"{_norm(category_name)}|{_norm(league_signal)}"
-            country_key_tuple = (_norm(category_name), _norm(league_signal))
+            country_key_str = f"{_norm(category_name_stripped)}|{_norm(league_signal)}"
+            country_key_tuple = (_norm(category_name_stripped), _norm(league_signal))
             matched = raw_country_map.get(country_key_str) or raw_country_map.get(country_key_tuple, "")
             canonical_league = _norm(str(matched))
 

@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
-PROVIDERS = ["kalstrop_v1", "kalstrop_v2", "boltodds"]
+PROVIDERS = ["kalstrop_v1", "kalstrop_v2", "kalstrop_opta", "boltodds"]
 TIME_TOLERANCE_SECONDS = 900  # 15 minutes
 
 
@@ -70,11 +70,18 @@ def resolve_league(
         key = sport_raw.strip().lower()
     else:
         key = league_raw.strip().lower()
+        # Strip composite "Name|ID" suffix (Opta encoding)
+        if "|" in key:
+            key = key.rsplit("|", 1)[0].strip()
 
     if key in provider_aliases:
         return provider_aliases[key]
 
-    country_key = (category_name.strip().lower(), key)
+    cat = category_name.strip().lower()
+    # Strip composite "Name|ID" suffix from category too
+    if "|" in cat:
+        cat = cat.rsplit("|", 1)[0].strip()
+    country_key = (cat, key)
     if country_key in provider_country:
         return provider_country[country_key]
 
@@ -331,6 +338,11 @@ def emit_json(matched: list[dict], league: str, sport: str) -> list[dict]:
                 except Exception:
                     pass
 
+        if "kalstrop_opta" in providers:
+            opta = providers["kalstrop_opta"]
+            entry["opta_event_id"] = opta["provider_game_id"]
+            entry["opta_sport"] = opta["sport_raw"]
+
         bo_entries = [v for k, v in providers.items() if k.startswith("boltodds")]
         if len(bo_entries) == 1:
             entry["boltodds_game_label"] = bo_entries[0]["game_label"]
@@ -363,6 +375,10 @@ def print_summary(matched: list[dict], league: str) -> None:
         if "kalstrop_v2" in providers:
             v2 = providers["kalstrop_v2"]
             print(f"    V2:       {v2['provider_game_id']} ({v2['home_raw']} vs {v2['away_raw']})")
+
+        if "kalstrop_opta" in providers:
+            opta = providers["kalstrop_opta"]
+            print(f"    Opta:     {opta['provider_game_id']} ({opta['home_raw']} vs {opta['away_raw']})")
 
         bo_keys = sorted(k for k in providers if k.startswith("boltodds"))
         for k in bo_keys:

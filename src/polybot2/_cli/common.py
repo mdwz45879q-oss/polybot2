@@ -40,7 +40,7 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-_VALID_PROVIDERS = {"boltodds", "kalstrop_v1", "kalstrop_v2"}
+_VALID_PROVIDERS = {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"}
 
 
 def _resolve_provider_name(
@@ -53,7 +53,7 @@ def _resolve_provider_name(
     explicit = str(getattr(args, "provider", "")).strip().lower()
     if explicit:
         if explicit not in _VALID_PROVIDERS:
-            logger.error("%s supports only provider=boltodds|kalstrop_v1|kalstrop_v2", context)
+            logger.error("%s supports only provider=boltodds|kalstrop_v1|kalstrop_v2|kalstrop_opta", context)
             return None
         return explicit
 
@@ -61,7 +61,7 @@ def _resolve_provider_name(
     default_provider = str(getattr(policy, "default_provider", "") or "").strip().lower() or "kalstrop_v1"
     if default_provider not in _VALID_PROVIDERS:
         logger.error(
-            "invalid DEFAULT_PROVIDER=%s (must be boltodds|kalstrop_v1|kalstrop_v2)",
+            "invalid DEFAULT_PROVIDER=%s (must be boltodds|kalstrop_v1|kalstrop_v2|kalstrop_opta)",
             str(getattr(policy, "default_provider", "") or ""),
         )
         return None

@@ -59,6 +59,13 @@ PROVIDER_LEAGUE_ALIASES = {
         "english-premier-league": "epl",
         "spanish-la-liga-primera": "laliga"
     },
+    "kalstrop_opta": {
+        "premier league": "epl",
+        "laliga": "laliga",
+        "bundesliga": "bundesliga",
+        "uefa champions league": "ucl",
+        "mlb": "mlb",
+    },
     "boltodds":{
         "epl": "epl",
         "mlb": "mlb",

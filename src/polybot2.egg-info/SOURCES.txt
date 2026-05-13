@@ -62,6 +62,7 @@ src/polybot2/sports/boltodds.py
 src/polybot2/sports/contracts.py
 src/polybot2/sports/factory.py
 src/polybot2/sports/kalstrop_auth.py
+src/polybot2/sports/kalstrop_opta.py
 src/polybot2/sports/kalstrop_v1.py
 src/polybot2/sports/kalstrop_v2.py
 tests/test_polybot2_cli_smoke.py

@@ -21,7 +21,7 @@ from polybot2.sports.kalstrop_auth import kalstrop_auth_headers
 
 logger = logging.getLogger("polybot2")
 
-V2_API = "https://stats.kalstropservice.com/api/v2"
+V2_API = "https://stats.kalstropservice.com/api/v2/genius"
 _REQUEST_TIMEOUT = 15
 
 
