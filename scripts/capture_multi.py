@@ -623,27 +623,38 @@ def _run_single_game(
     v2_thread = None
     if v2_event_id:
         def _v2_resolve_and_capture():
-            resolve_eid = v2_event_id
-            if v2_category_slug and v2_tournament_slug and v2_home_team and v2_away_team:
-                live_eid = resolve_v2_live_event_id(
-                    category_slug=v2_category_slug,
-                    tournament_slug=v2_tournament_slug,
-                    home_team=v2_home_team,
-                    away_team=v2_away_team,
-                    scheduled_date=v2_scheduled_date,
-                    original_event_id=v2_event_id,
-                    max_wait=resolve_timeout,
-                )
-                if live_eid:
-                    if live_eid != v2_event_id:
-                        print(f"  [v2] event_id rotated: {v2_event_id} → {live_eid}")
-                    resolve_eid = live_eid
-                else:
-                    print(f"  [v2] could not find live event_id, trying original...")
+            provider = None
+            resolve_deadline = time.time() + resolve_timeout
+            last_eid = v2_event_id
+            while provider is None and time.time() < resolve_deadline and not stop_flag[0]:
+                resolve_eid = last_eid
+                if v2_category_slug and v2_tournament_slug and v2_home_team and v2_away_team:
+                    live_eid = resolve_v2_live_event_id(
+                        category_slug=v2_category_slug,
+                        tournament_slug=v2_tournament_slug,
+                        home_team=v2_home_team,
+                        away_team=v2_away_team,
+                        scheduled_date=v2_scheduled_date,
+                        original_event_id=v2_event_id,
+                        max_wait=min(120, max(0, resolve_deadline - time.time())),
+                    )
+                    if live_eid:
+                        if live_eid != last_eid:
+                            print(f"  [v2] event_id rotated: {last_eid} → {live_eid}")
+                        resolve_eid = live_eid
+                        last_eid = live_eid
+                    else:
+                        print(f"  [v2] could not find live event_id, trying original...")
 
-            provider = resolve_v2_provider(resolve_eid, max_wait=resolve_timeout)
+                remaining = max(0, resolve_deadline - time.time())
+                if remaining <= 0:
+                    break
+                provider = resolve_v2_provider(resolve_eid, max_wait=min(120, remaining))
+                if not provider and time.time() < resolve_deadline:
+                    print(f"  [v2] resolution failed, will re-discover event_id...")
+
             if not provider:
-                print(f"  [v2] resolution failed for {resolve_eid}")
+                print(f"  [v2] resolution failed for {last_eid}")
                 return
             if stop_flag[0]:
                 return
@@ -787,32 +798,48 @@ def main():
                             if stop_flag[0]:
                                 return
 
-                    # Step 1: Re-discover live event_id if metadata provided
-                    resolve_eid = eid
-                    if cat_slug and tourn_slug and home and away:
-                        print(f"  [v2/{gname}] re-fetching fixtures to find live event_id...")
-                        live_eid = resolve_v2_live_event_id(
-                            category_slug=cat_slug,
-                            tournament_slug=tourn_slug,
-                            home_team=home,
-                            away_team=away,
-                            scheduled_date=sdate,
-                            original_event_id=eid,
-                            max_wait=args.resolve_timeout,
+                    # Steps 1+2: Re-discover live event_id then resolve fixture_id.
+                    # Retries the full cycle if resolution fails (handles event_id
+                    # rotation that happens between discovery and resolution).
+                    provider = None
+                    resolve_deadline = time.time() + args.resolve_timeout
+                    last_eid = eid
+                    while provider is None and time.time() < resolve_deadline and not stop_flag[0]:
+                        resolve_eid = last_eid
+                        if cat_slug and tourn_slug and home and away:
+                            print(f"  [v2/{gname}] re-fetching fixtures to find live event_id...")
+                            live_eid = resolve_v2_live_event_id(
+                                category_slug=cat_slug,
+                                tournament_slug=tourn_slug,
+                                home_team=home,
+                                away_team=away,
+                                scheduled_date=sdate,
+                                original_event_id=eid,
+                                max_wait=min(120, max(0, resolve_deadline - time.time())),
+                                interval=15,
+                            )
+                            if live_eid:
+                                if live_eid != last_eid:
+                                    print(f"  [v2/{gname}] event_id rotated: {last_eid} → {live_eid}")
+                                resolve_eid = live_eid
+                                last_eid = live_eid
+                            else:
+                                print(f"  [v2/{gname}] could not find live event_id, trying original...")
+
+                        remaining = max(0, resolve_deadline - time.time())
+                        if remaining <= 0:
+                            break
+                        print(f"  [v2/{gname}] resolving event_id={resolve_eid}...")
+                        provider = resolve_v2_provider(
+                            resolve_eid,
+                            max_wait=min(120, remaining),
                             interval=15,
                         )
-                        if live_eid:
-                            if live_eid != eid:
-                                print(f"  [v2/{gname}] event_id rotated: {eid} → {live_eid}")
-                            resolve_eid = live_eid
-                        else:
-                            print(f"  [v2/{gname}] could not find live event_id, trying original...")
+                        if not provider and time.time() < resolve_deadline:
+                            print(f"  [v2/{gname}] resolution failed, will re-discover event_id...")
 
-                    # Step 2: Resolve BetGenius fixture_id (existing logic)
-                    print(f"  [v2/{gname}] resolving event_id={resolve_eid}...")
-                    provider = resolve_v2_provider(resolve_eid, max_wait=args.resolve_timeout, interval=15)
                     if not provider:
-                        print(f"  [v2/{gname}] resolution failed")
+                        print(f"  [v2/{gname}] resolution failed after all retries")
                         return
                     if stop_flag[0]:
                         return
