@@ -206,6 +206,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             binding_resolver=resolver,
         )
         hotpath.set_order_policy(order_policy)
+        hotpath._ws_core_idx = runtime_policy.get("ws_core_idx")
+        hotpath._submitter_core_idx = runtime_policy.get("submitter_core_idx")
 
         if is_v2_league:
             logger.info(

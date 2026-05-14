@@ -36,6 +36,7 @@ rtrb = "0.3"
 arc-swap = "1"
 memchr = "2"
 itoa = "1"
+core_affinity = "0.8"
 
 [profile.release]
 opt-level = 3

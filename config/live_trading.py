@@ -87,6 +87,8 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 1800,
+        "ws_core_idx": 5,
+        "submitter_core_idx": 6,
     },
     "epl": {
         "plan_horizon_hours": 24,
@@ -94,6 +96,8 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 300,
+        "ws_core_idx": 1,
+        "submitter_core_idx": 2,
     },
     "ucl": {
         "plan_horizon_hours": 24,
@@ -101,6 +105,8 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 600,
         "refresh_interval_seconds": 300,
+        "ws_core_idx": 3,
+        "submitter_core_idx": 4,
     },
     "laliga": {
         "plan_horizon_hours": 24,
@@ -108,5 +114,7 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 600,
         "refresh_interval_seconds": 300,
+        "ws_core_idx": 7,
+        "submitter_core_idx": 8,
     },
 }

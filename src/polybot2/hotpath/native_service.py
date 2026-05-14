@@ -66,6 +66,8 @@ class NativeHotPathService:
             else "live"
         )
         self._log_dir: str | None = os.environ.get("POLYBOT2_LOG_DIR")
+        self._ws_core_idx: int | None = None
+        self._submitter_core_idx: int | None = None
 
         self.set_compiled_plan(compiled_plan)
 
@@ -184,6 +186,10 @@ class NativeHotPathService:
             "boltodds_api_key": os.getenv("BOLTODDS_API_KEY", ""),
             "boltodds_ws_url": os.getenv("BOLTODDS_WS_URL", "wss://spro.agency/api/livescores"),
         }
+        if self._ws_core_idx is not None:
+            payload["ws_core_idx"] = int(self._ws_core_idx)
+        if self._submitter_core_idx is not None:
+            payload["submitter_core_idx"] = int(self._submitter_core_idx)
         return payload
 
     def _execution_config_payload(self) -> dict[str, Any]:

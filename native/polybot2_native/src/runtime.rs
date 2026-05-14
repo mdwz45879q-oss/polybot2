@@ -3,10 +3,22 @@ use crate::dispatch::{
     run_submitter_async, warm_presign_startup_into, DispatchHandle, OrderSubmitter,
 };
 use crate::log_writer::LogWriter;
+use core_affinity::CoreId;
 use std::thread;
 
 fn install_rustls_provider_once() {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
+fn pin_current_thread(core_idx: Option<usize>) -> Option<CoreId> {
+    let idx = core_idx?;
+    let cores = core_affinity::get_core_ids()?;
+    let core = *cores.get(idx)?;
+    if core_affinity::set_for_current(core) {
+        Some(core)
+    } else {
+        None
+    }
 }
 
 /// Determine the sport league from the compiled plan JSON.
@@ -98,6 +110,8 @@ impl NativeHotPathRuntime {
         self.engine = Some(engine);
 
         if cfg.live_enabled.unwrap_or(false) {
+            let submitter_core_idx = cfg.submitter_core_idx;
+            let ws_core_idx = cfg.ws_core_idx;
             let subscribe_lead_minutes = cfg.subscribe_lead_minutes.unwrap_or(90).max(0);
             let initial_candidates = self.subscriptions.clone();
             let initial_active_subscriptions = self
@@ -217,8 +231,20 @@ impl NativeHotPathRuntime {
                     }
 
                     dispatch_handle.install_submit_tx(submit_producer);
+                    let submitter_log_for_pin = Arc::clone(&log_arc);
 
                     let submit_join = thread::spawn(move || {
+                        if submitter_core_idx.is_some()
+                            && pin_current_thread(submitter_core_idx).is_none()
+                        {
+                            if let Ok(mut g) = submitter_log_for_pin.lock() {
+                                g.log_order_err(
+                                    "_init_",
+                                    "_",
+                                    "submitter_thread_pin_skipped_or_failed",
+                                );
+                            }
+                        }
                         if let Ok(rt) = TokioBuilder::new_current_thread().enable_all().build() {
                             rt.block_on(run_submitter_async(submitter));
                         }
@@ -272,6 +298,7 @@ impl NativeHotPathRuntime {
                     let game_labels: Vec<String> = worker_engine.game_ids().to_vec();
 
                     thread::spawn(move || {
+                        let _ = pin_current_thread(ws_core_idx);
                         if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build()
                         {
                             runtime.block_on(crate::ws_boltodds::run_boltodds_worker_async(
@@ -307,6 +334,7 @@ impl NativeHotPathRuntime {
                         shared_secret_raw: v2_secret,
                     };
                     thread::spawn(move || {
+                        let _ = pin_current_thread(ws_core_idx);
                         if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build()
                         {
                             runtime.block_on(crate::ws_kalstrop_v2::run_kalstrop_v2_worker_async(
@@ -330,6 +358,7 @@ impl NativeHotPathRuntime {
                 _ => {
                     // Default: Kalstrop V1 worker
                     thread::spawn(move || {
+                        let _ = pin_current_thread(ws_core_idx);
                         if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build()
                         {
                             runtime.block_on(crate::ws::run_live_worker_async(

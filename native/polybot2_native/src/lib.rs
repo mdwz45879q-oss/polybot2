@@ -241,6 +241,10 @@ struct RuntimeStartConfig {
     kalstrop_v2_base_url: Option<String>,
     #[serde(default)]
     kalstrop_v2_sio_path: Option<String>,
+    #[serde(default)]
+    ws_core_idx: Option<usize>,
+    #[serde(default)]
+    submitter_core_idx: Option<usize>,
 }
 
 #[derive(Default, Deserialize, Clone)]

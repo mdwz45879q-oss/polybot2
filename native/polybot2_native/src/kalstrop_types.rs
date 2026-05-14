@@ -43,16 +43,19 @@ pub(crate) struct KalstropMatchSummary<'a> {
     )]
     pub first_free_text: Option<&'a str>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub statistics: Option<KalstropStatistics>,
 }
 
 #[derive(Deserialize, Default)]
+#[allow(dead_code)]
 pub(crate) struct KalstropStatistics {
     #[serde(default)]
     pub corners: Option<KalstropCorners>,
 }
 
 #[derive(Deserialize, Default)]
+#[allow(dead_code)]
 pub(crate) struct KalstropCorners {
     #[serde(default)]
     pub home: Option<i64>,

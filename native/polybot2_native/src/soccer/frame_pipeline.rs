@@ -1,7 +1,7 @@
-//! Soccer frame pipeline: zero-alloc live WS path.
+//! Soccer V1 frame pipeline: zero-alloc live WS path via byte extractor.
 
 use crate::dispatch::{DispatchHandle, SubmitBatch};
-use crate::kalstrop_types::KalstropFrame;
+use crate::fast_extract;
 use crate::log_writer::LogWriter;
 use crate::soccer::parse::{is_completed_free_text, parse_half};
 use crate::soccer::types::*;
@@ -21,44 +21,23 @@ pub(crate) fn process_decoded_frame_sync(
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
 ) {
-    let first_byte = frame_text.as_bytes().first().copied().unwrap_or(0);
-    if first_byte == b'[' {
-        if let Ok(frames) = serde_json::from_str::<Vec<KalstropFrame<'_>>>(frame_text) {
-            let mut batch: SubmitBatch = SubmitBatch::new();
-            let mut pending_logs = smallvec::SmallVec::<[PendingTickLog; 4]>::new();
-            for frame in &frames {
-                if let Some(tl) = process_single_frame_live(
-                    engine,
-                    frame,
-                    recv_monotonic_ns,
-                    dispatch_handle,
-                    log,
-                    &mut batch,
-                ) {
-                    pending_logs.push(tl);
-                }
-            }
-            if !batch.is_empty() && !matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
-                dispatch_handle.send_batch(batch, log);
-            }
-            flush_tick_logs(engine, &pending_logs, log);
-        }
-    } else if let Ok(frame) = serde_json::from_str::<KalstropFrame<'_>>(frame_text) {
-        let mut batch: SubmitBatch = SubmitBatch::new();
-        let pending = process_single_frame_live(
-            engine,
-            &frame,
-            recv_monotonic_ns,
-            dispatch_handle,
-            log,
-            &mut batch,
-        );
-        if !batch.is_empty() && !matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
-            dispatch_handle.send_batch(batch, log);
-        }
-        if let Some(tl) = pending {
-            flush_tick_logs(engine, &[tl], log);
-        }
+    let Some(extract) = fast_extract::fast_extract_v1(frame_text) else {
+        return;
+    };
+    let mut batch: SubmitBatch = SubmitBatch::new();
+    let pending = process_extracted_fields(
+        engine,
+        &extract,
+        recv_monotonic_ns,
+        dispatch_handle,
+        log,
+        &mut batch,
+    );
+    if !batch.is_empty() && !matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
+        dispatch_handle.send_batch(batch, log);
+    }
+    if let Some(tl) = pending {
+        flush_tick_logs(engine, &[tl], log);
     }
 }
 
@@ -90,52 +69,39 @@ fn flush_tick_logs(
     }
 }
 
-fn process_single_frame_live(
+fn process_extracted_fields(
     engine: &mut NativeSoccerEngine,
-    frame: &KalstropFrame<'_>,
+    extract: &fast_extract::V1Extract<'_>,
     recv_monotonic_ns: i64,
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
     batch: &mut SubmitBatch,
 ) -> Option<PendingTickLog> {
-    if frame.msg_type != "next" {
-        return None;
-    }
-    let update = frame
-        .payload
-        .as_ref()
-        .and_then(|p| p.data.as_ref())
-        .and_then(|d| d.update.as_ref())?;
-
-    // Extract raw strings from borrowed KalstropUpdate.
-    let fixture_id = update.fixture_id;
-    let summary = update.match_summary.as_ref();
-    let home_str = summary.and_then(|s| s.home_score).unwrap_or("");
-    let away_str = summary.and_then(|s| s.away_score).unwrap_or("");
-    let free_text = summary.and_then(|s| s.first_free_text).unwrap_or("");
-
     // Pre-parse dedup + game index resolve in one FxHashMap lookup.
-    let gidx = engine.check_duplicate(fixture_id, home_str, away_str, free_text)?;
+    let gidx = engine.check_duplicate(
+        extract.fixture_id,
+        extract.home_score,
+        extract.away_score,
+        extract.free_text,
+    )?;
 
-    // THEN parse: half, scores, completion status.
-    let half = parse_half(free_text);
-    let goals_home = crate::fast_extract::fast_parse_score(home_str);
-    let goals_away = crate::fast_extract::fast_parse_score(away_str);
-    let corners = summary.and_then(|s| s.statistics.as_ref())
-        .and_then(|st| st.corners.as_ref());
-    let corners_home = corners.and_then(|c| c.home);
-    let corners_away = corners.and_then(|c| c.away);
-    let is_completed = if free_text.is_empty() {
+    // Parse: half, scores, completion status, corners.
+    let half = parse_half(extract.free_text);
+    let goals_home = fast_extract::fast_parse_score(extract.home_score);
+    let goals_away = fast_extract::fast_parse_score(extract.away_score);
+    let corners_home = extract.corners_home;
+    let corners_away = extract.corners_away;
+    let is_completed = if extract.free_text.is_empty() {
         false
     } else {
-        is_completed_free_text(free_text)
+        is_completed_free_text(extract.free_text)
     };
-    let match_completed = if free_text.is_empty() {
+    let match_completed = if extract.free_text.is_empty() {
         None
     } else {
         Some(is_completed)
     };
-    let game_state: &'static str = if free_text.is_empty() {
+    let game_state: &'static str = if extract.free_text.is_empty() {
         "UNKNOWN"
     } else if is_completed {
         "FINAL"
@@ -145,9 +111,9 @@ fn process_single_frame_live(
 
     let result = engine.process_tick_live(
         gidx,
-        home_str,
-        away_str,
-        free_text,
+        extract.home_score,
+        extract.away_score,
+        extract.free_text,
         goals_home,
         goals_away,
         corners_home,

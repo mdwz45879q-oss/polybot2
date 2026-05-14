@@ -14,6 +14,7 @@ pub(crate) type WsStream = tokio_tungstenite::WebSocketStream<
 
 pub(crate) struct SioConnection {
     pub ws: WsStream,
+    #[allow(dead_code)]
     pub ping_interval: Duration,
 }
 
@@ -113,6 +114,7 @@ pub(crate) async fn subscribe(
         .map_err(|e| format!("v2_sio_subscribe_send:{}", e))
 }
 
+#[allow(dead_code)]
 pub(crate) async fn unsubscribe(
     conn: &mut SioConnection,
     fixture_id: &str,

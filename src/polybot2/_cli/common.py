@@ -99,6 +99,8 @@ def _hotpath_runtime_policy_for_league(*, live_policy: Any, league_key: str) -> 
         "refresh_interval_seconds": int(cfg.get("refresh_interval_seconds", 300)),
         # Backward compatible: older policy uses reload_interval_seconds.
         "subscription_refresh_seconds": refresh_seconds,
+        "ws_core_idx": cfg.get("ws_core_idx"),
+        "submitter_core_idx": cfg.get("submitter_core_idx"),
     }
 
 
