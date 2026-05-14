@@ -39,7 +39,7 @@ class LoadedLiveTradingPolicy:
     live_betting_market_types_by_league: dict[str, set[str]]
     live_betting_market_types: set[str]
     hotpath_execution_by_league: dict[str, dict[str, Any]] = field(default_factory=dict)
-    hotpath_runtime_by_league: dict[str, dict[str, int]] = field(default_factory=dict)
+    hotpath_runtime_by_league: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "hotpath_execution_by_league", dict(self.hotpath_execution_by_league or {}))
@@ -217,13 +217,18 @@ def load_live_trading_policy(policy_file: str | None = None) -> LoadedLiveTradin
             continue
         if not isinstance(cfg, dict):
             raise MappingValidationError(f"HOTPATH_RUNTIME_POLICY[{league!r}] must be dict")
-        hotpath_runtime_by_league[lk] = {
+        parsed: dict[str, Any] = {
             "plan_horizon_hours": int(cfg.get("plan_horizon_hours", 24)),
             "subscribe_lead_minutes": int(cfg.get("subscribe_lead_minutes", 90)),
             "reload_interval_seconds": int(cfg.get("reload_interval_seconds", 120)),
             "provider_catalog_max_age_seconds": int(cfg.get("provider_catalog_max_age_seconds", 600)),
             "refresh_interval_seconds": int(cfg.get("refresh_interval_seconds", 300)),
         }
+        if cfg.get("ws_core_idx") is not None:
+            parsed["ws_core_idx"] = int(cfg["ws_core_idx"])
+        if cfg.get("submitter_core_idx") is not None:
+            parsed["submitter_core_idx"] = int(cfg["submitter_core_idx"])
+        hotpath_runtime_by_league[lk] = parsed
 
     canonical_repr = {
         "LIVE_TRADING_VERSION": policy_version,
