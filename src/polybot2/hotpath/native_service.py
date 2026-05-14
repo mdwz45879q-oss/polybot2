@@ -322,6 +322,15 @@ class NativeHotPathService:
                 "limit_price": float(p.limit_price),
                 "time_in_force": str(p.time_in_force),
             })
+            if p.has_secondary:
+                templates.append({
+                    "token_id": token_id,
+                    "side": "buy_yes",
+                    "amount_usdc": float(p.secondary_amount_usdc),
+                    "size_shares": float(p.secondary_size_shares),
+                    "limit_price": float(p.secondary_limit_price),
+                    "time_in_force": str(p.secondary_time_in_force),
+                })
         plan_json = json.dumps(
             serialize_compiled_plan(result.new_plan),
             separators=(",", ":"),

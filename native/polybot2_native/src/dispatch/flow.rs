@@ -25,12 +25,13 @@ impl DispatchHandle {
     }
 
     /// Pop a presigned order for the given target from the per-token pool.
-    /// Returns the signed order on success, or an error string for the caller
-    /// to log. Synchronous; runs on the WS thread.
+    /// Returns all pre-signed orders for this target's token (1-2 orders),
+    /// or an error string if the pool slot is empty. Drains the slot completely.
+    /// Synchronous; runs on the WS thread.
     pub(crate) fn pop_for_target(
         &mut self,
         target_idx: crate::TargetIdx,
-    ) -> Result<Box<PreparedOrderPayload>, String> {
+    ) -> Result<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>, String> {
         let target = self
             .registry
             .targets
@@ -41,21 +42,19 @@ impl DispatchHandle {
             .presign_pool
             .get_mut(token_idx)
             .ok_or_else(|| "dispatch_invalid_token_idx".to_string())?;
-        match slot.take() {
-            Some(boxed) => Ok(boxed),
-            None => {
-                let token_id = self
-                    .registry
-                    .tokens
-                    .get(token_idx)
-                    .map(|t| &*t.token_id)
-                    .unwrap_or("_");
-                Err(format!(
-                    "submit_presigned_miss:token_id={}",
-                    redact_token_id(token_id)
-                ))
-            }
+        if slot.is_empty() {
+            let token_id = self
+                .registry
+                .tokens
+                .get(token_idx)
+                .map(|t| &*t.token_id)
+                .unwrap_or("_");
+            return Err(format!(
+                "submit_presigned_miss:token_id={}",
+                redact_token_id(token_id)
+            ));
         }
+        Ok(std::mem::take(slot))
     }
 
     /// Send a frame-batch to the submitter via the lock-free SPSC ring.

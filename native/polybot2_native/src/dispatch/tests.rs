@@ -102,9 +102,11 @@ fn dispatch_target_inline(
         return;
     }
     match handle.pop_for_target(target_idx) {
-        Ok(signed) => {
+        Ok(orders) => {
             let mut batch = SubmitBatch::new();
-            batch.push((target_idx, signed));
+            for signed in orders {
+                batch.push((target_idx, signed));
+            }
             handle.send_batch(batch, log);
         }
         Err(err) => {

@@ -31,11 +31,11 @@ pub(crate) struct PresignTemplateData {
     pub(super) time_in_force: Option<String>,
 }
 
-/// Inline-friendly batch of `(TargetIdx, PreparedOrderPayload)` pairs. The common
-/// case is 1–4 intents per frame; `SmallVec` avoids a heap allocation on the
-/// WS thread for that range.
+/// Inline-friendly batch of `(TargetIdx, PreparedOrderPayload)` pairs. With
+/// dual-order presign, a frame with N intents can produce up to 2N entries.
+/// Capacity 32 covers the common case without heap allocation.
 pub(crate) type SubmitBatch =
-    smallvec::SmallVec<[(crate::TargetIdx, Box<PreparedOrderPayload>); 16]>;
+    smallvec::SmallVec<[(crate::TargetIdx, Box<PreparedOrderPayload>); 32]>;
 
 /// Channel payload from WS thread to submitter thread. One `Batch` is built
 /// per material WS frame; the submitter may further coalesce subsequent
@@ -52,15 +52,16 @@ pub(crate) struct DispatchHandle {
     pub(crate) cfg: DispatchConfig,
     pub(super) registry: Arc<crate::TargetRegistry>,
     pub(super) shared_registry: SharedRegistry,
-    /// Catalog of templates indexed by raw token_id string. Set once via
+    /// Catalog of templates indexed by raw token_id string. Each token may
+    /// have 1-2 templates (primary + optional secondary). Set once via
     /// `prewarm_presign` from Python; survives across plan loads.
-    pub(super) presign_template_catalog: HashMap<String, OrderRequestData>,
+    pub(super) presign_template_catalog: HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
     /// Active templates resolved against the current registry, indexed by
-    /// `TokenIdx`. `None` means no template is active for that token.
-    pub(super) presign_templates: Vec<Option<OrderRequestData>>,
-    /// Presign pool, indexed by `TokenIdx`. One slot per unique token (depth=1).
-    /// `Option::take()` is the pop operation — zero overhead for a one-shot pool.
-    pub(super) presign_pool: Vec<Option<Box<PreparedOrderPayload>>>,
+    /// `TokenIdx`. Empty vec means no template is active for that token.
+    pub(super) presign_templates: Vec<smallvec::SmallVec<[OrderRequestData; 2]>>,
+    /// Presign pool, indexed by `TokenIdx`. Each slot holds 0-2 pre-signed
+    /// orders. `std::mem::take()` drains all orders for that token at once.
+    pub(super) presign_pool: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>>,
     pub(super) submit_tx: Option<rtrb::Producer<SubmitWork>>,
 }
 

@@ -78,6 +78,10 @@ def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tu
             size_shares=float(cfg.get("size_shares", 5.0)),
             limit_price=float(cfg.get("limit_price", 0.52)),
             time_in_force=str(cfg.get("time_in_force", "FAK") or "FAK"),
+            secondary_amount_usdc=float(cfg.get("secondary_amount_usdc", 0.0)),
+            secondary_size_shares=float(cfg.get("secondary_size_shares", 0.0)),
+            secondary_limit_price=float(cfg.get("secondary_limit_price", 0.0)),
+            secondary_time_in_force=str(cfg.get("secondary_time_in_force", "") or ""),
             market_overrides=market_overrides,
         ),
         bool(cfg.get("require_presign", True)),
@@ -106,7 +110,7 @@ def _apply_env_uid_filter(*, uids: list[str], env_uids: list[str]) -> list[str]:
 
 def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPolicy) -> list[OrderRequest]:
     out: list[OrderRequest] = []
-    seen: set[tuple[str, str, float, float, str, str]] = set()
+    seen: set[tuple[str, str, float, float, str, str, int]] = set()
     for game in tuple(compiled_plan.games):
         for market in tuple(game.markets):
             policy = order_policy.for_market_type(market.sports_market_type)
@@ -114,6 +118,7 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPol
                 token_id = str(target.token_id or "").strip()
                 if not token_id:
                     continue
+                # Primary order
                 key = (
                     token_id,
                     "buy_yes",
@@ -121,22 +126,47 @@ def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPol
                     float(policy.limit_price),
                     str(policy.time_in_force),
                     str(target.condition_id or ""),
+                    0,
                 )
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append(
-                    OrderRequest(
-                        token_id=token_id,
-                        side="buy_yes",
-                        amount_usdc=float(policy.amount_usdc),
-                        limit_price=float(policy.limit_price),
-                        time_in_force=str(policy.time_in_force),
-                        client_order_id=f"hp_template_{len(out) + 1}",
-                        condition_id=str(target.condition_id or ""),
-                        size_shares=float(policy.size_shares),
+                if key not in seen:
+                    seen.add(key)
+                    out.append(
+                        OrderRequest(
+                            token_id=token_id,
+                            side="buy_yes",
+                            amount_usdc=float(policy.amount_usdc),
+                            limit_price=float(policy.limit_price),
+                            time_in_force=str(policy.time_in_force),
+                            client_order_id=f"hp_template_{len(out) + 1}",
+                            condition_id=str(target.condition_id or ""),
+                            size_shares=float(policy.size_shares),
+                        )
                     )
-                )
+                # Secondary order (optional)
+                if policy.has_secondary:
+                    sec_key = (
+                        token_id,
+                        "buy_yes",
+                        float(policy.secondary_amount_usdc),
+                        float(policy.secondary_limit_price),
+                        str(policy.secondary_time_in_force),
+                        str(target.condition_id or ""),
+                        1,
+                    )
+                    if sec_key not in seen:
+                        seen.add(sec_key)
+                        out.append(
+                            OrderRequest(
+                                token_id=token_id,
+                                side="buy_yes",
+                                amount_usdc=float(policy.secondary_amount_usdc),
+                                limit_price=float(policy.secondary_limit_price),
+                                time_in_force=str(policy.secondary_time_in_force),
+                                client_order_id=f"hp_template_{len(out) + 1}",
+                                condition_id=str(target.condition_id or ""),
+                                size_shares=float(policy.secondary_size_shares),
+                            )
+                        )
     return out
 
 

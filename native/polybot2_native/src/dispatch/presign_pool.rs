@@ -12,8 +12,8 @@ impl DispatchHandle {
             registry,
             shared_registry,
             presign_template_catalog: HashMap::new(),
-            presign_templates: vec![None; n],
-            presign_pool: (0..n).map(|_| None).collect(),
+            presign_templates: (0..n).map(|_| smallvec::SmallVec::new()).collect(),
+            presign_pool: (0..n).map(|_| smallvec::SmallVec::new()).collect(),
             submit_tx: None,
         }
     }
@@ -25,8 +25,8 @@ impl DispatchHandle {
     pub(crate) fn templates_and_pool_mut(
         &mut self,
     ) -> (
-        &[Option<OrderRequestData>],
-        &mut [Option<Box<PreparedOrderPayload>>],
+        &[smallvec::SmallVec<[OrderRequestData; 2]>],
+        &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>],
     ) {
         (
             self.presign_templates.as_slice(),
@@ -64,17 +64,19 @@ impl DispatchHandle {
     pub(crate) fn set_presign_templates(&mut self, templates: &[PresignTemplateData]) {
         self.presign_template_catalog.clear();
         for slot in self.presign_templates.iter_mut() {
-            *slot = None;
+            slot.clear();
         }
         for slot in self.presign_pool.iter_mut() {
-            *slot = None;
+            slot.clear();
         }
         for template in templates {
             let Some(request) = Self::parse_template_request(template) else {
                 continue;
             };
             self.presign_template_catalog
-                .insert(request.token_id.clone(), request);
+                .entry(request.token_id.clone())
+                .or_insert_with(smallvec::SmallVec::new)
+                .push(request);
         }
     }
 
@@ -82,12 +84,12 @@ impl DispatchHandle {
         let mut active = 0usize;
         for (idx, slot) in self.registry.tokens.iter().enumerate() {
             let trimmed = slot.token_id.trim();
-            if let Some(template) = self.presign_template_catalog.get(trimmed) {
-                self.presign_templates[idx] = Some(template.clone());
+            if let Some(templates) = self.presign_template_catalog.get(trimmed) {
+                self.presign_templates[idx] = templates.clone();
                 active += 1;
             } else {
-                self.presign_templates[idx] = None;
-                self.presign_pool[idx] = None;
+                self.presign_templates[idx].clear();
+                self.presign_pool[idx].clear();
             }
         }
         active
@@ -95,24 +97,26 @@ impl DispatchHandle {
 
     pub(crate) fn extend_for_patch(
         &mut self,
-        new_templates: &mut std::collections::HashMap<String, OrderRequestData>,
-        new_presigned: &mut std::collections::HashMap<String, SdkSignedOrder>,
+        new_templates: &mut std::collections::HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
+        new_presigned: &mut std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>>,
         registry_tokens: &[crate::TokenSlot],
     ) {
         let old_len = self.presign_templates.len();
         let new_len = registry_tokens.len();
-        self.presign_templates.resize_with(new_len, || None);
-        self.presign_pool.resize_with(new_len, || None);
+        self.presign_templates.resize_with(new_len, smallvec::SmallVec::new);
+        self.presign_pool.resize_with(new_len, smallvec::SmallVec::new);
         for idx in old_len..new_len {
             let token_id = registry_tokens[idx].token_id.trim();
-            if let Some(tpl) = new_templates.remove(token_id) {
+            if let Some(tpls) = new_templates.remove(token_id) {
                 self.presign_template_catalog
-                    .insert(token_id.to_string(), tpl.clone());
-                self.presign_templates[idx] = Some(tpl);
+                    .insert(token_id.to_string(), tpls.clone());
+                self.presign_templates[idx] = tpls;
             }
-            if let Some(signed) = new_presigned.remove(token_id) {
-                if let Ok(payload) = prepare_payload_from_signed(signed) {
-                    self.presign_pool[idx] = Some(Box::new(payload));
+            if let Some(signed_orders) = new_presigned.remove(token_id) {
+                for signed in signed_orders {
+                    if let Ok(payload) = prepare_payload_from_signed(signed) {
+                        self.presign_pool[idx].push(Box::new(payload));
+                    }
                 }
             }
         }
@@ -124,19 +128,19 @@ impl DispatchHandle {
     }
 }
 
-/// Signs one order per token at startup and stores them in the pool. Pool
-/// depth is always 1 (one-shot intents fire each token at most once).
+/// Signs orders for each token at startup and stores them in the pool.
+/// Each token may have 1-2 templates (primary + optional secondary).
 pub(crate) async fn warm_presign_startup_into(
     cfg: &DispatchConfig,
     client: &SdkClient<SdkAuthenticatedState<SdkAuthNormal>>,
     signer: &super::CachedSigner,
-    templates: &[Option<OrderRequestData>],
-    pool: &mut [Option<Box<PreparedOrderPayload>>],
+    templates: &[smallvec::SmallVec<[OrderRequestData; 2]>],
+    pool: &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>],
 ) -> Result<(), String> {
     if !cfg.presign_enabled {
         return Ok(());
     }
-    if templates.is_empty() || templates.iter().all(|t| t.is_none()) {
+    if templates.is_empty() || templates.iter().all(|t| t.is_empty()) {
         return Err("presign_startup_warm_no_templates".to_string());
     }
     if templates.len() != pool.len() {
@@ -147,15 +151,15 @@ pub(crate) async fn warm_presign_startup_into(
         ));
     }
 
+    // Flatten to (token_idx, template) work items — one per template, not per token.
     let mut key_work: Vec<(usize, OrderRequestData)> = Vec::new();
     for (idx, template_slot) in templates.iter().enumerate() {
-        let Some(template) = template_slot.as_ref() else {
-            continue;
-        };
-        if pool[idx].is_some() {
+        if template_slot.is_empty() || !pool[idx].is_empty() {
             continue;
         }
-        key_work.push((idx, template.clone()));
+        for tpl in template_slot {
+            key_work.push((idx, tpl.clone()));
+        }
     }
     if key_work.is_empty() {
         return Ok(());
@@ -189,23 +193,9 @@ pub(crate) async fn warm_presign_startup_into(
         let results = tokio::time::timeout_at(deadline, futures_util::future::join_all(handles))
             .await
             .map_err(|_| {
-                let detail = templates
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, t)| {
-                        t.as_ref().map(|tpl| {
-                            format!(
-                                "{}:{}",
-                                redact_token_id(&tpl.token_id),
-                                if pool[idx].is_some() { 1 } else { 0 }
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
                 format!(
-                    "presign_startup_warm_timeout:timeout_s={:.3} detail={}",
-                    total_timeout_s, detail
+                    "presign_startup_warm_timeout:timeout_s={:.3}",
+                    total_timeout_s,
                 )
             })?;
 
@@ -216,7 +206,7 @@ pub(crate) async fn warm_presign_startup_into(
                 format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
             })?;
             if let Some(signed) = signed_orders.into_iter().next() {
-                pool[idx] = Some(Box::new(prepare_payload_from_signed(signed)?));
+                pool[idx].push(Box::new(prepare_payload_from_signed(signed)?));
             }
         }
 
@@ -224,13 +214,14 @@ pub(crate) async fn warm_presign_startup_into(
         tokio::time::sleep(Duration::from_millis(BATCH_DELAY_MS)).await;
     }
 
+    // Verify all tokens with templates have at least one signed order
     for (idx, template_slot) in templates.iter().enumerate() {
-        if template_slot.is_none() {
+        if template_slot.is_empty() {
             continue;
         }
-        if pool[idx].is_none() {
+        if pool[idx].is_empty() {
             let token_id = template_slot
-                .as_ref()
+                .first()
                 .map(|t| t.token_id.as_str())
                 .unwrap_or("_");
             return Err(format!(

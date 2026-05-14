@@ -168,7 +168,11 @@ fn process_single_frame_live(
     } else {
         for intent in &result.intents {
             match dispatch_handle.pop_for_target(intent.target_idx) {
-                Ok(signed) => batch.push((intent.target_idx, signed)),
+                Ok(orders) => {
+                    for signed in orders {
+                        batch.push((intent.target_idx, signed));
+                    }
+                }
                 Err(err) => {
                     let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
                     if let Ok(mut g) = log.lock() {

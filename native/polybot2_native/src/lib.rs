@@ -358,8 +358,8 @@ struct LiveWorkerHandle {
 
 pub(crate) struct PatchPayload {
     pub(crate) plan_json: String,
-    pub(crate) new_presigned: HashMap<String, SdkSignedOrder>,
-    pub(crate) new_templates: HashMap<String, crate::dispatch::OrderRequestData>,
+    pub(crate) new_presigned: HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>>,
+    pub(crate) new_templates: HashMap<String, smallvec::SmallVec<[crate::dispatch::OrderRequestData; 2]>>,
 }
 
 struct SubmitterHandle {

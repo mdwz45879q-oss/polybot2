@@ -439,11 +439,13 @@ impl NativeHotPathRuntime {
             serde_json::from_str(&templates_json).map_err(|e| {
                 PyValueError::new_err(format!("patch_plan_invalid_templates:{}", e))
             })?;
-        let mut template_map: std::collections::HashMap<String, crate::dispatch::OrderRequestData> =
+        let mut template_map: std::collections::HashMap<String, smallvec::SmallVec<[crate::dispatch::OrderRequestData; 2]>> =
             std::collections::HashMap::new();
         for tpl in &templates {
             if let Some(req) = crate::dispatch::DispatchHandle::parse_template_request(tpl) {
-                template_map.insert(req.token_id.clone(), req);
+                template_map.entry(req.token_id.clone())
+                    .or_insert_with(smallvec::SmallVec::new)
+                    .push(req);
             }
         }
 
@@ -452,7 +454,7 @@ impl NativeHotPathRuntime {
 
         let sign_result = py
             .allow_threads(
-                move || -> Result<std::collections::HashMap<String, SdkSignedOrder>, String> {
+                move || -> Result<std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>>, String> {
                     if !dispatch_cfg.presign_enabled || template_map_clone.is_empty() {
                         return Ok(std::collections::HashMap::new());
                     }
@@ -461,7 +463,14 @@ impl NativeHotPathRuntime {
                         .build()
                         .map_err(|e| format!("patch_tokio_rt:{}", e))?;
                     rt.block_on(async {
-                        let handles: Vec<_> = template_map_clone
+                        // Flatten: sign each template independently (primary + optional secondary).
+                        let mut work_items: Vec<(String, crate::dispatch::OrderRequestData)> = Vec::new();
+                        for (token_id, requests) in template_map_clone {
+                            for req in requests {
+                                work_items.push((token_id.clone(), req));
+                            }
+                        }
+                        let handles: Vec<_> = work_items
                             .into_iter()
                             .map(|(token_id, request)| {
                                 let c = client.clone();
@@ -475,14 +484,17 @@ impl NativeHotPathRuntime {
                                 })
                             })
                             .collect();
-                        let mut signed = std::collections::HashMap::new();
+                        let mut signed: std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>> =
+                            std::collections::HashMap::new();
                         for handle in handles {
                             let (token_id, result) =
                                 handle.await.map_err(|e| format!("patch_sign_task:{}", e))?;
                             let orders =
                                 result.map_err(|e| format!("patch_sign:{}:{}", token_id, e))?;
                             if let Some(order) = orders.into_iter().next() {
-                                signed.insert(token_id, order);
+                                signed.entry(token_id)
+                                    .or_insert_with(smallvec::SmallVec::new)
+                                    .push(order);
                             }
                         }
                         Ok(signed)
