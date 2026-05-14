@@ -313,6 +313,20 @@ class LinkService:
             date_from=date_from,
             date_to=date_to,
         )
+        # Supplementary kickoff-based loading (catches postponed games whose
+        # game_date_et is stale but kickoff_ts_utc was updated).
+        if resolved.provider_start_ts_utc is not None:
+            tol_sec = int(rules.kickoff_tolerance_minutes) * 60
+            kickoff_events = self._db.markets.load_pm_events_by_league_and_kickoff_range(
+                league_key=resolved.polymarket_league_key,
+                kickoff_from_utc=resolved.provider_start_ts_utc - tol_sec,
+                kickoff_to_utc=resolved.provider_start_ts_utc + tol_sec,
+            )
+            seen = {e["event_id"] for e in events}
+            for e in kickoff_events:
+                if e["event_id"] not in seen:
+                    events.append(e)
+                    seen.add(e["event_id"])
         diagnostics: dict[str, Any] = {
             "candidate_window": {
                 "league": resolved.canonical_league,

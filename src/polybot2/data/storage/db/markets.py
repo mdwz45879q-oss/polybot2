@@ -470,6 +470,34 @@ class MarketsAdapter:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def load_pm_events_by_league_and_kickoff_range(
+        self,
+        *,
+        league_key: str,
+        kickoff_from_utc: int,
+        kickoff_to_utc: int,
+    ) -> list[dict[str, Any]]:
+        """Load PM events by kickoff timestamp range.
+
+        Catches postponed games whose game_date_et is stale but
+        kickoff_ts_utc has been updated to the rescheduled time.
+        """
+        lk = str(league_key or "").strip().lower()
+        if not lk:
+            return []
+        rows = self._db.execute(
+            """
+            SELECT *
+            FROM pm_events
+            WHERE league_key = ?
+              AND kickoff_ts_utc >= ?
+              AND kickoff_ts_utc <= ?
+            ORDER BY kickoff_ts_utc, event_id
+            """,
+            (lk, kickoff_from_utc, kickoff_to_utc),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def load_markets_for_event_ids(self, event_ids: list[str]) -> list[dict[str, Any]]:
         if not event_ids:
             return []

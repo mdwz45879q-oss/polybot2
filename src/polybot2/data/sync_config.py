@@ -8,7 +8,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class MarketSyncConfig:
     gamma_api: str = "https://gamma-api.polymarket.com"
-    batch_size: int = 500
+    batch_size: int = 100
     timeout: float = 30.0
     request_delay: float = 0.0
     concurrency: int = 20
