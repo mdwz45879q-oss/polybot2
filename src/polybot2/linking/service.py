@@ -522,6 +522,24 @@ class LinkService:
         cluster_by_event_id: dict[str, str] = {}
         for _score, ev_id, ev in scored:
             cluster_by_event_id[ev_id] = self._slug_prefix(_norm(str(ev.get("slug_raw") or ev.get("slug") or "")))
+
+        # Merge clusters that share the same kickoff_ts_utc as the provider game
+        # (catches postponed games with stale date slugs but updated kickoff).
+        if provider_ts is not None and provider_ts > 0:
+            kickoff_tol = int(rules.kickoff_tolerance_minutes) * 60
+            clusters_with_matching_kickoff: set[str] = set()
+            for _score, ev_id, ev in scored:
+                ev_kickoff = ev.get("kickoff_ts_utc")
+                if ev_kickoff is not None and abs(int(ev_kickoff) - provider_ts) <= kickoff_tol:
+                    c = cluster_by_event_id.get(ev_id, "")
+                    if c:
+                        clusters_with_matching_kickoff.add(c)
+            if len(clusters_with_matching_kickoff) > 1:
+                merged_label = min(clusters_with_matching_kickoff)
+                for ev_id, c in cluster_by_event_id.items():
+                    if c in clusters_with_matching_kickoff:
+                        cluster_by_event_id[ev_id] = merged_label
+
         top_clusters = {
             cluster_by_event_id.get(ev_id, "")
             for _score, ev_id, _ev in top_scored
