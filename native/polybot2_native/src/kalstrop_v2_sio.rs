@@ -53,7 +53,9 @@ pub(crate) async fn connect(
         );
     }
 
-    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+    let (mut ws, _) = tokio_tungstenite::connect_async_tls_with_config(
+        &ws_url, None, true, None,
+    )
         .await
         .map_err(|e| format!("v2_sio_connect:{}", e))?;
 
@@ -74,7 +76,7 @@ pub(crate) async fn connect(
     let ping_interval = parse_ping_interval(&open_text[1..]);
 
     // Send Socket.IO CONNECT
-    ws.send(Message::Text("40".to_string()))
+    ws.send(Message::Text("40".to_string().into()))
         .await
         .map_err(|e| format!("v2_sio_connect_send:{}", e))?;
 
@@ -109,7 +111,7 @@ pub(crate) async fn subscribe(
     });
     let payload = format!("42[\"genius_subscribe\",{}]", params);
     conn.ws
-        .send(Message::Text(payload))
+        .send(Message::Text(payload.into()))
         .await
         .map_err(|e| format!("v2_sio_subscribe_send:{}", e))
 }
@@ -125,14 +127,14 @@ pub(crate) async fn unsubscribe(
     });
     let payload = format!("42[\"genius_unsubscribe\",{}]", params);
     conn.ws
-        .send(Message::Text(payload))
+        .send(Message::Text(payload.into()))
         .await
         .map_err(|e| format!("v2_sio_unsubscribe_send:{}", e))
 }
 
 pub(crate) async fn send_pong(conn: &mut SioConnection) -> Result<(), String> {
     conn.ws
-        .send(Message::Text("3".to_string()))
+        .send(Message::Text("3".to_string().into()))
         .await
         .map_err(|e| format!("v2_sio_pong_send:{}", e))
 }

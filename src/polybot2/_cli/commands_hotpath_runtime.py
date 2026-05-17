@@ -35,6 +35,15 @@ load_live_trading_policy = _load_live_trading_policy
 _hotpath_order_policy_for_league = _common_hotpath_order_policy_for_league
 _hotpath_runtime_policy_for_league = _common_hotpath_runtime_policy_for_league
 
+
+def _primary_provider_for_league(league_cfg: dict) -> str:
+    """Extract the primary provider name from a league config dict."""
+    raw_p = league_cfg.get("provider", "")
+    if isinstance(raw_p, list):
+        return str(raw_p[0]).strip().lower() if raw_p else ""
+    return str(raw_p).strip().lower()
+
+
 def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
     try:
         from polybot2.hotpath.live_observer import LiveObserver, find_latest_log
@@ -62,7 +71,11 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
                 runtime = _runtime_from_args(args)
                 mapping_obs = _load_mapping_obs()
                 obs_league_cfg = mapping_obs.leagues.get(league_key, {})
-                obs_provider = str(obs_league_cfg.get("provider", "kalstrop_v1")).strip().lower()
+                _obs_raw_p = obs_league_cfg.get("provider", "kalstrop_v1")
+                obs_provider = (
+                    str(_obs_raw_p[0]).strip().lower() if isinstance(_obs_raw_p, list) and _obs_raw_p
+                    else str(_obs_raw_p).strip().lower()
+                )
                 with open_database(runtime) as db:
                     compiled_plan = compile_hotpath_plan(
                         db=db,
@@ -132,13 +145,58 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     _load_dotenv(logger)
 
     live_policy = load_live_trading_policy()
-    league_key = str(getattr(args, "league", "") or "").strip().lower()
-    if not league_key:
-        logger.error("--league is required")
-        return 1
+
+    # --- Resolve league list from --league or --sport ---
+    raw_leagues = getattr(args, "league", None)  # list or None (nargs="+")
+    sport_arg = getattr(args, "sport", None)
     mapping = _load_mapping()
+
+    if sport_arg and raw_leagues:
+        logger.error("cannot specify both --sport and --league")
+        return 1
+    if not sport_arg and not raw_leagues:
+        logger.error("one of --sport or --league is required")
+        return 1
+
+    if sport_arg:
+        league_keys = sorted(
+            lk for lk, cfg in mapping.leagues.items()
+            if cfg.get("sport_family") == sport_arg
+            and lk in live_policy.live_betting_leagues
+        )
+        if not league_keys:
+            logger.error("no live leagues for sport=%s", sport_arg)
+            return 1
+        logger.info("sport=%s resolved to leagues: %s", sport_arg, ", ".join(league_keys))
+    else:
+        league_keys = [str(l).strip().lower() for l in raw_leagues]
+
+    # Use first league as "primary" for backward compat with single-league code paths.
+    league_key = league_keys[0]
     league_cfg = mapping.leagues.get(league_key, {})
-    provider_name = str(league_cfg.get("provider", "")).strip().lower()
+    raw_provider = league_cfg.get("provider", "")
+    if isinstance(raw_provider, list):
+        provider_names = [str(p).strip().lower() for p in raw_provider if str(p).strip()]
+        provider_name = provider_names[0] if provider_names else ""
+        is_multiplexed = len(provider_names) > 1
+    else:
+        provider_name = str(raw_provider).strip().lower()
+        provider_names = [provider_name] if provider_name else []
+        is_multiplexed = False
+
+    # For multi-league mode, collect all providers across all leagues.
+    if len(league_keys) > 1:
+        _all_providers: set[str] = set()
+        for _lk in league_keys:
+            _cfg = mapping.leagues.get(_lk, {})
+            _raw_p = _cfg.get("provider", "")
+            if isinstance(_raw_p, list):
+                _all_providers.update(str(p).strip().lower() for p in _raw_p if str(p).strip())
+            elif str(_raw_p).strip():
+                _all_providers.add(str(_raw_p).strip().lower())
+        provider_names = sorted(_all_providers)
+        is_multiplexed = len(provider_names) > 1
+
     if not provider_name:
         logger.error("league %s has no provider configured in mappings.py", league_key)
         return 1
@@ -157,9 +215,13 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     cli_refresh = getattr(args, "refresh_interval", None)
     config_refresh = int(runtime_policy.get("refresh_interval_seconds", 300))
     refresh_interval = int(cli_refresh) if cli_refresh is not None else config_refresh
-    order_policy, require_presign, _ = _hotpath_order_policy_for_league(
-        live_policy=live_policy, league_key=league_key,
-    )
+    order_policies: dict[str, Any] = {}
+    require_presign = False
+    for _lk in league_keys:
+        _p, _rp, _ = _hotpath_order_policy_for_league(live_policy=live_policy, league_key=_lk)
+        order_policies[_lk] = _p
+        if _rp:
+            require_presign = True
 
     stop_requested = False
 
@@ -205,22 +267,69 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             execution_mode=execution_mode, config=hp_cfg,
             binding_resolver=resolver,
         )
-        hotpath.set_order_policy(order_policy)
+        hotpath.set_order_policies(order_policies)
         hotpath._ws_core_idx = runtime_policy.get("ws_core_idx")
         hotpath._submitter_core_idx = runtime_policy.get("submitter_core_idx")
 
-        if is_v2_league:
+        # Build multiplexed provider configs when the league uses multiple providers.
+        if is_multiplexed:
+            from polybot2.sports.factory import resolve_kalstrop_credentials_from_env
+            _mux_client_id, _mux_secret, _ = resolve_kalstrop_credentials_from_env()
+            _providers_cfg: list[dict[str, Any]] = []
+            for _pn in provider_names:
+                if _pn == "kalstrop_v2":
+                    _providers_cfg.append({
+                        "provider": "kalstrop_v2",
+                        "base_url": "https://stats.kalstropservice.com",
+                        "sio_path": "/socket.io",
+                        "client_id": _mux_client_id,
+                        "shared_secret_raw": _mux_secret,
+                    })
+                elif _pn in ("kalstrop_v1", "kalstrop"):
+                    _providers_cfg.append({
+                        "provider": "kalstrop_v1",
+                        "ws_url": os.getenv("KALSTROP_WS_URL", "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"),
+                        "client_id": _mux_client_id,
+                        "shared_secret_raw": _mux_secret,
+                    })
+                elif _pn == "boltodds":
+                    _providers_cfg.append({
+                        "provider": "boltodds",
+                        "api_key": os.getenv("BOLTODDS_API_KEY", ""),
+                        "boltodds_ws_url": os.getenv("BOLTODDS_WS_URL", "wss://spro.agency/api/livescores"),
+                    })
+            hotpath._providers = _providers_cfg
+            logger.info("multiplexed providers: %s", ", ".join(provider_names))
+
+        # Separate leagues into non-V2 (immediate start) and V2 (deferred).
+        _non_v2_leagues = [
+            (lk, mapping.leagues.get(lk, {}))
+            for lk in league_keys
+            if _primary_provider_for_league(mapping.leagues.get(lk, {})) != "kalstrop_v2"
+        ]
+        _v2_leagues = [
+            (lk, mapping.leagues.get(lk, {}))
+            for lk in league_keys
+            if _primary_provider_for_league(mapping.leagues.get(lk, {})) == "kalstrop_v2"
+        ]
+
+        if _v2_leagues:
             logger.info(
-                "V2 league %s: waiting for game(s) to go live before starting hotpath (run_id=%d, refresh=%ds)",
-                league_key, run_id, refresh_interval,
+                "V2 leagues %s: waiting for game(s) to go live before starting hotpath (run_id=%d, refresh=%ds)",
+                ", ".join(lk for lk, _ in _v2_leagues), run_id, refresh_interval,
             )
-        else:
-            # --- Non-V2: compile plan and start immediately ---
+
+        if _non_v2_leagues:
+            # --- Non-V2: compile plan for all non-V2 leagues and start immediately ---
+            from polybot2.hotpath.compiler import compile_multi_league_plan
+            _non_v2_pairs = [
+                (lk, _primary_provider_for_league(cfg))
+                for lk, cfg in _non_v2_leagues
+            ]
             with open_database(runtime) as db:
-                compiled_plan = compile_hotpath_plan(
+                compiled_plan = compile_multi_league_plan(
                     db=db,
-                    provider=provider_name,
-                    league=league_key,
+                    leagues=_non_v2_pairs,
                     run_id=run_id,
                     live_policy=live_policy,
                     now_ts_utc=int(time.time()),
@@ -247,7 +356,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             hotpath.set_subscriptions(wanted)
 
             template_orders = _build_hotpath_template_orders(
-                compiled_plan=compiled_plan, order_policy=order_policy,
+                compiled_plan=compiled_plan, order_policies=order_policies,
             )
             if template_orders and hasattr(hotpath, "prewarm_presign"):
                 hotpath.prewarm_presign(template_orders)
@@ -260,10 +369,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             hotpath.start()
             rust_started = True
 
-        # --- V2 credentials (loaded once) ---
+        # --- V2 credentials (loaded once, needed whenever any league uses V2) ---
         v2_client_id = ""
         v2_shared_secret_raw = ""
-        if is_v2_league:
+        if _v2_leagues:
             from polybot2.sports.factory import resolve_kalstrop_credentials_from_env
             v2_client_id, v2_shared_secret_raw, _ = resolve_kalstrop_credentials_from_env()
 
@@ -280,14 +389,19 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             now = time.time()
 
             # --- V2 resolution step (every v2_resolve_interval, only for due games) ---
-            if is_v2_league and (now - last_v2_check) >= v2_resolve_interval:
+            if _v2_leagues and (now - last_v2_check) >= v2_resolve_interval:
                 last_v2_check = now
                 try:
+                    all_pending = []
                     with open_database(runtime) as db:
-                        pending = build_pending_games(
-                            db=db, league=league_key, run_id=run_id,
-                            provider=provider_name, already_resolved=resolved_prematch_ids,
-                        )
+                        for _v2_lk, _v2_cfg in _v2_leagues:
+                            _v2_prov = _primary_provider_for_league(_v2_cfg)
+                            _lk_pending = build_pending_games(
+                                db=db, league=_v2_lk, run_id=run_id,
+                                provider=_v2_prov, already_resolved=resolved_prematch_ids,
+                            )
+                            all_pending.extend(_lk_pending)
+                    pending = all_pending
                     due = [g for g in pending if g.start_ts_utc is not None and g.start_ts_utc <= int(now)]
                     if due:
                         resolution = try_resolve_games(
@@ -308,10 +422,14 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 resolved.resolved_home, resolved.resolved_away,
                                 resolved.match_status, delta_s,
                             )
+                            _resolved_league = resolved.pending.league
+                            _resolved_provider = _primary_provider_for_league(
+                                mapping.leagues.get(_resolved_league, {})
+                            ) or provider_name
                             with open_database(runtime) as db:
                                 game_plan = compile_for_resolved_game(
                                     resolved=resolved, db=db, run_id=run_id,
-                                    provider=provider_name, league=league_key,
+                                    provider=_resolved_provider, league=_resolved_league,
                                     live_policy=live_policy,
                                     plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
                                 )
@@ -352,7 +470,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                     markets_discovered=len(new_targets),
                                     targets_inserted=len(new_targets),
                                 )
-                                count = hotpath.apply_incremental_refresh(refresh_result, order_policy)
+                                count = hotpath.apply_incremental_refresh(refresh_result, order_policies)
                                 logger.info(
                                     "V2 game patched: fixture_id=%s targets=%d presigned=%d",
                                     resolved.fixture_id, n_tgt, count,
@@ -383,7 +501,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                     continue
 
                 if result.new_targets:
-                    count = hotpath.apply_incremental_refresh(result, order_policy)
+                    count = hotpath.apply_incremental_refresh(result, order_policies)
                     logger.info(
                         "hot-patch applied: cycle=%d new_markets=%d new_targets=%d presigned=%d",
                         iteration, result.markets_discovered, len(result.new_targets), count,
@@ -436,7 +554,11 @@ def run_hotpath_compile(args: Any, *, logger: logging.Logger) -> int:
         return 1
     mapping = _load_mapping()
     league_cfg = mapping.leagues.get(league_key, {})
-    provider_name = str(league_cfg.get("provider", "")).strip().lower()
+    _raw_p = league_cfg.get("provider", "")
+    provider_name = (
+        str(_raw_p[0]).strip().lower() if isinstance(_raw_p, list) and _raw_p
+        else str(_raw_p).strip().lower()
+    )
     if not provider_name:
         logger.error("league %s has no provider configured", league_key)
         return 1

@@ -950,8 +950,46 @@ class LinkReviewService:
                     "actor": str(game.get("latest_decision_actor") or ""),
                     "decided_at": _int_or_none(game.get("latest_decision_ts")),
                 },
+                "provider_siblings": self._get_provider_siblings(
+                    run_id=rid,
+                    canonical_home_team=str(game.get("canonical_home_team") or ""),
+                    canonical_away_team=str(game.get("canonical_away_team") or ""),
+                    game_date_et=str(game.get("game_date_et") or ""),
+                    exclude_provider=p,
+                    exclude_game_id=gid,
+                ),
             },
         }
+
+    def _get_provider_siblings(
+        self,
+        *,
+        run_id: int,
+        canonical_home_team: str,
+        canonical_away_team: str,
+        game_date_et: str,
+        exclude_provider: str,
+        exclude_game_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return other provider games for the same canonical game."""
+        if not canonical_home_team or not canonical_away_team or not game_date_et:
+            return []
+        rows = self._db.execute(
+            """
+            SELECT provider, provider_game_id, home_raw, away_raw, when_raw,
+                   league_raw, sport_raw, game_label, parse_status, binding_status
+            FROM link_run_provider_games
+            WHERE run_id = ?
+              AND canonical_home_team = ?
+              AND canonical_away_team = ?
+              AND game_date_et = ?
+              AND NOT (provider = ? AND provider_game_id = ?)
+            ORDER BY provider, provider_game_id
+            """,
+            (run_id, canonical_home_team, canonical_away_team, game_date_et,
+             exclude_provider, exclude_game_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def record_decision(
         self,

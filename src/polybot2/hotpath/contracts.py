@@ -87,6 +87,9 @@ class CompiledGamePlan:
     canonical_away_team: str
     kickoff_ts_utc: int | None
     markets: tuple[CompiledMarket, ...] = field(default_factory=tuple)
+    # Alternate provider game IDs for the same canonical game.
+    # Each entry is (provider_name, provider_game_id).
+    alternate_provider_game_ids: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)

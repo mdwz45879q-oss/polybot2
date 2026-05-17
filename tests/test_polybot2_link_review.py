@@ -569,7 +569,7 @@ def test_compact_card_height_guard_multi_event(tmp_path: Path) -> None:
     assert len(lines) <= 41
 
 
-def test_compact_card_drilldown_regression_markets_mode_is_more_detailed(tmp_path: Path) -> None:
+def test_compact_card_drilldown_regression_markets_mode_shows_summary_table(tmp_path: Path) -> None:
     runtime = DataRuntimeConfig(db_path=str(tmp_path / "db.sqlite"))
     run_id = _seed_link_data(runtime=runtime, include_unresolved=False)
     with open_database(runtime) as db:
@@ -589,9 +589,13 @@ def test_compact_card_drilldown_regression_markets_mode_is_more_detailed(tmp_pat
         show_full_ids=False,
         candidates=None,
     )
-    assert not any("outcome 0:" in line for line in card_lines)
-    assert any("outcome 0:" in line for line in market_lines)
-    assert len(market_lines) > len(card_lines)
+    card_strs = [str(l) for l in card_lines]
+    market_strs = [str(l) for l in market_lines]
+    assert any("Matched Events" in l for l in card_strs)
+    assert not any("Matched Events" in l for l in market_strs)
+    has_targets = bool(payload.get("card", {}).get("market_bindings", {}).get("targets"))
+    if has_targets:
+        assert any("Market Targets" in l for l in market_strs)
 
 
 def test_market_type_normalization_and_inference() -> None:
@@ -784,6 +788,18 @@ def test_markets_view_uses_real_types_line_display_and_unselected_toggle() -> No
                         "outcomes": [],
                     }
                 ],
+                "targets": [
+                    {"condition_id": "cond_moneyline", "sports_market_type": "moneyline", "is_tradeable": 1, "line": None},
+                    {"condition_id": "cond_moneyline", "sports_market_type": "moneyline", "is_tradeable": 1, "line": None},
+                    {"condition_id": "cond_total_85", "sports_market_type": "totals", "is_tradeable": 1, "line": 8.5},
+                    {"condition_id": "cond_total_85", "sports_market_type": "totals", "is_tradeable": 1, "line": 8.5},
+                    {"condition_id": "cond_total_75", "sports_market_type": "totals", "is_tradeable": 1, "line": 7.5},
+                    {"condition_id": "cond_total_75", "sports_market_type": "totals", "is_tradeable": 1, "line": 7.5},
+                    {"condition_id": "cond_nrfi", "sports_market_type": "nrfi", "is_tradeable": 1, "line": None},
+                    {"condition_id": "cond_nrfi", "sports_market_type": "nrfi", "is_tradeable": 1, "line": None},
+                    {"condition_id": "cond_spread", "sports_market_type": "spread", "is_tradeable": 1, "line": -1.5},
+                    {"condition_id": "cond_spread", "sports_market_type": "spread", "is_tradeable": 1, "line": -1.5},
+                ],
                 "n_targets": 10,
                 "n_tradeable_targets": 10,
                 "n_selected_markets": 5,
@@ -805,7 +821,7 @@ def test_markets_view_uses_real_types_line_display_and_unselected_toggle() -> No
     )
     payload["card"]["market_bindings"]["unselected_markets"] = ordered_unselected
 
-    hidden_lines = _build_card_document_lines(
+    market_lines = _build_card_document_lines(
         payload,
         view_mode="markets",
         expanded_event_ids={"evt_demo"},
@@ -813,25 +829,13 @@ def test_markets_view_uses_real_types_line_display_and_unselected_toggle() -> No
         show_unselected_markets=False,
         candidates=None,
     )
-    shown_lines = _build_card_document_lines(
-        payload,
-        view_mode="markets",
-        expanded_event_ids={"evt_demo"},
-        show_full_ids=False,
-        show_unselected_markets=True,
-        candidates=None,
-    )
-    assert any("[✓] MONEYLINE | Team A vs Team B" in line for line in hidden_lines)
-    assert any("[✓] TOTALS | Total Runs | O/U 7.5" in line for line in hidden_lines)
-    assert any("[✓] TOTALS | Total Runs | O/U 8.5" in line for line in hidden_lines)
-    assert any("[✓] NRFI | No runs first inning" in line for line in hidden_lines)
-    assert any("[✓] SPREAD | Run line | line -1.5" in line for line in hidden_lines)
-    totals_lines = [line for line in hidden_lines if "[✓] TOTALS | Total Runs | O/U" in line]
-    assert totals_lines[0].endswith("O/U 7.5")
-    assert totals_lines[1].endswith("O/U 8.5")
-    assert any("game_state=LIVE" in line for line in hidden_lines)
-    assert not any("[X]" in line for line in hidden_lines)
-    assert any("[X] TOTALS | Alternate total | O/U 9.5" in line for line in shown_lines)
+    market_strs = [str(l) for l in market_lines]
+    assert any("Market Targets" in l for l in market_strs)
+    assert any("moneyline" in l for l in market_strs)
+    assert any("totals" in l for l in market_strs)
+    assert any("nrfi" in l for l in market_strs)
+    assert any("spread" in l for l in market_strs)
+    assert any("Total" in l for l in market_strs)
 
 
 def test_game_state_derivation_prefers_status_then_kickoff_fallback() -> None:

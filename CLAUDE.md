@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball) and soccer (EPL, La Liga, Bundesliga, UCL). Three score data providers: Kalstrop V1 (Sportradar, WS, baseball + lower-tier soccer), Kalstrop V2 (BetGenius, Socket.IO, top-tier soccer), BoltOdds (WS, broad coverage). One provider per league — configured in `LEAGUES[league]["provider"]`. Deployment: Linux EC2 (eu-west-1).
+polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball) and soccer (EPL, La Liga, Bundesliga, UCL). Four score data providers: Kalstrop V1 (Sportradar, WS, baseball + lower-tier soccer), Kalstrop V2 (BetGenius, Socket.IO, top-tier soccer), BoltOdds (WS, broad coverage), Kalstrop Opta (REST catalog, football + baseball — streaming pending for non-World-Cup). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
 
 ## Build & Test
 
@@ -60,18 +60,19 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `kalstrop_v2_types.rs` | V2 frame extractor (`fast_extract_v2`): fixture_id, home/away scores, currentPhase. Prebuilt finders. |
 | `kalstrop_v2_frame_pipeline.rs` | V2 soccer frame pipeline: extract → dedup → phase map → engine → dispatch |
 | `ws_kalstrop_v2.rs` | V2 Socket.IO worker: reconnect loop, subscription management, frame drain |
+| `ws_multiplexed.rs` | Multiplexed WS worker: manages V1+V2 connections in one `tokio::select!` loop. "Fastest wins" — whichever provider delivers a score change first triggers evaluation. Independent reconnection per provider. |
 | `boltodds_types.rs` | Byte-level extractor for BoltOdds frames (`fast_extract_boltodds`). Extracts `game_label`, goals, corners, match period from raw JSON without serde. |
 | `boltodds_frame_pipeline.rs` | BoltOdds soccer frame pipeline: extract → dedup → eval → dispatch. Uses integer-based dedup (goals + corners + period). |
 | `ws_boltodds.rs` | BoltOdds WS worker: plain WS connection (`?key=TOKEN`), subscribe by game labels, frame drain loop. Simpler protocol than V1 (no GraphQL). |
 | `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames (`fast_extract_v1`). Extracts fixtureId, homeScore, awayScore, freeText without full serde parse. |
 | `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). |
-| `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<Option<Box<PreparedOrderPayload>>>`). Depth is always 1 (one-shot intents). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes one order per token at startup. |
+| `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`). Depth is 1-2 per token (primary + optional secondary order). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes orders per token at startup. |
 | `dispatch/fast_submit_client.rs` | `FastClobSubmitClient`: custom HTTP client bypassing the SDK for `POST /order` and `POST /orders`. Caches decoded API secret, uses stack-based `itoa` + base64 for HMAC, sends pre-serialized order bytes directly. Two paths: `post_order_bytes_single` (zero-alloc auth for single intent) and `post_orders_bytes` (batch concatenation). |
 | `dispatch/sdk_exec.rs` | `OrderSubmitter::new`, `ensure_sdk_runtime_async`, `sdk_client_ref`, `signer_ref` (SDK init for presign signing). `sign_order_batch` (presign warmup). `map_post_response` helper. The SDK client is used only for order signing at startup/patch — not for HTTP submission. |
 | `dispatch/submitter.rs` | `run_submitter_async`: spin-loop that pops from SPSC ring and calls `submit_batch_task` inline (no `tokio::spawn`). Three paths: `len==1` (single `post_order_bytes_single`), `2..=15` (single `post_orders_bytes`), `>15` (concurrent chunks via `join_all`). Semaphore(3) gates HTTP calls. |
 | `dispatch/types.rs` | `DispatchHandle`, `OrderSubmitter`, `SubmitWork`, `SubmitBatch`, `PreparedOrderPayload`, `SharedRegistry` (ArcSwap). Presign pool stores `Box<PreparedOrderPayload>` (pre-serialized JSON bytes). |
 | `ws.rs` | Kalstrop V1 live worker: GraphQL WS connect, subscription management, frame drain loop. Uses `worker_clock_origin: Instant` for monotonic timestamps. Dispatches to sport-specific frame pipeline via `SportEngine` enum (`Baseball`/`Soccer` variants). Drains `patch_rx` at quiescent points for hot-patch application. |
-| `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), or `ws_boltodds.rs` (BoltOdds) based on `provider` in config. Sport engine selected from plan league (Baseball/Soccer). `health_snapshot()` exposes WS + submitter health. |
+| `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), `ws_boltodds.rs` (BoltOdds), or `ws_multiplexed.rs` (multi-provider) based on `provider`/`providers` in config. Sport engine selected from plan league (Baseball/Soccer). CPU core pinning via `core_affinity` for WS + submitter threads (`ws_core_idx`/`submitter_core_idx` in config). `health_snapshot()` exposes WS + submitter health. |
 | `lib.rs` | Shared types (`GameIdx`, `TargetIdx`, `TokenIdx`, `OverLine`, `SpreadSide`, `Intent`, `RawIntent`), `SportEngine` enum, `PatchPayload`, `NativeHotPathRuntime`, config structs. Baseball-specific types live in `baseball/types.rs`, soccer in `soccer/types.rs`. |
 | `log_writer.rs` | Structured JSONL log. Wrapped in `Arc<Mutex<LogWriter>>` and shared by WS thread (logs ticks) and submitter thread (logs order outcomes). |
 
@@ -79,8 +80,8 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 
 ```
 WS thread (per frame, zero-alloc live path):
-  serde_json::from_str<KalstropFrame<'a>>            (zero-copy)
-  → extract borrowed fields from KalstropUpdate<'a>  (no Tick construction, no to_owned)
+  fast_extract_v1(frame_text)                        (byte-level scan, no serde)
+  → extract fixture_id, scores, freeText, corners    (borrowed slices, no allocation)
   → engine.check_duplicate / process_tick_live(GameIdx, ...)  (single FxHashMap lookup, eval into SmallVec)
                                                       returns LiveTickResult { game_idx, intents: SmallVec<[Intent; 32]> }
   → process_decoded_frame_sync builds one SubmitBatch per frame:
@@ -158,7 +159,7 @@ Two structs back the dispatch path:
 - **`DispatchHandle`** (WS thread): `cfg`, `registry: Arc<TargetRegistry>`, `shared_registry: SharedRegistry` (ArcSwap), `presign_pool: Vec<Option<Box<PreparedOrderPayload>>>` indexed by `TokenIdx` (depth=1), `submit_tx: Option<rtrb::Producer<SubmitWork>>`. All methods are synchronous.
 - **`OrderSubmitter`** (submitter thread): `cfg`, `shared_registry: SharedRegistry`, `submit_rx: rtrb::Consumer<SubmitWork>`, `stop_flag: Arc<AtomicBool>`, `log`, `health`. Initializes `FastClobSubmitClient` at startup (custom HTTP + L2 auth, bypasses SDK for submission).
 
-Channel: `rtrb::RingBuffer<SubmitWork>` (capacity 64), lock-free SPSC. `SubmitBatch` is `SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 16]>`. The WS thread pushes one Batch per material frame. The submitter spins on `submit_rx.pop()` and processes batches inline (no `tokio::spawn`) — strict serialized queue across batches, concurrent chunks only within oversized (>15) batches.
+Channel: `rtrb::RingBuffer<SubmitWork>` (capacity 64), lock-free SPSC. `SubmitBatch` is `SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 32]>`. With dual-order, a frame with N intents produces up to 2N batch entries. The WS thread pushes one Batch per material frame. The submitter spins on `submit_rx.pop()` and processes batches inline (no `tokio::spawn`) — strict serialized queue across batches, concurrent chunks only within oversized (>15) batches.
 
 Shutdown: `stop_flag.store(true)` from the runtime `stop()` method. The submitter checks `stop_flag` after each drain cycle and exits cleanly.
 
@@ -168,7 +169,7 @@ In **noop mode** no submitter thread is spawned; `DispatchHandle::submit_tx` sta
 
 ### Presign Pool
 
-Signs one order per unique token at startup, serializes to JSON bytes, and stores the `PreparedOrderPayload` so the WS thread can pop in ~100ns instead of ECDSA-signing in ~10–50ms. Pool depth is always 1 per token (one-shot intents fire each token at most once). Pool ownership lives on `DispatchHandle` (WS thread) as `Vec<Option<Box<PreparedOrderPayload>>>` indexed by `TokenIdx` (`Option::take()` for pop). The SDK client used to sign warmup orders lives on `OrderSubmitter` (submitter thread). At startup:
+Signs 1-2 orders per unique token at startup, serializes to JSON bytes, and stores `PreparedOrderPayload`s so the WS thread can pop in ~100ns instead of ECDSA-signing in ~10–50ms. Pool depth is 1-2 per token (primary + optional secondary order). Pool ownership lives on `DispatchHandle` (WS thread) as `Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>` indexed by `TokenIdx` (`std::mem::take()` drains all orders at once). When `secondary_time_in_force` is configured, each intent fires two pre-signed orders with different parameters (e.g., FAK for immediate fill + GTC for resting liquidity). The SDK client used to sign warmup orders lives on `OrderSubmitter` (submitter thread). At startup:
 
 1. `OrderSubmitter::ensure_sdk_runtime_async` initializes the SDK client.
 2. `warm_presign_startup_into(&cfg, &client, &signer, &templates_slice, &mut pool_slice)` signs one order per token in parallel (`tokio::spawn` per token) and writes results into the handle's pool by `TokenIdx`.
@@ -210,13 +211,14 @@ The worker uses `worker_clock_origin: Instant` set at startup, and `source_recv_
 | `execution/` | Config container for Rust dispatch (no order methods — Rust handles all dispatch) |
 | `hotpath/` | Plan compiler, native service adapter, incremental market refresh |
 | `hotpath/incremental.py` | `discover_new_markets()` — targeted Gamma API fetch for known event IDs, diff against current plan, insert new market targets, return delta for hot-patch |
-| `hotpath/order_policy.py` | `OrderPolicy` dataclass — sport-generic execution profile (amount, size, price, time-in-force). `market_overrides` dict for per-market-type sizing (e.g., smaller bets on exact score). `for_market_type()` resolves overrides. |
+| `hotpath/order_policy.py` | `OrderPolicy` dataclass — sport-generic execution profile (amount, size, price, time-in-force). `market_overrides` dict for per-market-type sizing (e.g., smaller bets on exact score). `for_market_type()` resolves overrides. Supports dual-order via `secondary_*` fields — when configured, each intent fires two pre-signed orders (primary + secondary). |
 | `hotpath/v2_resolver.py` | V2 fixture ID resolver: `build_pending_games`, `try_resolve_games` (polls V2 tournament fixtures, matches by teams+time), `compile_for_resolved_game` (single-game plan with fixture_id substitution). Detects finished games. |
-| `sports/` | Provider catalog adapters: `KalstropV1Provider` (V1 REST catalog), `KalstropV2Provider` (V2 REST catalog), `BoltOddsProvider` (REST catalog). No Python-side streaming — all WS streaming is handled by Rust or standalone capture scripts. |
+| `sports/` | Provider catalog adapters: `KalstropV1Provider` (V1 REST catalog), `KalstropV2Provider` (V2 REST catalog), `KalstropOptaProvider` (Opta REST catalog), `BoltOddsProvider` (REST catalog). No Python-side streaming — all WS streaming is handled by Rust or standalone capture scripts. |
 | `sports/kalstrop_v2.py` | Kalstrop V2 catalog discovery — REST hierarchy: sports → competitions → tournaments → fixtures |
-| `sports/kalstrop_auth.py` | Shared HMAC auth helper for V1 and V2 REST + WS auth headers |
+| `sports/kalstrop_opta.py` | Kalstrop Opta catalog discovery — REST hierarchy: sports → competitions (numeric IDs) → fixtures. Covers football + baseball. Composite `"Name|ID"` encoding in `category_name`/`league_raw` columns. |
+| `sports/kalstrop_auth.py` | Shared HMAC auth helper for V1, V2, and Opta REST + WS auth headers |
 | `config/` | `live_trading.py` (execution policy), `mappings.py` (league registry, provider aliases, league disambiguation via `PROVIDER_LEAGUE_COUNTRY`), `baseball_mappings.py` / `soccer_mappings.py` (team aliases per league) |
-| `scripts/` | Standalone capture scripts for raw frame recording: `capture_kalstrop_v1.py`, `capture_kalstrop_v2.py`, `capture_boltodds.py`, `capture_multi.py` (multi-provider comparison). Not part of the `polybot2` package — run directly. |
+| `scripts/` | Standalone capture scripts for raw frame recording: `capture_kalstrop_v2.py`, `capture_opta.py`, `capture_multi.py` (multi-provider comparison with V1+V2+BoltOdds+Opta), `build_capture_plan.py` (auto-generates `games.json` from DB). Not part of the `polybot2` package — run directly. |
 
 ### FFI Boundary (Python → Rust)
 
@@ -277,7 +279,9 @@ polybot2 link review --run-id N                     # interactive review (opt-ou
 polybot2 hotpath compile --league epl                # dry-run: print compiled plan with team-resolved semantics
 polybot2 hotpath compile --league mlb --link-run-id 1  # verify plan before trading
 polybot2 hotpath live --league mlb --execution-mode live  # auto-discovers latest run_id
-polybot2 hotpath live --league epl --execution-mode live  # separate process per league
+polybot2 hotpath live --league epl --execution-mode live  # single league
+polybot2 hotpath live --sport soccer --execution-mode live # all soccer leagues in one process
+polybot2 hotpath live --league epl laliga ucl --execution-mode live  # explicit multi-league
 polybot2 hotpath observe --log-file path/to/hotpath_42_*.jsonl   # live terminal scoreboard
 polybot2 hotpath observe --run-id 42 --link-run-id N --db path.sqlite  # auto-discover log, resolve team names
 ```
@@ -288,11 +292,31 @@ python scripts/capture_multi.py --games-file games.json --out ./captures/2026_05
 python scripts/capture_kalstrop_v1.py --fixture-id <UUID> --out ./captures/v1 --duration 7200
 ```
 
-The prerequisite pipeline: market sync → provider sync → link build → hotpath live. One hotpath process per league.
+The prerequisite pipeline: market sync → provider sync → link build → hotpath live. One hotpath process per sport (or per league for backward compat).
+
+### Multiplexed Concurrent Providers
+
+Soccer leagues can use multiple providers simultaneously ("fastest wins"). Configured via `LEAGUES[league]["provider"]` as a list (e.g., `["kalstrop_v2", "kalstrop_v1"]`). The Rust multiplexed worker (`ws_multiplexed.rs`) manages all connections in one `tokio::select!` loop with three branches: V1 (Kalstrop WS), V2 (BetGenius Socket.IO), and BoltOdds (plain WS):
+
+- V2 is ~1.5s faster for goals → fires totals, exact score, BTTS first
+- V1 is faster for halftime/match-end → fires halftime result, moneyline, spreads first
+- V1 provides corners; V2 does not
+- BoltOdds provides broad coverage with simple WS protocol; subscribes by game labels from plan
+- All providers' frames resolve to the same `GameIdx` via `game_id_to_idx` (which holds all provider IDs)
+- Dedup is per-provider (V1 string-based, V2 integer-based, BoltOdds integer-based) but the engine's state-level delta detection prevents duplicate intents from slower providers
+- If one connection drops, the others keep streaming; reconnection is independent per provider
+- V2 subscription failures are tracked — only successfully-subscribed IDs are marked active; failed IDs are retried on the next `SetCandidateSubscriptions`
+- BoltOdds connection uses `try_connect_boltodds()` helper: handshake (`socket_connected` ack), subscribe by game labels, then frame drain via `process_boltodds_frame_sync`
+
+The `providers` field in `RuntimeStartConfig` triggers the multiplexed worker. When absent, the single-provider worker branches (V1/V2/BoltOdds) run as before.
+
+### Multi-League Process
+
+`--sport soccer` runs all live soccer leagues in one process (one engine, one presign pool, one submitter). Non-V2 leagues (EPL via BoltOdds) start immediately. V2 leagues (La Liga, UCL, Bundesliga) resolve via an interleaved V2 resolution loop. `compile_multi_league_plan()` merges per-league plans into one `CompiledPlan` — the Rust engine ignores the top-level `provider`/`league` fields and only processes the `games[]` array.
 
 ### Hotpath Live Orchestrator
 
-`polybot2 hotpath live` starts the hotpath for a single league. Provider is derived from `config/mappings.py` (`LEAGUES[league]["provider"]`). Run_id is auto-discovered (latest for the league) unless `--link-run-id` is passed.
+`polybot2 hotpath live` starts the hotpath for one or more leagues. Supports `--league` (one or more keys) or `--sport` (all live leagues for that sport in one process). Provider(s) derived from `config/mappings.py` (`LEAGUES[league]["provider"]` — string or list for multiplexed). Run_id is auto-discovered (latest for the primary league) unless `--link-run-id` is passed.
 
 Daily workflow:
 ```bash
@@ -300,10 +324,14 @@ polybot2 market sync
 polybot2 provider sync
 polybot2 link build
 polybot2 hotpath live --league mlb --execution-mode live
-polybot2 hotpath live --league epl --execution-mode live  # separate process
+polybot2 hotpath live --sport soccer --execution-mode live  # all soccer in one process
 ```
 
 Review is opt-out: all linked games enter the plan unless explicitly rejected via `link review`. Link build applies a default `--horizon-hours` per league (MLB: 12h, EPL/UCL: 24h from `HOTPATH_RUNTIME_POLICY`) to scope to games starting soon. Soccer linking enforces strict home/away ordering against Polymarket event team order — rejects provider games with flipped designation.
+
+**Postponed games:** The linker uses a supplementary `kickoff_ts_utc` range query alongside the `game_date_et` query, catching games whose Polymarket events retain the original date but have updated kickoff timestamps. Both query results are merged and deduped by `event_id`.
+
+**Alternate provider game IDs:** The compiled plan carries `alternate_provider_game_ids` per game — other providers' IDs for the same canonical game. The Rust engine inserts these into `game_id_to_idx` at plan load so frames from any provider resolve to the same `GameIdx`.
 
 Refresh loop (every `refresh_interval_seconds` from `config/live_trading.py`, default 1800s):
 1. `discover_new_markets_sync()` — fetches markets from the Gamma API for known event IDs only (5–20 targeted HTTP requests, ~2s)
@@ -327,10 +355,10 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 - **Breaking change (April 2026):** `eventState` field removed from WS `matchSummary` entirely (not renamed — absent). Game completion is now detected from `matchStatusDisplay[0].freeText` containing `"Ended"`. The Rust parser (`baseball/parse.rs`) uses `is_completed_free_text()`.
 - **Python provider is catalog-only.** `kalstrop_v1.py` contains only `load_game_catalog()` and catalog helpers. All WS streaming code has been removed from the Python side — the Rust hotpath handles live score streaming, and standalone scripts in `scripts/` handle raw frame capture.
 
-**V2 (`kalstrop_v2`)** — `stats.kalstropservice.com/api/v2`. HMAC auth (shared credentials with V1 via `kalstrop_auth.py`). BetGenius-backed. Covers top-tier soccer (EPL, La Liga, Bundesliga, UCL). **Does not support baseball.**
-- **REST catalog:** `/sports` → `/sports/{slug}/competitions` → `/sports/{sport}/competitions/{category}/{tournament}/fixtures`. Dynamically discovers all tournaments with matches.
+**V2 (`kalstrop_v2`)** — `stats.kalstropservice.com/api/v2/genius`. HMAC auth (shared credentials with V1 via `kalstrop_auth.py`). BetGenius-backed. Covers top-tier soccer (EPL, La Liga, Bundesliga, UCL). **Does not support baseball.**
+- **REST catalog:** `/genius/sports` → `/genius/sports/{slug}/competitions` → `/genius/sports/{sport}/competitions/{category}/{tournament}/fixtures`. Legacy paths without `/genius/` prefix also work.
 - **Fixture IDs:** Numeric `event_id`s (e.g., `7490587`). Different ID space from V1 UUIDs.
-- **Socket.IO streaming:** `subscribe` with `{fixtureId, activeContent: "court"}` → `genius_update` events with `scoreboardInfo`. Implemented in Rust (`kalstrop_v2_sio.rs`, `ws_kalstrop_v2.rs`). Requires `product=genius-stats` query param on the Socket.IO connection.
+- **Socket.IO streaming:** `genius_subscribe` with `{fixtureId, activeContent: "court"}` → `genius_update` events with `scoreboardInfo`. Implemented in Rust (`kalstrop_v2_sio.rs`, `ws_kalstrop_v2.rs`). Requires `product=genius-stats` query param on the Socket.IO connection. Unsubscribe via `genius_unsubscribe`.
 - **Team names are shortened** compared to V1/Polymarket: `"Man Utd"` vs `"Manchester United FC"`, `"Wolves"` vs `"Wolverhampton Wanderers FC"`. Separate provider aliases needed in `config/soccer_mappings.py`.
 - **Empty catalog protection:** If V2 API fails, `sync_provider_games` returns an error instead of wiping the existing snapshot.
 - **V2 event_id instability:** The prematch `event_id` from the catalog cannot be resolved to a BetGenius `fixture_id` until the game goes live. The `/fixtures/{event_id}/providers` endpoint returns data from a different ID space for prematch games. Resolution happens at runtime via `v2_resolver.py`: Python polls tournament fixtures, matches by team names + start time, resolves fixture_id via `/providers`, then compiles a single-game plan and hot-patches it into the running Rust engine. V2 leagues use a deferred-start orchestrator (hotpath waits for game kickoff before resolving and starting).
@@ -341,13 +369,21 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 - **Team names are abbreviated** (e.g., `"ATL Braves"` for baseball, `"Chelsea"` for soccer). Provider aliases needed in mappings.
 - **Duplicate entries:** BoltOdds sometimes publishes two entries for the same game with flipped home/away (e.g., "Sunderland vs Man Utd" and "Man Utd vs Sunderland"). The linker's strict home/away ordering check (soccer only) rejects the flipped duplicate by comparing against the Polymarket event's team ordering.
 
-Documentation: `research/kalstrop_api_documentation.md` covers the V2 API flow (steps 1-5). V1 docs: `docs/kalstrop_odds_v1.md`.
+**Kalstrop Opta** — `stats.kalstropservice.com/api/v2/opta`. Same HMAC auth. Opta/Sportradar-backed. Covers football (EPL, La Liga, Bundesliga, UCL, MLS, World Cup) + baseball (MLB, NPB, KBO). Currently catalog-only for live streaming (pending World Cup activation).
+- **REST catalog:** `/sports` → `/sports/{sport}/competitions` (numeric IDs) → `/sports/{sport}/competitions/{category_id}/{tournament_id}/fixtures`
+- **Fixture IDs:** Colon-prefixed format (e.g., `2:7799988`). Must URL-encode the colon.
+- **Provider resolution:** `/fixtures/{event_id}/providers?sport={sport}` → `providers.opta.running_ball.fixture_id` (required for Socket.IO streaming). `running_ball` only present for top-tier football; absent for baseball and lower-tier leagues.
+- **Socket.IO streaming:** Product slug `opta-stats`. Events: `opta_subscribe`/`opta_unsubscribe`/`opta_message`. Subscribe payload: `{fixtureId, room: "stats"}`. Score format: `stats.score[].{contestantId, value}` (no home/away label — resolve via `/match` REST call).
+- **Composite encoding:** `category_name` stores `"England|14"`, `league_raw` stores `"Premier League|102841"`. Parsing: `rsplit("|", 1)` → `(name, id)`.
+- **Currently inactive for streaming** — Kalstrop confirmed Opta streaming only supports World Cup games for now.
+
+Documentation: `docs/providers/kalstrop_v2/` covers auth, genius, and opta APIs. V1 docs: `docs/kalstrop_odds_v1.md`.
 
 ## Environment Variables
 
 Required for live execution: `POLY_EXEC_API_KEY`, `POLY_EXEC_API_SECRET`, `POLY_EXEC_API_PASSPHRASE`, `POLY_EXEC_PRESIGN_PRIVATE_KEY`, `POLY_EXEC_FUNDER`.
 
-Provider credentials: `KALSTROP_CLIENT_ID`, `KALSTROP_SHARED_SECRET_RAW` (or legacy `CLIENT_ID`, `SHARED_SECRET_RAW`) for V1 and V2 (shared HMAC auth). `BOLTODDS_API_KEY` for BoltOdds.
+Provider credentials: `KALSTROP_CLIENT_ID`, `KALSTROP_SHARED_SECRET_RAW` (or legacy `CLIENT_ID`, `SHARED_SECRET_RAW`) for V1, V2, and Opta (shared HMAC auth). `BOLTODDS_API_KEY` for BoltOdds.
 
 Database: `POLYBOT2_DB_PATH` (default: `../../data/prediction_markets.db` relative to working dir).
 
@@ -355,10 +391,11 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). The hotp
 
 ## Constraints
 
-- Deployment target is Linux EC2 (eu-west-1). Dev is macOS (ARM).
+- Deployment target is Linux EC2 (eu-west-1, c8gn.4xlarge — 16 vCPUs, 32 GB RAM). Dev is macOS (ARM). CPU core pinning configured per league in `HOTPATH_RUNTIME_POLICY` (`ws_core_idx`, `submitter_core_idx`). Core 0 avoided (IRQ handler).
 - Python ≥ 3.11, Rust edition 2021, PyO3 0.22 with ABI3.
 - `polymarket_client_sdk_v2` 0.5.1 (CLOB V2, migrated April 2026) pins `alloy` at 1.6.3 — do not add a different alloy version or traits will mismatch.
-- `smallvec` is a hot-path dependency (`SubmitBatch` payload). Don't replace with `Vec` without measuring — the inline `[T; 4]` capacity covers the common 1–4-intent-per-frame case without heap allocation.
+- `smallvec` is a hot-path dependency (`SubmitBatch` payload). Don't replace with `Vec` without measuring — the inline `[T; 32]` capacity covers the common dual-order case without heap allocation.
+- Gamma API caps results at 100 per request regardless of `limit` parameter. `batch_size` in `sync_config.py` is set to 100 to match.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
 - The field name is `amount_usdc` everywhere (not `notional_usdc` — that was the legacy name, fully removed).
 - The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`) shared via `Arc<Mutex<>>`. The `polybot2 hotpath observe` command reads the JSONL log file via `live_observer.py` and renders an in-place terminal scoreboard. Sport-aware: baseball shows `AWAY-HOME` with inning (`T3`, `B7`); soccer shows `HOME-AWAY` with half (`1H`, `HT`, `2H`, `FT`). Team abbreviations use Polymarket codes from `config/mappings.py`. Tick log entries include `corners` field for soccer.
@@ -377,7 +414,7 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 2. **Decoupled submitter — DONE.** WS thread does sync `pop + send`; submitter thread does HTTP. WS-thread cost per intent is ~100ns presign pop + amortized channel send. SDK client lives only on the submitter.
 
-3. **Frame-preserving batch — DONE.** `process_decoded_frame_sync` builds one `SubmitWork::Batch(SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 16]>)` per material frame. Multi-intent frames always reach the CLOB as one logical group. Submitter dispatcher spawns each batch as a concurrent task (up to 3 in-flight via Semaphore) — no cross-frame coalescing, no head-of-line blocking.
+3. **Frame-preserving batch — DONE.** `process_decoded_frame_sync` builds one `SubmitWork::Batch(SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 32]>)` per material frame. With dual-order presign, a frame with N intents produces up to 2N batch entries. Multi-intent frames always reach the CLOB as one logical group. Submitter processes batches inline — no cross-frame coalescing, no head-of-line blocking.
 
 4. **Index-keyed payload + Arc<TargetRegistry> — DONE.** Pool indexed by `TokenIdx` (`Vec<Option<Box<SdkSignedOrder>>>`, depth=1, boxed: `Option::take()` moves 8 bytes). Channel payload is `(TargetIdx, Box<SdkSignedOrder>)` — no string allocation on the WS success path. Strings reconstructed via the registry only at log time.
 

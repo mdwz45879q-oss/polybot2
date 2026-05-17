@@ -55,7 +55,7 @@ class NativeHotPathService:
 
         self._compiled_plan: CompiledPlan | None = None
 
-        self._native_order_policy = OrderPolicy()
+        self._order_policies: dict[str, OrderPolicy] = {"_default": OrderPolicy()}
         self._runtime_bridge: NativeHotPathRuntimeBridge | None = None
         self._pending_presign_templates: list[dict[str, Any]] = []
         self._subscribe_lead_minutes: int = 90
@@ -68,6 +68,7 @@ class NativeHotPathService:
         self._log_dir: str | None = os.environ.get("POLYBOT2_LOG_DIR")
         self._ws_core_idx: int | None = None
         self._submitter_core_idx: int | None = None
+        self._providers: list[dict[str, Any]] | None = None
 
         self.set_compiled_plan(compiled_plan)
 
@@ -79,7 +80,10 @@ class NativeHotPathService:
             self._compiled_plan = plan
 
     def set_order_policy(self, policy: OrderPolicy) -> None:
-        self._native_order_policy = policy
+        self._order_policies = {"_default": policy}
+
+    def set_order_policies(self, policies: dict[str, OrderPolicy]) -> None:
+        self._order_policies = dict(policies)
 
     def _append_error(self, text: str) -> None:
         self._last_errors.append(str(text))
@@ -169,10 +173,10 @@ class NativeHotPathService:
         payload = {
             "subscribe_lead_minutes": int(self._subscribe_lead_minutes),
             "subscription_refresh_seconds": int(self._subscription_refresh_seconds),
-            "amount_usdc": float(self._native_order_policy.amount_usdc),
-            "size_shares": float(self._native_order_policy.size_shares),
-            "limit_price": float(self._native_order_policy.limit_price),
-            "time_in_force": str(self._native_order_policy.time_in_force),
+            "amount_usdc": float(next(iter(self._order_policies.values())).amount_usdc),
+            "size_shares": float(next(iter(self._order_policies.values())).size_shares),
+            "limit_price": float(next(iter(self._order_policies.values())).limit_price),
+            "time_in_force": str(next(iter(self._order_policies.values())).time_in_force),
             "live_enabled": True,
             "reconnect_sleep_seconds": float(self._config.reconnect_base_sleep_seconds),
             "kalstrop_ws_url": str(getattr(provider_cfg, "ws_url", "") or "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"),
@@ -190,6 +194,8 @@ class NativeHotPathService:
             payload["ws_core_idx"] = int(self._ws_core_idx)
         if self._submitter_core_idx is not None:
             payload["submitter_core_idx"] = int(self._submitter_core_idx)
+        if self._providers:
+            payload["providers"] = list(self._providers)
         return payload
 
     def _execution_config_payload(self) -> dict[str, Any]:
@@ -302,7 +308,7 @@ class NativeHotPathService:
     def apply_incremental_refresh(
         self,
         result: Any,
-        order_policy: OrderPolicy | None = None,
+        order_policies: dict[str, OrderPolicy] | None = None,
     ) -> int:
         if result.new_plan is None or not result.new_targets:
             return 0
@@ -311,32 +317,36 @@ class NativeHotPathService:
         if bridge is None:
             self._append_error("apply_incremental_refresh:no_runtime_bridge")
             return 0
-        policy = order_policy or self._native_order_policy
+        policies = order_policies or self._order_policies
+        _fallback = next(iter(policies.values()))
         templates: list[dict[str, Any]] = []
         seen_tokens: set[str] = set()
-        for target in result.new_targets:
-            token_id = str(target.token_id or "").strip()
-            if not token_id or token_id in seen_tokens:
-                continue
-            seen_tokens.add(token_id)
-            p = policy.for_market_type(str(target.sports_market_type or ""))
-            templates.append({
-                "token_id": token_id,
-                "side": "buy_yes",
-                "amount_usdc": float(p.amount_usdc),
-                "size_shares": float(p.size_shares),
-                "limit_price": float(p.limit_price),
-                "time_in_force": str(p.time_in_force),
-            })
-            if p.has_secondary:
-                templates.append({
-                    "token_id": token_id,
-                    "side": "buy_yes",
-                    "amount_usdc": float(p.secondary_amount_usdc),
-                    "size_shares": float(p.secondary_size_shares),
-                    "limit_price": float(p.secondary_limit_price),
-                    "time_in_force": str(p.secondary_time_in_force),
-                })
+        for game in result.new_plan.games:
+            base_policy = policies.get(game.canonical_league, _fallback)
+            for market in game.markets:
+                p = base_policy.for_market_type(market.sports_market_type)
+                for target in market.targets:
+                    token_id = str(target.token_id or "").strip()
+                    if not token_id or token_id in seen_tokens:
+                        continue
+                    seen_tokens.add(token_id)
+                    templates.append({
+                        "token_id": token_id,
+                        "side": "buy_yes",
+                        "amount_usdc": float(p.amount_usdc),
+                        "size_shares": float(p.size_shares),
+                        "limit_price": float(p.limit_price),
+                        "time_in_force": str(p.time_in_force),
+                    })
+                    if p.has_secondary:
+                        templates.append({
+                            "token_id": token_id,
+                            "side": "buy_yes",
+                            "amount_usdc": float(p.secondary_amount_usdc),
+                            "size_shares": float(p.secondary_size_shares),
+                            "limit_price": float(p.secondary_limit_price),
+                            "time_in_force": str(p.secondary_time_in_force),
+                        })
         plan_json = json.dumps(
             serialize_compiled_plan(result.new_plan),
             separators=(",", ":"),

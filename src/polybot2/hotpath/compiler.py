@@ -680,6 +680,35 @@ def compile_hotpath_plan(
                 f"all totals rows invalid for provider_game_id={gid}",
             )
 
+    # Build cross-provider alternate game IDs lookup.
+    # For each game in the plan, find provider_game_ids from other providers
+    # that map to the same canonical game (same teams + date).
+    _alt_ids_by_key: dict[tuple[str, str, int | None], list[tuple[str, str]]] = {}
+    try:
+        _alt_rows = db.execute(
+            """
+            SELECT provider, provider_game_id, canonical_home_team, canonical_away_team, start_ts_utc
+            FROM link_run_provider_games
+            WHERE run_id = ?
+              AND provider != ?
+              AND canonical_league = ?
+              AND parse_status = 'ok'
+              AND binding_status != ''
+            """,
+            (scope.run_id, scope.provider, scope.league),
+        ).fetchall()
+        for r in _alt_rows:
+            _key = (
+                str(r["canonical_home_team"] or "").strip().lower(),
+                str(r["canonical_away_team"] or "").strip().lower(),
+                r["start_ts_utc"],
+            )
+            _alt_ids_by_key.setdefault(_key, []).append(
+                (str(r["provider"] or ""), str(r["provider_game_id"] or ""))
+            )
+    except Exception:
+        pass  # Non-critical: plan works without alternates
+
     compiled_games: list[CompiledGamePlan] = []
     for gid in sorted(by_game.keys()):
         game_entry = by_game[gid]
@@ -710,6 +739,17 @@ def compile_hotpath_plan(
         if not compiled_markets:
             continue
 
+        # Look up alternate provider game IDs for this game.
+        _game_key = (
+            str(meta.canonical_home_team or "").strip().lower(),
+            str(meta.canonical_away_team or "").strip().lower(),
+            meta.kickoff_ts_utc,
+        )
+        _alternates = tuple(
+            (p, pid) for p, pid in _alt_ids_by_key.get(_game_key, [])
+            if pid and pid != str(meta.provider_game_id)
+        )
+
         compiled_games.append(
             CompiledGamePlan(
                 provider_game_id=str(meta.provider_game_id),
@@ -718,6 +758,7 @@ def compile_hotpath_plan(
                 canonical_away_team=str(meta.canonical_away_team),
                 kickoff_ts_utc=(None if meta.kickoff_ts_utc is None else int(meta.kickoff_ts_utc)),
                 markets=tuple(compiled_markets),
+                alternate_provider_game_ids=_alternates,
             )
         )
 
@@ -778,9 +819,87 @@ def compile_hotpath_plan(
     )
 
 
+def compile_multi_league_plan(
+    *,
+    db: Any,
+    leagues: list[tuple[str, str]],
+    run_id: int,
+    live_policy: LoadedLiveTradingPolicy | None = None,
+    now_ts_utc: int | None = None,
+    plan_horizon_hours: int | None = None,
+    exclude_strategy_keys: set[str] | None = None,
+) -> CompiledPlan:
+    """Compile plans for multiple leagues and merge into one.
+
+    Args:
+        leagues: List of (league_key, provider_name) pairs.
+        Other args are passed through to compile_hotpath_plan per league.
+
+    Skips leagues that have no in-scope games (HotPathPlanError with
+    code 'scope_blocked'). Raises only if ALL leagues fail.
+    """
+    all_games: list[CompiledGamePlan] = []
+    seen_game_ids: set[str] = set()
+    successes = 0
+
+    for league_key, provider_name in leagues:
+        try:
+            plan = compile_hotpath_plan(
+                db=db,
+                provider=provider_name,
+                league=league_key,
+                run_id=run_id,
+                live_policy=live_policy,
+                now_ts_utc=now_ts_utc,
+                plan_horizon_hours=plan_horizon_hours,
+                exclude_strategy_keys=exclude_strategy_keys,
+            )
+            for game in plan.games:
+                if game.provider_game_id not in seen_game_ids:
+                    all_games.append(game)
+                    seen_game_ids.add(game.provider_game_id)
+            successes += 1
+        except HotPathPlanError as exc:
+            if exc.code == "scope_blocked":
+                continue
+            raise
+
+    if successes == 0:
+        raise HotPathPlanError(
+            "scope_blocked",
+            f"no in-scope games for any of {len(leagues)} leagues",
+        )
+
+    canonical_payload = {
+        "games": sorted(
+            [
+                {
+                    "provider_game_id": g.provider_game_id,
+                    "markets": sorted(
+                        [m.condition_id for m in g.markets],
+                    ),
+                }
+                for g in all_games
+            ],
+            key=lambda x: x["provider_game_id"],
+        ),
+    }
+    plan_hash = _json_hash(canonical_payload)
+
+    return CompiledPlan(
+        provider="multi",
+        league="soccer",
+        run_id=int(run_id),
+        plan_hash=plan_hash,
+        compiled_at=int(time.time()),
+        games=tuple(all_games),
+    )
+
+
 __all__ = [
     "HotPathPlanError",
     "ScopedLaunchCheck",
     "compile_hotpath_plan",
+    "compile_multi_league_plan",
     "evaluate_hotpath_scope",
 ]

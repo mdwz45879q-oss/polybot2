@@ -42,7 +42,7 @@ LEAGUES = {
     "laliga": {
         "polymarket_league_code": "lal",
         "sport_family": "soccer",
-        "provider": "kalstrop_v2",
+        "provider": ["kalstrop_v2", "kalstrop_v1"],
     },
 
 }
@@ -53,6 +53,7 @@ PROVIDER_LEAGUE_ALIASES = {
     "kalstrop_v1": {
         "mlb": "mlb",
         "bundesliga": "bundesliga",
+        "laliga": "laliga",
     },
     "kalstrop_v2":{
         "uefa-champions-league": "ucl",

@@ -67,9 +67,14 @@ def run_provider_sync(args: Any, *, logger: logging.Logger) -> int:
         from polybot2.linking import load_mapping
         mapping = load_mapping()
         providers = sorted({
-            str(cfg.get("provider", "")).strip().lower()
+            p
             for cfg in mapping.leagues.values()
-            if str(cfg.get("provider", "")).strip()
+            for p in (
+                [str(x).strip().lower() for x in cfg.get("provider")]
+                if isinstance(cfg.get("provider"), list)
+                else [str(cfg.get("provider", "")).strip().lower()]
+            )
+            if p
         })
         if not providers:
             logger.error("no providers configured in LEAGUES")

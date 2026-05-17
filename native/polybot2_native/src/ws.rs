@@ -14,7 +14,7 @@ pub(crate) fn kalstrop_signature(client_id: &str, shared_secret_raw: &str, times
     hex::encode(mac.finalize().into_bytes())
 }
 
-fn build_kalstrop_ws_uri(cfg: &RuntimeStartConfig) -> Option<String> {
+pub(crate) fn build_kalstrop_ws_uri(cfg: &RuntimeStartConfig) -> Option<String> {
     let ws_url = cfg
         .kalstrop_ws_url
         .clone()
@@ -48,7 +48,7 @@ fn kalstrop_subscribe_payload(subscriptions: &[String]) -> Value {
     })
 }
 
-async fn send_kalstrop_subscribe_async<S>(
+pub(crate) async fn send_kalstrop_subscribe_async<S>(
     ws: &mut tokio_tungstenite::WebSocketStream<S>,
     subscriptions: &[String],
 ) -> Result<(), String>
@@ -73,7 +73,7 @@ where
     Ok(())
 }
 
-async fn send_kalstrop_resubscribe_async<S>(
+pub(crate) async fn send_kalstrop_resubscribe_async<S>(
     ws: &mut tokio_tungstenite::WebSocketStream<S>,
     subscriptions: &[String],
 ) -> Result<(), String>
@@ -427,15 +427,19 @@ pub(crate) async fn run_live_worker_async(
             // Frame drain loop — process all pending frames before housekeeping
             let mut first_read = true;
             loop {
-                let wait = if first_read {
-                    Duration::from_millis(100)
+                let next = if first_read {
+                    match tokio::time::timeout(Duration::from_millis(100), ws.next()).await {
+                        Ok(v) => v,
+                        Err(_) => break,
+                    }
                 } else {
-                    Duration::ZERO
+                    match futures_util::FutureExt::now_or_never(ws.next()) {
+                        Some(v) => v,
+                        None => break,
+                    }
                 };
-                let next = tokio::time::timeout(wait, ws.next()).await;
                 let msg = match next {
-                    Err(_) => break,
-                    Ok(None) => {
+                    None => {
                         with_health(&health, |h| {
                             h.reconnects += 1;
                             h.last_error = "ws_stream_closed".to_string();
@@ -443,7 +447,7 @@ pub(crate) async fn run_live_worker_async(
                         reconn_reason = "ws_stream_closed".to_string();
                         break 'event_loop;
                     }
-                    Ok(Some(Err(e))) => {
+                    Some(Err(e)) => {
                         reconn_reason = format!("ws_read: {}", e);
                         with_health(&health, |h| {
                             h.reconnects += 1;
@@ -451,7 +455,7 @@ pub(crate) async fn run_live_worker_async(
                         });
                         break 'event_loop;
                     }
-                    Ok(Some(Ok(v))) => v,
+                    Some(Ok(v)) => v,
                 };
                 first_read = false;
 

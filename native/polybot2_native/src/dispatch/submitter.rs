@@ -168,14 +168,17 @@ async fn submit_batch_task(
 
     if batch_len <= MAX_CLOB_BATCH {
         // 2..=15 path: one post_orders call (no chunk fan-out).
+        // Reuse scratch buffer to avoid per-batch heap allocations.
         let target_idxs: smallvec::SmallVec<[crate::TargetIdx; 4]> =
             batch.iter().map(|(idx, _)| *idx).collect();
-        let mut order_jsons: Vec<Vec<u8>> = Vec::with_capacity(batch_len);
-        for (_, prepared) in batch {
-            order_jsons.push(prepared.order_json);
+        scratch.body_buf.clear();
+        scratch.body_buf.push(b'[');
+        for (i, (_, prepared)) in batch.into_iter().enumerate() {
+            if i > 0 { scratch.body_buf.push(b','); }
+            scratch.body_buf.extend_from_slice(&prepared.order_json);
         }
-        let slices: Vec<&[u8]> = order_jsons.iter().map(|b| b.as_slice()).collect();
-        let chunk_body = build_orders_body_from_slices(slices.as_slice());
+        scratch.body_buf.push(b']');
+        let chunk_body = std::mem::take(&mut scratch.body_buf);
 
         let permit = match Arc::clone(&semaphore).acquire_owned().await {
             Ok(p) => p,

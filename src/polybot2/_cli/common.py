@@ -110,12 +110,16 @@ def _apply_env_uid_filter(*, uids: list[str], env_uids: list[str]) -> list[str]:
     return sorted(set(str(x) for x in uids if str(x).strip()).intersection(set(env_uids)))
 
 
-def _build_hotpath_template_orders(*, compiled_plan: Any, order_policy: OrderPolicy) -> list[OrderRequest]:
+def _build_hotpath_template_orders(
+    *, compiled_plan: Any, order_policies: dict[str, OrderPolicy],
+) -> list[OrderRequest]:
     out: list[OrderRequest] = []
     seen: set[tuple[str, str, float, float, str, str, int]] = set()
+    _fallback_policy = next(iter(order_policies.values()))
     for game in tuple(compiled_plan.games):
+        base_policy = order_policies.get(game.canonical_league, _fallback_policy)
         for market in tuple(game.markets):
-            policy = order_policy.for_market_type(market.sports_market_type)
+            policy = base_policy.for_market_type(market.sports_market_type)
             for target in tuple(market.targets):
                 token_id = str(target.token_id or "").strip()
                 if not token_id:

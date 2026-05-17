@@ -280,7 +280,72 @@ impl NativeHotPathRuntime {
             let worker_log_arc = Arc::clone(&log_arc);
 
             // Spawn the appropriate WS worker based on provider.
-            let join = match provider.as_str() {
+            let join = if let Some(provider_configs) = cfg.providers.as_ref() {
+                // Multiplexed worker: multiple providers in one event loop.
+                let mut mux_providers: Vec<crate::ws_multiplexed::ProviderConfig> = Vec::new();
+                for pc in provider_configs {
+                    match pc.provider.as_str() {
+                        "kalstrop_v2" => {
+                            let base_url = pc.base_url.clone()
+                                .unwrap_or_else(|| "https://stats.kalstropservice.com".to_string());
+                            let sio_path = pc.sio_path.clone()
+                                .unwrap_or_else(|| "/socket.io".to_string());
+                            mux_providers.push(crate::ws_multiplexed::ProviderConfig::KalstropV2(
+                                crate::ws_kalstrop_v2::KalstropV2WorkerConfig {
+                                    base_url,
+                                    sio_path,
+                                    client_id: pc.client_id.clone().unwrap_or_default(),
+                                    shared_secret_raw: pc.shared_secret_raw.clone().unwrap_or_default(),
+                                },
+                            ));
+                        }
+                        "kalstrop_v1" | "kalstrop" => {
+                            mux_providers.push(crate::ws_multiplexed::ProviderConfig::KalstropV1 {
+                                ws_url: pc.ws_url.clone()
+                                    .unwrap_or_else(|| "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws".to_string()),
+                                client_id: pc.client_id.clone().unwrap_or_default(),
+                                shared_secret_raw: pc.shared_secret_raw.clone().unwrap_or_default(),
+                                subscribe_lead_minutes: cfg.subscribe_lead_minutes.unwrap_or(90),
+                                subscription_refresh_seconds: cfg.subscription_refresh_seconds.unwrap_or(120.0),
+                                reconnect_sleep_seconds: cfg.reconnect_sleep_seconds.unwrap_or(5.0),
+                            });
+                        }
+                        "boltodds" => {
+                            let api_key = pc.api_key.clone().unwrap_or_default();
+                            let ws_url = pc.boltodds_ws_url.clone()
+                                .unwrap_or_else(|| "wss://spro.agency/api/livescores".to_string());
+                            let game_labels: Vec<String> = worker_engine.game_ids().to_vec();
+                            mux_providers.push(crate::ws_multiplexed::ProviderConfig::BoltOdds {
+                                cfg: crate::ws_boltodds::BoltOddsWorkerConfig { ws_url, api_key },
+                                game_labels,
+                            });
+                        }
+                        other => {
+                            eprintln!("[polybot2] WARN: unknown provider in multiplexed config: {}", other);
+                        }
+                    }
+                }
+                thread::spawn(move || {
+                    let _ = pin_current_thread(ws_core_idx);
+                    if let Ok(runtime) = TokioBuilder::new_current_thread().enable_all().build() {
+                        runtime.block_on(crate::ws_multiplexed::run_multiplexed_worker_async(
+                            &mut worker_engine,
+                            mux_providers,
+                            worker_dispatch_handle,
+                            subs_clone,
+                            health_clone,
+                            command_rx,
+                            patch_rx,
+                            worker_log_arc,
+                        ));
+                    } else {
+                        crate::ws::with_health(&health_clone, |h| {
+                            h.running = false;
+                            h.last_error = "tokio_runtime_create_failed".to_string();
+                        });
+                    }
+                })
+            } else { match provider.as_str() {
                 "boltodds" => {
                     let api_key = cfg.boltodds_api_key.clone().unwrap_or_default();
                     if api_key.is_empty() {
@@ -381,7 +446,7 @@ impl NativeHotPathRuntime {
                         }
                     })
                 }
-            };
+            } };
 
             self.live_worker = Some(LiveWorkerHandle {
                 command_tx,

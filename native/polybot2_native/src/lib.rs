@@ -13,6 +13,7 @@ mod soccer;
 mod ws;
 pub(crate) mod ws_boltodds;
 pub(crate) mod ws_kalstrop_v2;
+pub(crate) mod ws_multiplexed;
 
 #[cfg(feature = "bench-support")]
 #[doc(hidden)]
@@ -245,6 +246,30 @@ struct RuntimeStartConfig {
     ws_core_idx: Option<usize>,
     #[serde(default)]
     submitter_core_idx: Option<usize>,
+    /// Multiple provider configs for the multiplexed worker.
+    /// When present, overrides `provider` and spawns a multiplexed worker.
+    #[serde(default)]
+    providers: Option<Vec<ProviderConfigJson>>,
+}
+
+/// JSON-deserializable provider config for the multiplexed worker.
+#[derive(Deserialize, Clone)]
+struct ProviderConfigJson {
+    provider: String,
+    #[serde(default)]
+    ws_url: Option<String>,
+    #[serde(default)]
+    base_url: Option<String>,
+    #[serde(default)]
+    sio_path: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
+    #[serde(default)]
+    boltodds_ws_url: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    shared_secret_raw: Option<String>,
 }
 
 #[derive(Default, Deserialize, Clone)]

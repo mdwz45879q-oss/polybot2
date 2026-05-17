@@ -30,11 +30,15 @@ def run_link_build(args: Any, *, logger: logging.Logger) -> int:
     pairs: list[tuple[str, str]] = []
     for league in live_leagues:
         league_cfg = mapping.leagues.get(league, {})
-        provider = str(league_cfg.get("provider", "")).strip()
-        if not provider:
+        _raw_p = league_cfg.get("provider", "")
+        providers = list(_raw_p) if isinstance(_raw_p, list) else [_raw_p] if _raw_p else []
+        if not providers:
             logger.warning("league %s has no provider configured, skipping", league)
             continue
-        pairs.append((league, provider))
+        for p in providers:
+            p = str(p).strip()
+            if p:
+                pairs.append((league, p))
 
     with open_database(runtime) as db:
         svc = LinkService(db=db)

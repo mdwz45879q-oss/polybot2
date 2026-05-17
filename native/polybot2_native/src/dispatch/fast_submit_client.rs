@@ -19,8 +19,8 @@ const HMAC_B64_LEN: usize = 44;
 
 pub(crate) struct FastClobSubmitClient {
     http: ReqwestClient,
-    order_url: reqwest::Url,
-    orders_url: reqwest::Url,
+    order_url: String,
+    orders_url: String,
     poly_address: HeaderValue,
     poly_api_key: HeaderValue,
     poly_passphrase: HeaderValue,
@@ -33,10 +33,8 @@ impl FastClobSubmitClient {
         signer_address_checksum: String,
     ) -> Result<Self, String> {
         let host = normalize_host(cfg.clob_host.as_str());
-        let order_url = reqwest::Url::parse(&format!("{}order", host))
-            .map_err(|e| format!("submitter_invalid_order_url:{}", e))?;
-        let orders_url = reqwest::Url::parse(&format!("{}orders", host))
-            .map_err(|e| format!("submitter_invalid_orders_url:{}", e))?;
+        let order_url = format!("{}order", host);
+        let orders_url = format!("{}orders", host);
         let poly_address = HeaderValue::from_str(signer_address_checksum.as_str())
             .map_err(|e| format!("submitter_invalid_poly_address:{}", e))?;
         let poly_api_key = HeaderValue::from_str(cfg.api_key.trim())
@@ -47,6 +45,11 @@ impl FastClobSubmitClient {
             .decode(cfg.api_secret.trim())
             .map_err(|e| format!("submitter_invalid_api_secret_base64:{}", e))?;
         let http = ReqwestClient::builder()
+            .tcp_nodelay(true)
+            .pool_idle_timeout(Some(std::time::Duration::from_secs(60)))
+            .pool_max_idle_per_host(3)
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|e| format!("submitter_reqwest_client_new:{}", e))?;
         Ok(Self {
@@ -81,7 +84,7 @@ impl FastClobSubmitClient {
 
         let response = self
             .http
-            .request(Method::POST, self.order_url.clone())
+            .post(self.order_url.as_str())
             .header(POLY_ADDRESS, self.poly_address.clone())
             .header(POLY_API_KEY, self.poly_api_key.clone())
             .header(POLY_PASSPHRASE, self.poly_passphrase.clone())
@@ -102,14 +105,13 @@ impl FastClobSubmitClient {
         &self,
         body: Vec<u8>,
     ) -> Result<Vec<PostOrderResponse>, String> {
-        self.send_json(Method::POST, self.orders_url.clone(), "/orders", body)
+        self.send_json_post(self.orders_url.as_str(), "/orders", body)
             .await
     }
 
-    async fn send_json<T: DeserializeOwned>(
+    async fn send_json_post<T: DeserializeOwned>(
         &self,
-        method: Method,
-        url: reqwest::Url,
+        url: &str,
         path: &str,
         body: Vec<u8>,
     ) -> Result<T, String> {
@@ -119,13 +121,13 @@ impl FastClobSubmitClient {
         let timestamp_header = HeaderValue::from_str(ts_text)
             .map_err(|e| format!("submitter_invalid_timestamp_header:{}", e))?;
         let (sig_bytes, sig_len) =
-            self.hmac_signature_b64_into_stack(timestamp, method.as_str(), path, &body)?;
+            self.hmac_signature_b64_into_stack(timestamp, Method::POST.as_str(), path, &body)?;
         let signature_header = HeaderValue::from_bytes(&sig_bytes[..sig_len])
             .map_err(|e| format!("submitter_invalid_signature_header:{}", e))?;
 
         let response = self
             .http
-            .request(method, url)
+            .post(url)
             .header(POLY_ADDRESS, self.poly_address.clone())
             .header(POLY_API_KEY, self.poly_api_key.clone())
             .header(POLY_PASSPHRASE, self.poly_passphrase.clone())
@@ -225,6 +227,7 @@ impl FastClobSubmitClient {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn build_orders_body_from_slices(order_jsons: &[&[u8]]) -> Vec<u8> {
     if order_jsons.is_empty() {
         return b"[]".to_vec();

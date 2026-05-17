@@ -184,15 +184,19 @@ pub(crate) async fn run_boltodds_worker_async(
             let mut pending_logs = smallvec::SmallVec::<[BoltOddsPendingLog; 4]>::new();
             let mut first_read = true;
             loop {
-                let wait = if first_read {
-                    Duration::from_millis(100)
+                let next = if first_read {
+                    match tokio::time::timeout(Duration::from_millis(100), ws.next()).await {
+                        Ok(v) => v,
+                        Err(_) => break,
+                    }
                 } else {
-                    Duration::ZERO
+                    match futures_util::FutureExt::now_or_never(ws.next()) {
+                        Some(v) => v,
+                        None => break,
+                    }
                 };
-                let next = tokio::time::timeout(wait, ws.next()).await;
                 let msg = match next {
-                    Err(_) => break, // timeout — go to housekeeping
-                    Ok(None) => {
+                    None => {
                         reconn_reason = "boltodds_stream_closed".to_string();
                         with_health(&health, |h| {
                             h.reconnects += 1;
@@ -200,7 +204,7 @@ pub(crate) async fn run_boltodds_worker_async(
                         });
                         break 'event_loop;
                     }
-                    Ok(Some(Err(e))) => {
+                    Some(Err(e)) => {
                         reconn_reason = format!("boltodds_ws_read:{}", e);
                         with_health(&health, |h| {
                             h.reconnects += 1;
@@ -208,7 +212,7 @@ pub(crate) async fn run_boltodds_worker_async(
                         });
                         break 'event_loop;
                     }
-                    Ok(Some(Ok(v))) => v,
+                    Some(Ok(v)) => v,
                 };
                 first_read = false;
 

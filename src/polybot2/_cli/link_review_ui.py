@@ -33,6 +33,149 @@ _PROVIDER_TIMEZONE = {"boltodds": "ET", "kalstrop_v1": "UTC", "kalstrop_v2": "UT
 _PROVIDER_ID_LABEL = {"boltodds": "universal_id", "kalstrop_v1": "fixture_id", "kalstrop_v2": "event_id", "kalstrop_opta": "event_id"}
 
 
+def _render_provider_panels_text(all_pgs: list[dict[str, Any]], primary_pg: dict[str, Any], width: int) -> list[Any]:
+    """Render provider games as side-by-side Rich panels, return as pre-styled Text lines."""
+    if not _RICH_AVAILABLE:
+        return []
+    from rich.columns import Columns as RichColumns
+
+    _lbl = "grey70"
+    _val = "bold bright_white"
+
+    panels = []
+    for _pg in all_pgs:
+        _prov = str(_pg.get("provider") or "")
+        _gid = str(_pg.get("provider_game_id") or "")
+        _home = str(_pg.get("home_raw") or "")
+        _away = str(_pg.get("away_raw") or "")
+        _when = str(_pg.get("when_raw") or "")
+        _tz = _PROVIDER_TIMEZONE.get(_prov, "UTC")
+        _league = str(_pg.get("league_raw") or "") or str(_pg.get("sport_raw") or "")
+        _is_primary = (_pg is primary_pg)
+
+        title = Text()
+        title.append(f" {_prov} ", style="bold" if _is_primary else "")
+        if _is_primary:
+            title.append("* ", style="bold bright_magenta")
+        if _prov == "kalstrop_v2":
+            title.append("! ", style="bold red")
+
+        body = Text()
+        for i, (label, value) in enumerate([
+            ("ID: ", _gid),
+            ("League: ", _league),
+            ("When: ", f"{_when} {_tz}"),
+            ("Home: ", _home),
+            ("Away: ", _away),
+        ]):
+            if i > 0:
+                body.append("\n")
+            body.append(label, style=_lbl)
+            body.append(value, style=_val)
+
+        content_width = max(len(f"{label}{value}") for label, value in [
+            ("ID: ", _gid), ("League: ", _league), ("When: ", f"{_when} {_tz}"),
+            ("Home: ", _home), ("Away: ", _away),
+        ])
+        panel_width = max(20, len(_prov) + 8, content_width + 4)
+        panels.append(Panel(body, title=title, title_align="left", border_style="grey50", width=panel_width))
+
+    if len(panels) == 1:
+        content = panels[0]
+    else:
+        content = RichColumns(panels, padding=(0, 1), equal=False)
+
+    outer = Panel(content, title="Provider Games", title_align="left", border_style="cyan",
+                  style="bold bright_cyan", subtitle_align="left")
+    buf = io.StringIO()
+    temp_console = Console(file=buf, width=min(width, 160), highlight=False, force_terminal=True, color_system="truecolor")
+    temp_console.print(outer)
+    raw_lines = buf.getvalue().rstrip("\n").splitlines()
+    return [Text.from_ansi(l) for l in raw_lines]
+
+
+def _render_market_summary_table(targets: list[dict[str, Any]], width: int) -> list[Any]:
+    """Render a grouped market summary table as pre-styled Text lines."""
+    if not _RICH_AVAILABLE or not targets:
+        return []
+
+    groups: dict[str, dict[str, Any]] = {}
+    for t in targets:
+        mt = str(t.get("sports_market_type") or "unknown")
+        if mt not in groups:
+            groups[mt] = {"markets": set(), "targets": 0, "tradeable": 0, "lines": []}
+        groups[mt]["markets"].add(str(t.get("condition_id") or ""))
+        groups[mt]["targets"] += 1
+        if int(t.get("is_tradeable") or 0) == 1:
+            groups[mt]["tradeable"] += 1
+        ln = t.get("line")
+        if ln is not None and ln not in groups[mt]["lines"]:
+            groups[mt]["lines"].append(ln)
+
+    tbl = Table(box=box.SIMPLE_HEAVY, header_style="bold bright_cyan", padding=(0, 1), expand=True)
+    tbl.add_column("type", style="bold bright_white", no_wrap=True)
+    tbl.add_column("markets", justify="right", style="bright_white")
+    tbl.add_column("targets", justify="right", style="bright_white")
+    tbl.add_column("tradeable", justify="right")
+    tbl.add_column("lines", style="grey70")
+
+    total_markets = 0
+    total_targets = 0
+    total_tradeable = 0
+
+    for mt in sorted(groups.keys()):
+        g = groups[mt]
+        n_markets = len(g["markets"])
+        n_targets = g["targets"]
+        n_tradeable = g["tradeable"]
+        total_markets += n_markets
+        total_targets += n_targets
+        total_tradeable += n_tradeable
+
+        if n_tradeable == n_targets:
+            tr_style = "bold green"
+        elif n_tradeable > 0:
+            tr_style = "bold yellow"
+        else:
+            tr_style = "bold red"
+
+        lns = sorted(g["lines"], key=lambda x: (float(x) if isinstance(x, (int, float)) else 0))
+        if len(lns) <= 5:
+            lines_str = ", ".join(str(l) for l in lns)
+        else:
+            lines_str = ", ".join(str(l) for l in lns[:5]) + f" +{len(lns) - 5}"
+
+        tbl.add_row(
+            mt,
+            str(n_markets),
+            str(n_targets),
+            Text(str(n_tradeable), style=tr_style),
+            lines_str,
+        )
+
+    tbl.add_section()
+    if total_tradeable == total_targets:
+        tot_tr_style = "bold green"
+    elif total_tradeable > 0:
+        tot_tr_style = "bold yellow"
+    else:
+        tot_tr_style = "bold red"
+    tbl.add_row(
+        Text("Total", style="bold"),
+        Text(str(total_markets), style="bold"),
+        Text(str(total_targets), style="bold"),
+        Text(str(total_tradeable), style=tot_tr_style),
+        "",
+    )
+
+    outer = Panel(tbl, title="Market Targets", title_align="left", border_style="cyan")
+    buf = io.StringIO()
+    temp_console = Console(file=buf, width=min(width, 160), highlight=False, force_terminal=True, color_system="truecolor")
+    temp_console.print(outer)
+    raw_lines = buf.getvalue().rstrip("\n").splitlines()
+    return [Text.from_ansi(l) for l in raw_lines]
+
+
 def _resolution_style(state: str) -> str:
     s = str(state or "").upper()
     if s == "MATCHED_CLEAN":
@@ -365,37 +508,36 @@ def _build_game_card_renderable(
     if filters_text:
         header.append(f"   {filters_text}", style="dim")
 
-    # Provider Game panel
+    # Provider Games panel (columnar: primary + siblings)
     rich_provider_name = str(provider_game.get("provider") or payload.get("provider") or "")
-    rich_id_label = _PROVIDER_ID_LABEL.get(rich_provider_name, "ID")
-    rich_game_id = str(provider_game.get("provider_game_id") or "")
-    rich_tz_label = _PROVIDER_TIMEZONE.get(rich_provider_name, "UTC")
-    rich_when_raw = str(provider_game.get("when_raw") or "")
+    siblings = card.get("provider_siblings", [])
+    all_provider_games = [provider_game] + siblings
 
-    if rich_provider_name == "kalstrop_v2":
-        rich_id_display = f"{rich_game_id} (streaming resolution pending)"
-    else:
-        rich_id_display = rich_game_id
+    provider_grid = Table.grid(padding=(0, 3))
+    col_renderables = []
+    for _pg in all_provider_games:
+        _prov = str(_pg.get("provider") or "")
+        _is_primary = (_pg is provider_game)
+        _id_label = _PROVIDER_ID_LABEL.get(_prov, "ID")
+        _gid = str(_pg.get("provider_game_id") or "")
+        _id_display = _gid[:28] if len(_gid) > 28 else _gid
+        _tz = _PROVIDER_TIMEZONE.get(_prov, "UTC")
+        _when = str(_pg.get("when_raw") or "")
+        _prov_display = f"[bold green]{_prov}[/bold green]" if _is_primary else _prov
+        _col_rows = [
+            ("Provider", _prov_display),
+            (_id_label, _id_display),
+            ("Home", _pg.get("home_raw", "")),
+            ("Away", _pg.get("away_raw", "")),
+            ("When", f"{_when} ({_tz})" if _when else ""),
+        ]
+        col_renderables.append(_kv_table(_col_rows))
+        provider_grid.add_column()
 
-    provider_kv_rows = [
-        ("Provider", rich_provider_name),
-        (rich_id_label, rich_id_display),
-    ]
-    if rich_provider_name == "boltodds":
-        provider_kv_rows.append(("Game label", provider_game.get("game_label")))
-    provider_kv_rows.extend([
-        ("Sport raw", provider_game.get("sport_raw")),
-        ("League raw", provider_game.get("league_raw")),
-        ("When", f"{rich_when_raw} ({rich_tz_label})" if rich_when_raw else ""),
-        ("Home raw", provider_game.get("home_raw")),
-        ("Away raw", provider_game.get("away_raw")),
-        ("Game state", game_state),
-        ("Parse status", provider_game.get("parse_status")),
-    ])
-
+    provider_grid.add_row(*col_renderables)
     provider_section = Panel(
-        _kv_table(provider_kv_rows),
-        title="Provider Game",
+        provider_grid,
+        title=f"Provider Games ({len(all_provider_games)})",
         border_style="cyan",
     )
 
@@ -405,33 +547,34 @@ def _build_game_card_renderable(
     rich_canonical_home = str(canonical.get("canonical_home_team") or "")
     rich_canonical_away = str(canonical.get("canonical_away_team") or "")
 
-    home_trace = f'"{rich_home_raw}" -> {rich_canonical_home}' if rich_canonical_home else f'"{rich_home_raw}" -> (unmapped)'
-    away_trace = f'"{rich_away_raw}" -> {rich_canonical_away}' if rich_canonical_away else f'"{rich_away_raw}" -> (unmapped)'
+    home_trace = f'"{rich_home_raw}" → {rich_canonical_home}' if rich_canonical_home else f'"{rich_home_raw}" → (unmapped)'
+    away_trace = f'"{rich_away_raw}" → {rich_canonical_away}' if rich_canonical_away else f'"{rich_away_raw}" → (unmapped)'
 
-    canonical_kv_rows: list[tuple[str, Any]] = [
-        ("League", canonical.get("canonical_league")),
-        ("Home", home_trace),
-        ("Away", away_trace),
-        ("Slug hint", canonical.get("event_slug_prefix")),
-    ]
-
-    # Kickoff UTC
+    # Compact canonicalization as a single line
+    canon_parts: list[str] = []
+    _canon_league = str(canonical.get("canonical_league") or "")
+    if _canon_league:
+        canon_parts.append(f"[bold]{_canon_league}[/bold]")
+    canon_parts.append(f"Home: {home_trace}")
+    canon_parts.append(f"Away: {away_trace}")
+    _slug_hint = str(canonical.get("event_slug_prefix") or "")
+    if _slug_hint:
+        canon_parts.append(f"Slug: {_slug_hint}")
     rich_kickoff_ts = provider_game.get("kickoff_ts_utc")
+    rich_kickoff_str = ""
     if rich_kickoff_ts:
         rich_kickoff_iv = _int_or_none(rich_kickoff_ts)
         if rich_kickoff_iv is not None:
             rich_kickoff_str = datetime.fromtimestamp(rich_kickoff_iv, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            canonical_kv_rows.append(("Kickoff UTC", rich_kickoff_str))
-
-    # Kickoff delta
+            canon_parts.append(f"Kickoff: {rich_kickoff_str}")
     rich_delta_sec = event_resolution.get("kickoff_delta_sec") if event_resolution else None
     if rich_delta_sec is not None:
         rich_delta_iv = _int_or_none(rich_delta_sec)
         if rich_delta_iv is not None:
-            canonical_kv_rows.append(("Kickoff delta", f"{rich_delta_iv // 60} min"))
+            canon_parts.append(f"Δ: {rich_delta_iv // 60}min")
 
     canonical_section = Panel(
-        _kv_table(canonical_kv_rows),
+        Text.from_markup("  ".join(canon_parts)),
         title="Canonicalization",
         border_style="cyan",
     )
@@ -496,6 +639,7 @@ def _build_game_card_renderable(
         border_style="cyan",
     )
 
+    # Full per-token targets table (shown in "markets" mode)
     targets_table = Table(box=box.SIMPLE_HEAVY, header_style="bold magenta")
     targets_table.add_column("status", no_wrap=True)
     targets_table.add_column("type")
@@ -514,6 +658,49 @@ def _build_game_card_renderable(
             _fmt_value(t.get("binding_status")),
             _fmt_value(t.get("reason_code")),
         )
+
+    # Condensed grouped summary table (shown in default card mode)
+    from collections import defaultdict as _defaultdict
+    _type_groups: dict[str, dict[str, Any]] = {}
+    for t in targets:
+        mt = str(t.get("sports_market_type") or "unknown")
+        if mt not in _type_groups:
+            _type_groups[mt] = {"markets": set(), "targets": 0, "tradeable": 0, "lines": []}
+        _type_groups[mt]["markets"].add(str(t.get("condition_id") or ""))
+        _type_groups[mt]["targets"] += 1
+        if str(t.get("binding_status") or "").lower() == "tradeable":
+            _type_groups[mt]["tradeable"] += 1
+        _line = t.get("line")
+        if _line is not None and _line not in _type_groups[mt]["lines"]:
+            _type_groups[mt]["lines"].append(_line)
+
+    targets_summary_table = Table(box=box.SIMPLE_HEAVY, header_style="bold magenta")
+    targets_summary_table.add_column("type", no_wrap=True)
+    targets_summary_table.add_column("markets", justify="right")
+    targets_summary_table.add_column("targets", justify="right")
+    targets_summary_table.add_column("tradeable", justify="right")
+    targets_summary_table.add_column("lines")
+    _total_markets = 0
+    _total_targets = 0
+    _total_tradeable = 0
+    for _mt in sorted(_type_groups.keys()):
+        _info = _type_groups[_mt]
+        _n_markets = len(_info["markets"])
+        _total_markets += _n_markets
+        _total_targets += _info["targets"]
+        _total_tradeable += _info["tradeable"]
+        _lines_list = _info["lines"]
+        _lines_str = ", ".join(str(l) for l in _lines_list[:5])
+        if len(_lines_list) > 5:
+            _lines_str += f" +{len(_lines_list) - 5}"
+        targets_summary_table.add_row(
+            _mt, str(_n_markets), str(_info["targets"]),
+            str(_info["tradeable"]), _lines_str,
+        )
+    targets_summary_table.add_row(
+        "[bold]Total[/bold]", f"[bold]{_total_markets}[/bold]",
+        f"[bold]{_total_targets}[/bold]", f"[bold]{_total_tradeable}[/bold]", "",
+    )
     notes_section = Panel(
         _kv_table(
             [
@@ -557,14 +744,14 @@ def _build_game_card_renderable(
             )
         content_blocks.append(Panel(cand_table, title="Candidate Comparison", border_style="magenta"))
     elif mode == "markets":
-        content_blocks.extend([market_summary_section, Panel(targets_table, title="Market Targets", border_style="magenta"), notes_section])
+        content_blocks.extend([market_summary_section, Panel(targets_table, title="Market Targets (full)", border_style="magenta"), notes_section])
     elif mode == "trace":
         trace_payload = notes.get("trace") if isinstance(notes.get("trace"), dict) else {}
         trace_json = json.dumps(trace_payload, indent=2, sort_keys=True, default=str)
         content_blocks.append(Panel(trace_json, title="Deterministic Trace", border_style="magenta"))
         content_blocks.append(notes_section)
     else:
-        content_blocks.extend([market_summary_section, Panel(targets_table, title="Market Targets", border_style="magenta"), notes_section])
+        content_blocks.extend([Panel(targets_summary_table, title="Market Targets", border_style="magenta"), notes_section])
 
     footer = Text()
     if session_note:
@@ -685,6 +872,7 @@ def _build_card_document_lines(
     show_full_ids: bool,
     show_unselected_markets: bool = False,
     candidates: list[dict[str, Any]] | None,
+    console_width: int = 100,
 ) -> list[str]:
     if not bool(payload.get("found")):
         return [
@@ -710,50 +898,42 @@ def _build_card_document_lines(
 
     lines: list[str] = []
 
-    # Provider Game section
+    # Provider Games section (Rich panels side-by-side)
+    siblings = card.get("provider_siblings", [])
+    all_pgs = [provider_game] + siblings
     provider_name = str(provider_game.get("provider") or payload.get("provider") or "")
-    id_label = _PROVIDER_ID_LABEL.get(provider_name, "id")
-    game_id = str(provider_game.get("provider_game_id") or "")
-    tz_label = _PROVIDER_TIMEZONE.get(provider_name, "UTC")
-    when_raw = str(provider_game.get("when_raw") or "")
 
-    lines.append("Provider Game")
-    lines.append(f"  provider={provider_name}")
-
-    # Provider-specific ID display
-    if provider_name == "boltodds":
-        lines.append(f"  {id_label}={game_id}")
-        lines.append(f"  game_label={str(provider_game.get('game_label') or '')}")
-    elif provider_name == "kalstrop_v2":
-        lines.append(f"  {id_label}={game_id} (streaming resolution pending)")
+    panel_lines = _render_provider_panels_text(all_pgs, provider_game, width=console_width)
+    if panel_lines:
+        lines.extend(panel_lines)
     else:
-        lines.append(f"  {id_label}={game_id}")
-
-    lines.append(f"  sport_raw={str(provider_game.get('sport_raw') or '')}")
-    lines.append(f"  league_raw={str(provider_game.get('league_raw') or '')}")
-    lines.append(f"  when={when_raw} ({tz_label})" if when_raw else "  when=")
-    lines.append(f"  home_raw={str(provider_game.get('home_raw') or '')}")
-    lines.append(f"  away_raw={str(provider_game.get('away_raw') or '')}")
-    lines.append(f"  parse={str(provider_game.get('parse_status') or '')}")
+        lines.append(f"Provider Games ({len(all_pgs)})")
+        for _pg in all_pgs:
+            _prov = str(_pg.get("provider") or "")
+            _id_label = _PROVIDER_ID_LABEL.get(_prov, "id")
+            _gid = str(_pg.get("provider_game_id") or "")
+            _home = str(_pg.get("home_raw") or "")
+            _away = str(_pg.get("away_raw") or "")
+            _when = str(_pg.get("when_raw") or "")
+            _tz = _PROVIDER_TIMEZONE.get(_prov, "UTC")
+            _is_primary = (_pg is provider_game)
+            _marker = " *" if _is_primary else ""
+            lines.append(f"  {_prov}{_marker}: {_id_label}={_gid[:30]}")
+            lines.append(f"    \"{_home}\" vs \"{_away}\"  {_when} ({_tz})")
     lines.append("")
 
-    # Canonicalization section
+    # Canonicalization section (compact)
     home_raw = str(provider_game.get("home_raw") or "")
     away_raw = str(provider_game.get("away_raw") or "")
     canonical_home = str(canonical.get("canonical_home_team") or "")
     canonical_away = str(canonical.get("canonical_away_team") or "")
+    _home_trace = f'"{home_raw}" → {canonical_home}' if canonical_home else f'"{home_raw}" → (unmapped)'
+    _away_trace = f'"{away_raw}" → {canonical_away}' if canonical_away else f'"{away_raw}" → (unmapped)'
 
     lines.append("Canonicalization")
-    lines.append(f"  league={str(canonical.get('canonical_league') or '')}")
-    if canonical_home:
-        lines.append(f'  home="{home_raw}" → {canonical_home}')
-    else:
-        lines.append(f'  home="{home_raw}" → (unmapped)')
-    if canonical_away:
-        lines.append(f'  away="{away_raw}" → {canonical_away}')
-    else:
-        lines.append(f'  away="{away_raw}" → (unmapped)')
-    lines.append(f"  slug_hint={str(canonical.get('event_slug_prefix') or '')}")
+    lines.append(f"  league={canonical.get('canonical_league', '')}  slug-hint={canonical.get('event_slug_prefix', '')}")
+    lines.append(f"  home: {_home_trace}")
+    lines.append(f"  away: {_away_trace}")
 
     # Kickoff UTC (moved from provider game)
     kickoff_ts = provider_game.get("kickoff_ts_utc")
@@ -844,7 +1024,20 @@ def _build_card_document_lines(
         lines.extend([f"  {x}" for x in trace_text])
         return lines
 
-    # card/markets mode: semantic multi-event hierarchy
+    if mode == "markets":
+        _all_targets = markets.get("targets") if isinstance(markets.get("targets"), list) else []
+        summary_lines = _render_market_summary_table(_all_targets, width=console_width)
+        if summary_lines:
+            lines.extend(summary_lines)
+        else:
+            lines.append("Market Targets")
+            lines.append("  (no targets)")
+        lines.append("")
+        lines.append("Notes")
+        lines.append("  reason_notes={}".format(",".join(notes.get("reason_notes") or [])))
+        return lines
+
+    # Matched Events (default card view)
     lines.append("Matched Events")
     if not selected_events:
         lines.append("  (none)")
@@ -928,8 +1121,6 @@ def _build_card_document_lines(
                         stype=str(market.get("sports_market_type") or ""),
                     )
                 )
-                if mode != "markets":
-                    continue
                 outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), list) else []
                 for outcome in outcomes:
                     token_id = str(outcome.get("token_id") or "")
@@ -941,8 +1132,7 @@ def _build_card_document_lines(
                             tok=shown_token,
                         )
                     )
-    if mode == "markets":
-        return lines
+
     lines.append("")
     lines.append("Notes")
     lines.append("  reason_notes={}".format(",".join(notes.get("reason_notes") or [])))
@@ -988,6 +1178,7 @@ def _build_session_renderable(
     if filters_text:
         header.append(f"   {filters_text}", style="dim")
 
+    term_w = int(getattr(console.size, "width", 100) or 100)
     lines = _build_card_document_lines(
         payload,
         view_mode=view_mode,
@@ -995,6 +1186,7 @@ def _build_session_renderable(
         show_full_ids=show_full_ids,
         show_unselected_markets=show_unselected_markets,
         candidates=candidates,
+        console_width=max(60, term_w - 4),
     )
     term_h = int(getattr(console.size, "height", 40) or 40)
     viewport_h = max(8, term_h - 10)
@@ -1015,7 +1207,10 @@ def _build_session_renderable(
 
     content_text = Text()
     for i, line in enumerate(visible):
-        content_text.append_text(_styled_card_line(str(line)))
+        if isinstance(line, Text):
+            content_text.append_text(line)
+        else:
+            content_text.append_text(_styled_card_line(str(line)))
         if i < len(visible) - 1:
             content_text.append("\n")
 
@@ -1342,7 +1537,7 @@ def _run_session_interactive(
                     session_note = ""
                     continue
                 if key == "m":
-                    view_mode = "markets"
+                    view_mode = "card" if view_mode == "markets" else "markets"
                     session_note = ""
                     continue
                 if key == "t":

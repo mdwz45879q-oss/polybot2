@@ -158,6 +158,17 @@ impl NativeSoccerEngine {
             let gidx = GameIdx(self.game_ids.len() as u16);
             self.game_id_to_idx.insert(uid.clone(), gidx);
             self.game_ids.push(uid);
+
+            // Insert alternate provider game IDs pointing to the same GameIdx.
+            if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                for alt in alts {
+                    let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                        self.game_id_to_idx.insert(alt_id.to_string(), gidx);
+                    }
+                }
+            }
+
             let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
             self.kickoff_ts.push(kickoff);
 
@@ -571,12 +582,14 @@ impl NativeSoccerEngine {
     ) -> Option<SoccerLiveTickResult> {
         let gi = gidx.0 as usize;
 
-        // Update state row with raw strings (V1 dedup fields).
-        self.rows[gi] = Some(SoccerStateRow {
-            home_score_raw: InlineStr::from_str(home_score_raw),
-            away_score_raw: InlineStr::from_str(away_score_raw),
-            free_text_raw: InlineStr::from_str(free_text_raw),
-        });
+        // Update V1 dedup row only if we have V1 data (BoltOdds uses its own dedup).
+        if !home_score_raw.is_empty() || !away_score_raw.is_empty() || !free_text_raw.is_empty() {
+            self.rows[gi] = Some(SoccerStateRow {
+                home_score_raw: InlineStr::from_str(home_score_raw),
+                away_score_raw: InlineStr::from_str(away_score_raw),
+                free_text_raw: InlineStr::from_str(free_text_raw),
+            });
+        }
 
         // Update game state.
         let prev = self.game_states[gi];
@@ -632,7 +645,11 @@ impl NativeSoccerEngine {
         self.evaluate_btts_into(gidx, &state, &mut intents);
         self.evaluate_corners_into(gidx, &state, &mut intents);
         self.evaluate_halftime_into(gidx, &state, &mut intents);
-        self.evaluate_exact_score_into(gidx, &state, &mut intents);
+        if state.home != prev.home || state.away != prev.away
+            || state.match_completed.unwrap_or(false)
+        {
+            self.evaluate_exact_score_into(gidx, &state, &mut intents);
+        }
 
         if state.match_completed.unwrap_or(false) && self.final_resolved_games[gi] {
             self.cleanup_completed_game_idx(gidx);
@@ -682,7 +699,18 @@ impl NativeSoccerEngine {
                 continue;
             }
             let gidx = match self.game_id_to_idx.get(uid) {
-                Some(&idx) => idx,
+                Some(&idx) => {
+                    // Existing game — add any new alternate IDs.
+                    if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                        for alt in alts {
+                            let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                                self.game_id_to_idx.insert(alt_id.to_string(), idx);
+                            }
+                        }
+                    }
+                    idx
+                }
                 None => {
                     if self.game_ids.len() >= u16::MAX as usize {
                         eprintln!("[polybot2] WARN: merge_plan game overflow u16_max, skipping {}", uid);
@@ -692,6 +720,15 @@ impl NativeSoccerEngine {
                     let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
                     self.game_id_to_idx.insert(uid.to_string(), idx);
                     self.game_ids.push(uid.to_string());
+                    // Insert alternate provider game IDs for the new game.
+                    if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                        for alt in alts {
+                            let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                                self.game_id_to_idx.insert(alt_id.to_string(), idx);
+                            }
+                        }
+                    }
                     self.kickoff_ts.push(kickoff);
                     self.game_targets.push(SoccerGameTargets::default());
                     self.has_totals.push(false);
@@ -1632,5 +1669,46 @@ mod tests {
         assert_eq!(engine.game_ids.len(), 2);
         assert!(engine.has_totals[0]);
         assert!(engine.has_moneyline[1]);
+    }
+
+    #[test]
+    fn test_alternate_game_ids_resolve_to_same_gidx() {
+        let mut engine = NativeSoccerEngine::new();
+        let t1 = target_json("tok_over", "over", "g1:TOTAL:OVER:2.5");
+        let m = market_json("totals", Some(2.5), &[t1]);
+        // Plan with alternate provider game IDs
+        let plan = format!(
+            r#"{{"games":[{{"provider_game_id":"primary_id","kickoff_ts_utc":1700000000,"alternate_provider_game_ids":[{{"provider":"boltodds","game_id":"boltodds_label"}},{{"provider":"kalstrop_v1","game_id":"v1_uuid"}}],"markets":[{}]}}]}}"#,
+            m
+        );
+        engine.load_plan_from_json(&plan).unwrap();
+
+        // One game in game_ids
+        assert_eq!(engine.game_ids.len(), 1);
+        assert_eq!(engine.game_ids[0], "primary_id");
+
+        // All three IDs resolve to the same GameIdx
+        let primary = engine.game_id_to_idx.get("primary_id").copied();
+        let alt_bo = engine.game_id_to_idx.get("boltodds_label").copied();
+        let alt_v1 = engine.game_id_to_idx.get("v1_uuid").copied();
+        assert_eq!(primary, Some(GameIdx(0)));
+        assert_eq!(alt_bo, Some(GameIdx(0)));
+        assert_eq!(alt_v1, Some(GameIdx(0)));
+
+        // Total entries in the map: 3 (primary + 2 alternates)
+        assert_eq!(engine.game_id_to_idx.len(), 3);
+    }
+
+    #[test]
+    fn test_alternate_game_ids_no_alternates_field() {
+        let mut engine = NativeSoccerEngine::new();
+        let t1 = target_json("tok_over", "over", "g1:TOTAL:OVER:2.5");
+        let m = market_json("totals", Some(2.5), &[t1]);
+        // Plan without alternate_provider_game_ids — backward compat
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        assert_eq!(engine.game_ids.len(), 1);
+        assert_eq!(engine.game_id_to_idx.len(), 1);
     }
 }

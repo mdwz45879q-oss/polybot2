@@ -121,6 +121,17 @@ impl NativeMlbEngine {
             let gidx = GameIdx(self.game_ids.len() as u16);
             self.game_id_to_idx.insert(uid.clone(), gidx);
             self.game_ids.push(uid);
+
+            // Insert alternate provider game IDs pointing to the same GameIdx.
+            if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                for alt in alts {
+                    let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                        self.game_id_to_idx.insert(alt_id.to_string(), gidx);
+                    }
+                }
+            }
+
             let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
             self.kickoff_ts.push(kickoff);
 
@@ -555,6 +566,15 @@ impl NativeMlbEngine {
             let Some(&gidx) = self.game_id_to_idx.get(uid) else {
                 continue;
             };
+            // Add any new alternate IDs for this existing game.
+            if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                for alt in alts {
+                    let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                        self.game_id_to_idx.insert(alt_id.to_string(), gidx);
+                    }
+                }
+            }
             let gi = gidx.0 as usize;
 
             let markets = match game_val.get("markets").and_then(|v| v.as_array()) {

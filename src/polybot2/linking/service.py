@@ -525,6 +525,8 @@ class LinkService:
 
         # Merge clusters that share the same kickoff_ts_utc as the provider game
         # (catches postponed games with stale date slugs but updated kickoff).
+        # Only merge clusters whose team portion matches (first 3 slug segments),
+        # so genuinely different events (e.g., swapped home/away) stay separate.
         if provider_ts is not None and provider_ts > 0:
             kickoff_tol = int(rules.kickoff_tolerance_minutes) * 60
             clusters_with_matching_kickoff: set[str] = set()
@@ -535,10 +537,16 @@ class LinkService:
                     if c:
                         clusters_with_matching_kickoff.add(c)
             if len(clusters_with_matching_kickoff) > 1:
-                merged_label = min(clusters_with_matching_kickoff)
-                for ev_id, c in cluster_by_event_id.items():
-                    if c in clusters_with_matching_kickoff:
-                        cluster_by_event_id[ev_id] = merged_label
+                team_prefix = lambda s: "-".join(s.split("-")[:3])
+                by_team: dict[str, list[str]] = {}
+                for c in clusters_with_matching_kickoff:
+                    by_team.setdefault(team_prefix(c), []).append(c)
+                for _tp, group in by_team.items():
+                    if len(group) > 1:
+                        merged_label = min(group)
+                        for ev_id, c in cluster_by_event_id.items():
+                            if c in group:
+                                cluster_by_event_id[ev_id] = merged_label
 
         top_clusters = {
             cluster_by_event_id.get(ev_id, "")

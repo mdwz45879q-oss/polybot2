@@ -22,7 +22,9 @@ pub(crate) mod sdk_exec;
 mod submitter;
 mod types;
 
-pub(crate) use fast_submit_client::{build_orders_body_from_slices, FastClobSubmitClient};
+pub(crate) use fast_submit_client::FastClobSubmitClient;
+#[cfg(test)]
+pub(crate) use fast_submit_client::build_orders_body_from_slices;
 #[cfg(any(test, feature = "bench-support"))]
 #[allow(unused_imports)]
 pub(crate) use presign_pool::prepare_payload_from_signed;
