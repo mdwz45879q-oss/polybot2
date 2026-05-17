@@ -1040,6 +1040,56 @@ class LinkReviewService:
             "progress": progress,
         }
 
+    def record_decision_all_providers(
+        self,
+        *,
+        run_id: int,
+        provider: str,
+        provider_game_id: str,
+        decision: str,
+        note: str = "",
+        actor: str = "cli",
+    ) -> dict[str, Any]:
+        """Record a decision and propagate it to sibling provider games for the same canonical game."""
+        result = self.record_decision(
+            provider=provider, run_id=run_id, provider_game_id=provider_game_id,
+            decision=decision, note=note, actor=actor,
+        )
+        row = self._db.execute(
+            """
+            SELECT canonical_home_team, canonical_away_team, game_date_et
+            FROM link_run_provider_games
+            WHERE run_id = ? AND provider = ? AND provider_game_id = ?
+            """,
+            (int(run_id), _norm(provider), str(provider_game_id)),
+        ).fetchone()
+        if row is None:
+            return result
+        siblings = self._db.execute(
+            """
+            SELECT provider, provider_game_id
+            FROM link_run_provider_games
+            WHERE run_id = ?
+              AND canonical_home_team = ?
+              AND canonical_away_team = ?
+              AND game_date_et = ?
+              AND NOT (provider = ? AND provider_game_id = ?)
+              AND parse_status = 'ok'
+            """,
+            (int(run_id), row["canonical_home_team"], row["canonical_away_team"],
+             row["game_date_et"], _norm(provider), str(provider_game_id)),
+        ).fetchall()
+        for sib in siblings:
+            try:
+                self.record_decision(
+                    provider=str(sib["provider"]), run_id=run_id,
+                    provider_game_id=str(sib["provider_game_id"]),
+                    decision=decision, note=note, actor=actor,
+                )
+            except ValueError:
+                pass
+        return result
+
     # Backward-compat wrappers for v1 callers.
     def run_summary(self, *, provider: str, run_id: int | None = None) -> dict[str, Any]:
         return self.get_run_status(provider=provider, run_id=run_id)

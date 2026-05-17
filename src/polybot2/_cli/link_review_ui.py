@@ -1253,8 +1253,10 @@ def _run_session_line_input_fallback(
     actor: str,
     logger: logging.Logger,
     include_inactive: bool,
+    propagate_to_siblings: bool = False,
+    preloaded_rows: list[dict] | None = None,
 ) -> int:
-    rows = svc.get_queue(
+    rows = preloaded_rows if preloaded_rows is not None else svc.get_queue(
         provider=provider,
         run_id=rid,
         scope=scope,
@@ -1270,10 +1272,11 @@ def _run_session_line_input_fallback(
     idx = 0
     while True:
         current = rows[idx]
+        row_provider = str(current.get("provider") or provider)
         provider_game_id = str(current.get("provider_game_id") or "")
-        card = svc.get_game_card(provider=provider, run_id=rid, provider_game_id=provider_game_id)
+        card = svc.get_game_card(provider=row_provider, run_id=rid, provider_game_id=provider_game_id)
         progress = svc.get_decision_progress(
-            provider=provider,
+            provider=row_provider,
             run_id=rid,
             include_inactive=bool(include_inactive),
         )
@@ -1301,7 +1304,7 @@ def _run_session_line_input_fallback(
             idx = (idx - 1) % len(rows)
             continue
         if action in {"c", "cand", "candidates"}:
-            cand_rows = svc.get_candidate_comparison(provider=provider, run_id=rid, provider_game_id=provider_game_id)
+            cand_rows = svc.get_candidate_comparison(provider=row_provider, run_id=rid, provider_game_id=provider_game_id)
             logger.info(
                 "Candidates for %s\n%s",
                 provider_game_id,
@@ -1329,8 +1332,9 @@ def _run_session_line_input_fallback(
             logger.warning("unknown session action: %s", action)
             continue
         try:
-            svc.record_decision(
-                provider=provider,
+            _record = svc.record_decision_all_providers if propagate_to_siblings else svc.record_decision
+            _record(
+                provider=row_provider,
                 run_id=rid,
                 provider_game_id=provider_game_id,
                 decision=chosen,
@@ -1340,18 +1344,9 @@ def _run_session_line_input_fallback(
         except ValueError as exc:
             logger.error("decision failed: %s", str(exc))
             continue
-        rows = svc.get_queue(
-            provider=provider,
-            run_id=rid,
-            scope=scope,
-            decision_filter=decision_filter,
-            resolution_filter=resolution_filter,
-            parse_status=parse_status,
-            limit=limit,
-            include_inactive=bool(include_inactive),
-        )
+        rows = [r for r in rows if str(r.get("provider_game_id") or "") != provider_game_id]
         if not rows:
-            logger.info("Review session queue is now empty: provider=%s run_id=%s scope=%s", provider, rid, scope)
+            logger.info("Review session queue is now empty")
             return 0
         idx = min(idx, len(rows) - 1)
 
@@ -1368,9 +1363,11 @@ def _run_session_interactive(
     limit: int,
     actor: str,
     include_inactive: bool,
+    propagate_to_siblings: bool = False,
+    preloaded_rows: list[dict] | None = None,
 ) -> int:
     console = Console()
-    rows = svc.get_queue(
+    rows = preloaded_rows if preloaded_rows is not None else svc.get_queue(
         provider=provider,
         run_id=rid,
         scope=scope,
@@ -1434,19 +1431,20 @@ def _run_session_interactive(
         with Live(console=console, auto_refresh=False, screen=True) as live:
             while True:
                 current = rows[idx]
+                row_provider = str(current.get("provider") or provider)
                 provider_game_id = str(current.get("provider_game_id") or "")
                 if sticky_card is not None and sticky_provider_game_id == provider_game_id:
                     card = sticky_card
                 else:
-                    card = svc.get_game_card(provider=provider, run_id=rid, provider_game_id=provider_game_id)
+                    card = svc.get_game_card(provider=row_provider, run_id=rid, provider_game_id=provider_game_id)
                 progress = svc.get_decision_progress(
-                    provider=provider,
+                    provider=row_provider,
                     run_id=rid,
                     include_inactive=bool(include_inactive),
                 )
                 candidates = None
                 if view_mode == "candidates":
-                    candidates = svc.get_candidate_comparison(provider=provider, run_id=rid, provider_game_id=provider_game_id)
+                    candidates = svc.get_candidate_comparison(provider=row_provider, run_id=rid, provider_game_id=provider_game_id)
                 new_identity = f"{provider_game_id}|{view_mode}"
                 if new_identity != card_identity:
                     card_identity = new_identity
@@ -1598,8 +1596,9 @@ def _run_session_interactive(
                 if key in {"a", "r", "s"}:
                     chosen = {"a": "approve", "r": "reject", "s": "skip"}[key]
                     try:
-                        svc.record_decision(
-                            provider=provider,
+                        _record = svc.record_decision_all_providers if propagate_to_siblings else svc.record_decision
+                        _record(
+                            provider=row_provider,
                             run_id=rid,
                             provider_game_id=provider_game_id,
                             decision=chosen,
@@ -1610,18 +1609,21 @@ def _run_session_interactive(
                         session_note = f"decision failed: {str(exc)}"
                         continue
                     session_note = f"decision applied: {chosen.upper()} for {provider_game_id}"
-                    sticky_card = svc.get_game_card(provider=provider, run_id=rid, provider_game_id=provider_game_id)
+                    sticky_card = svc.get_game_card(provider=row_provider, run_id=rid, provider_game_id=provider_game_id)
                     sticky_provider_game_id = provider_game_id
-                    pending_rows = svc.get_queue(
-                        provider=provider,
-                        run_id=rid,
-                        scope=scope,
-                        decision_filter=decision_filter,
-                        resolution_filter=resolution_filter,
-                        parse_status=parse_status,
-                        limit=limit,
-                        include_inactive=bool(include_inactive),
-                    )
+                    if preloaded_rows is not None:
+                        pending_rows = [r for r in rows if str(r.get("provider_game_id") or "") != provider_game_id]
+                    else:
+                        pending_rows = svc.get_queue(
+                            provider=provider,
+                            run_id=rid,
+                            scope=scope,
+                            decision_filter=decision_filter,
+                            resolution_filter=resolution_filter,
+                            parse_status=parse_status,
+                            limit=limit,
+                            include_inactive=bool(include_inactive),
+                        )
                     continue
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_term)

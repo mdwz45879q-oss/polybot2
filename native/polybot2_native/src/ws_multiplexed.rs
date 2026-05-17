@@ -364,15 +364,15 @@ pub(crate) async fn run_multiplexed_worker_async(
                 // creating a timer future (saves ~50-100ns per burst frame).
                 // Otherwise, wait up to 100ms for the first frame.
                 if got_frame {
-                    // Tight poll: only WS futures, no timer allocation.
-                    tokio::select! {
-                        biased;
-                        msg = async {
-                            match v2_conn.as_mut() {
-                                Some(conn) => conn.ws.next().await,
-                                None => std::future::pending().await,
-                            }
-                        } => {
+                    // Burst drain: poll each stream once without blocking
+                    // (now_or_never returns None if no data buffered).
+                    // Priority order: V2 > V1 > BoltOdds.
+                    use futures_util::FutureExt;
+                    let mut any_ready = false;
+
+                    if let Some(ref mut conn) = v2_conn {
+                        if let Some(msg) = conn.ws.next().now_or_never() {
+                            any_ready = true;
                             match msg {
                                 Some(Ok(Message::Text(ref text))) => {
                                     match kalstrop_v2_sio::classify_frame(text) {
@@ -386,16 +386,7 @@ pub(crate) async fn run_multiplexed_worker_async(
                                                 }
                                             }
                                         }
-                                        SioFrame::Ping => {
-                                            if let Some(ref mut conn) = v2_conn {
-                                                if let Err(e) = kalstrop_v2_sio::send_pong(conn).await {
-                                                    eprintln!("[mux] V2 pong error: {}", e);
-                                                    v2_conn = None;
-                                                    v2_active_subs.clear();
-                                                    reconn_v2 = true;
-                                                }
-                                            }
-                                        }
+                                        SioFrame::Ping => {}
                                         SioFrame::Subscribed(_) | SioFrame::ConnectAck | SioFrame::Other => {}
                                     }
                                 }
@@ -403,23 +394,19 @@ pub(crate) async fn run_multiplexed_worker_async(
                                     v2_conn = None;
                                     v2_active_subs.clear();
                                     reconn_v2 = true;
-                                    if v1_ws.is_none() && bo_ws.is_none() { break 'event_loop; }
                                 }
                                 Some(Err(_)) => {
                                     v2_conn = None;
                                     v2_active_subs.clear();
                                     reconn_v2 = true;
-                                    if v1_ws.is_none() && bo_ws.is_none() { break 'event_loop; }
                                 }
                                 _ => {}
                             }
                         }
-                        msg = async {
-                            match v1_ws.as_mut() {
-                                Some(ws) => ws.next().await,
-                                None => std::future::pending().await,
-                            }
-                        } => {
+                    }
+                    if let Some(ref mut ws) = v1_ws {
+                        if let Some(msg) = ws.next().now_or_never() {
+                            any_ready = true;
                             match msg {
                                 Some(Ok(Message::Text(ref text))) => {
                                     let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
@@ -429,32 +416,23 @@ pub(crate) async fn run_multiplexed_worker_async(
                                         );
                                     }
                                 }
-                                Some(Ok(Message::Ping(p))) => {
-                                    if let Some(ref mut ws) = v1_ws {
-                                        let _ = ws.send(Message::Pong(p)).await;
-                                    }
-                                }
                                 Some(Ok(Message::Close(_))) | None => {
                                     v1_ws = None;
                                     v1_active_subs.clear();
                                     reconn_v1 = true;
-                                    if v2_conn.is_none() && bo_ws.is_none() { break 'event_loop; }
                                 }
                                 Some(Err(_)) => {
                                     v1_ws = None;
                                     v1_active_subs.clear();
                                     reconn_v1 = true;
-                                    if v2_conn.is_none() && bo_ws.is_none() { break 'event_loop; }
                                 }
                                 _ => {}
                             }
                         }
-                        msg = async {
-                            match bo_ws.as_mut() {
-                                Some(ws) => ws.next().await,
-                                None => std::future::pending().await,
-                            }
-                        } => {
+                    }
+                    if let Some(ref mut ws) = bo_ws {
+                        if let Some(msg) = ws.next().now_or_never() {
+                            any_ready = true;
                             match msg {
                                 Some(Ok(Message::Text(ref text))) => {
                                     let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
@@ -478,26 +456,20 @@ pub(crate) async fn run_multiplexed_worker_async(
                                         }
                                     }
                                 }
-                                Some(Ok(Message::Ping(p))) => {
-                                    if let Some(ref mut ws) = bo_ws {
-                                        let _ = ws.send(Message::Pong(p)).await;
-                                    }
-                                }
                                 Some(Ok(Message::Close(_))) | None => {
                                     bo_ws = None;
                                     reconn_bo = true;
-                                    if v1_ws.is_none() && v2_conn.is_none() { break 'event_loop; }
                                 }
                                 Some(Err(_)) => {
                                     bo_ws = None;
                                     reconn_bo = true;
-                                    if v1_ws.is_none() && v2_conn.is_none() { break 'event_loop; }
                                 }
                                 _ => {}
                             }
                         }
-                        else => { break; }
                     }
+                    if !any_ready { break; }
+                    if reconn_v1 || reconn_v2 || reconn_bo { break; }
                     continue;
                 }
 

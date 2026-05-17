@@ -888,7 +888,7 @@ def compile_multi_league_plan(
 
     return CompiledPlan(
         provider="multi",
-        league="soccer",
+        league=leagues[0][0] if leagues else "baseball",
         run_id=int(run_id),
         plan_hash=plan_hash,
         compiled_at=int(time.time()),

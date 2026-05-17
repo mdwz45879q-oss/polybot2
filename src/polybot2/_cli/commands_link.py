@@ -86,14 +86,50 @@ def run_link_review(args: Any, *, logger: logging.Logger) -> int:
             logger.error("run_id=%d has no providers", rid)
             return 1
 
-        # For multi-provider runs, merge queues from all providers into one session.
-        # The review UI takes a single provider, so we pick the first for display
-        # but pre-merge the queue across all providers.
         svc = LinkReviewService(db=db)
-        primary_provider = providers[0]
+        propagate = len(providers) > 1
 
-        if len(providers) == 1:
-            if _interactive_session_available():
+        # Merge queues from all providers, deduplicate by canonical game.
+        # For each canonical game, prefer the row from the league's primary
+        # provider (first in the config list). Sort by league for grouping.
+        merged_rows: list[dict[str, Any]] = []
+        if propagate:
+            from polybot2.linking import load_mapping as _load_mapping_review
+            _mapping = _load_mapping_review()
+            primary_by_league: dict[str, str] = {}
+            for lk, lcfg in _mapping.leagues.items():
+                raw_p = lcfg.get("provider", "")
+                if isinstance(raw_p, list) and raw_p:
+                    primary_by_league[lk] = str(raw_p[0]).strip().lower()
+                elif raw_p:
+                    primary_by_league[lk] = str(raw_p).strip().lower()
+
+            canonical_best: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for p in providers:
+                rows = svc.get_queue(
+                    provider=p, run_id=rid, scope=scope,
+                    decision_filter=decision_filter, resolution_filter=resolution_filter,
+                    parse_status=parse_status, limit=limit,
+                    include_inactive=bool(include_inactive),
+                )
+                for row in rows:
+                    key = (
+                        str(row.get("canonical_home_team") or ""),
+                        str(row.get("canonical_away_team") or ""),
+                        str(row.get("game_date_et") or ""),
+                    )
+                    league = str(row.get("canonical_league") or "")
+                    is_primary = (p == primary_by_league.get(league, ""))
+                    if key not in canonical_best or is_primary:
+                        canonical_best[key] = row
+            merged_rows = list(canonical_best.values())
+            merged_rows.sort(key=lambda r: (str(r.get("canonical_league") or ""), str(r.get("game_date_et") or "")))
+
+        primary_provider = providers[0]
+        interactive = _interactive_session_available()
+
+        if not propagate:
+            if interactive:
                 return _run_session_interactive(
                     svc=svc, provider=primary_provider, rid=rid, scope=scope,
                     decision_filter=decision_filter, resolution_filter=resolution_filter,
@@ -107,25 +143,35 @@ def run_link_review(args: Any, *, logger: logging.Logger) -> int:
                 include_inactive=include_inactive,
             )
 
-        # Multi-provider: review each provider's games sequentially
-        for provider in providers:
-            logger.info("reviewing provider=%s run_id=%d", provider, rid)
-            if _interactive_session_available():
-                code = _run_session_interactive(
-                    svc=svc, provider=provider, rid=rid, scope=scope,
+        # Group by league — each league gets its own review session
+        league_groups: dict[str, list[dict[str, Any]]] = {}
+        for row in merged_rows:
+            lg = str(row.get("canonical_league") or "")
+            league_groups.setdefault(lg, []).append(row)
+
+        for league_key in sorted(league_groups):
+            league_rows = league_groups[league_key]
+            league_provider = primary_by_league.get(league_key, primary_provider)
+            if interactive:
+                rc = _run_session_interactive(
+                    svc=svc, provider=league_provider, rid=rid, scope=scope,
                     decision_filter=decision_filter, resolution_filter=resolution_filter,
                     parse_status=parse_status, limit=limit, actor=actor,
                     include_inactive=include_inactive,
+                    propagate_to_siblings=propagate,
+                    preloaded_rows=league_rows,
                 )
             else:
-                code = _run_session_line_input_fallback(
-                    svc=svc, provider=provider, rid=rid, scope=scope,
+                rc = _run_session_line_input_fallback(
+                    svc=svc, provider=league_provider, rid=rid, scope=scope,
                     decision_filter=decision_filter, resolution_filter=resolution_filter,
                     parse_status=parse_status, limit=limit, actor=actor, logger=logger,
                     include_inactive=include_inactive,
+                    propagate_to_siblings=propagate,
+                    preloaded_rows=league_rows,
                 )
-            if code != 0:
-                return code
+            if rc != 0:
+                return rc
         return 0
 
 
