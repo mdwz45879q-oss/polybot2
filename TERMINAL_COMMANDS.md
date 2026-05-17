@@ -100,26 +100,36 @@ polybot2 link review --run-id <N> --limit 100              # cap number of items
 
 ## 4) Hotpath
 
-### Launch (one process per league)
+### Launch (single league)
 
 ```bash
 polybot2 hotpath live --league mlb --execution-mode live
 polybot2 hotpath live --league epl --execution-mode live
 ```
 
-Paper trading:
+### Launch (multi-league — one process for all soccer)
+
+```bash
+polybot2 hotpath live --sport soccer --execution-mode live        # all live soccer leagues
+polybot2 hotpath live --league epl laliga ucl --execution-mode live  # explicit multi-league
+```
+
+Multi-league compiles one merged plan. Each league uses its own order policy from `HOTPATH_EXECUTION_POLICY` (per-league sizing, market overrides). V2 leagues (La Liga, UCL, Bundesliga) resolve fixture IDs at runtime via the interleaved V2 resolution loop.
+
+### Paper trading
 
 ```bash
 polybot2 hotpath live --league mlb --execution-mode paper
+polybot2 hotpath live --sport soccer --execution-mode paper
 ```
 
-With explicit link run and refresh interval:
+### With explicit link run and refresh interval
 
 ```bash
 polybot2 hotpath live --league mlb --execution-mode live --link-run-id <N> --refresh-interval 300
 ```
 
-Optional subscription filter:
+### Optional subscription filter
 
 ```bash
 export POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS='game_label_1,game_label_2'

@@ -30,13 +30,9 @@ def test_native_service_paper_mode_uses_noop_dispatch() -> None:
     payload = svc._execution_config_payload()  # type: ignore[attr-defined]
     runtime_payload = svc._runtime_config_payload()  # type: ignore[attr-defined]
     assert str(payload.get("dispatch_mode") or "") == "noop"
-    assert "amount_usdc" in runtime_payload
-    assert "limit_price" in runtime_payload
-    assert "buy_yes_limit_price" not in runtime_payload
+    assert "amount_usdc" not in runtime_payload
     assert int(runtime_payload.get("subscribe_lead_minutes") or 0) == 7
     assert int(runtime_payload.get("subscription_refresh_seconds") or 0) == 33
-    assert "telemetry_enabled" not in runtime_payload
-    assert "telemetry_level" not in runtime_payload
     assert "telemetry_socket_path" not in runtime_payload
     assert "telemetry_queue_capacity" not in runtime_payload
     assert "presign_ttl_seconds" not in payload

@@ -6,7 +6,7 @@ from collections import deque
 import json
 import os
 import threading
-from typing import Any, Callable
+from typing import Any
 
 from polybot2.execution.contracts import OrderRequest
 from polybot2.execution.service import FastExecutionService
@@ -17,10 +17,7 @@ from polybot2.hotpath.native_engine import (
     NativeHotPathRuntimeBridge,
     serialize_compiled_plan,
 )
-from polybot2.linking.snapshot import BindingResolver
 from polybot2.sports.base import SportsDataProviderBase
-
-SidecarSink = Callable[[dict[str, Any]], None]
 
 
 class NativeHotPathService:
@@ -33,7 +30,6 @@ class NativeHotPathService:
         execution: FastExecutionService,
         execution_mode: str = "live",
         config: HotPathConfig | None = None,
-        binding_resolver: BindingResolver | None = None,
         compiled_plan: CompiledPlan | None = None,
     ):
         self._provider = provider
@@ -44,14 +40,8 @@ class NativeHotPathService:
         self._lock = threading.RLock()
         self._plan_lock = threading.RLock()
         self._last_errors: deque[str] = deque(maxlen=50)
-        self._sidecar_sinks: list[SidecarSink] = []
 
         self._subscriptions: list[str] = []
-        self._subscription_resolution = {
-            "requested_count": 0,
-            "resolved_count": 0,
-            "missing_count": 0,
-        }
 
         self._compiled_plan: CompiledPlan | None = None
 
@@ -72,9 +62,6 @@ class NativeHotPathService:
 
         self.set_compiled_plan(compiled_plan)
 
-    def register_sidecar_sink(self, sink: SidecarSink) -> None:
-        self._sidecar_sinks.append(sink)
-
     def set_compiled_plan(self, plan: CompiledPlan | None) -> None:
         with self._plan_lock:
             self._compiled_plan = plan
@@ -87,35 +74,6 @@ class NativeHotPathService:
 
     def _append_error(self, text: str) -> None:
         self._last_errors.append(str(text))
-
-    def _resolve_subscriptions(self, universal_ids: list[str]) -> list[str]:
-        unique = sorted(
-            {str(uid or "").strip() for uid in universal_ids if str(uid or "").strip()}
-        )
-        resolved = list(unique)
-        if hasattr(self._provider, "resolve_universal_ids"):
-            try:
-                resolved = sorted(
-                    {
-                        str(uid or "").strip()
-                        for uid in self._provider.resolve_universal_ids(
-                            universal_ids=unique
-                        )
-                        if str(uid or "").strip()
-                    }
-                )
-            except Exception as exc:
-                self._append_error(
-                    f"subscription_resolution:{type(exc).__name__}:{exc}"
-                )
-                resolved = list(unique)
-        missing_count = max(0, int(len(unique) - len(resolved)))
-        self._subscription_resolution = {
-            "requested_count": int(len(unique)),
-            "resolved_count": int(len(resolved)),
-            "missing_count": int(missing_count),
-        }
-        return resolved
 
     def set_subscriptions(self, universal_ids: list[str]) -> None:
         cleaned = sorted({str(uid or "").strip() for uid in universal_ids if str(uid or "").strip()})
@@ -173,10 +131,6 @@ class NativeHotPathService:
         payload = {
             "subscribe_lead_minutes": int(self._subscribe_lead_minutes),
             "subscription_refresh_seconds": int(self._subscription_refresh_seconds),
-            "amount_usdc": float(next(iter(self._order_policies.values())).amount_usdc),
-            "size_shares": float(next(iter(self._order_policies.values())).size_shares),
-            "limit_price": float(next(iter(self._order_policies.values())).limit_price),
-            "time_in_force": str(next(iter(self._order_policies.values())).time_in_force),
             "live_enabled": True,
             "reconnect_sleep_seconds": float(self._config.reconnect_base_sleep_seconds),
             "kalstrop_ws_url": str(getattr(provider_cfg, "ws_url", "") or "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"),
@@ -212,9 +166,6 @@ class NativeHotPathService:
             "presign_enabled": bool(getattr(exec_cfg, "presign_enabled", False)),
             "presign_private_key": str(
                 getattr(exec_cfg, "presign_private_key", "") or ""
-            ),
-            "presign_pool_target_per_key": int(
-                getattr(exec_cfg, "presign_pool_target_per_key", 1) or 1
             ),
             "presign_startup_warm_timeout_seconds": float(
                 getattr(exec_cfg, "presign_startup_warm_timeout_seconds", 5.0) or 5.0
@@ -283,7 +234,6 @@ class NativeHotPathService:
         with self._lock:
             running = bool(self._running)
             subscriptions = list(self._subscriptions)
-            subscription_resolution = dict(self._subscription_resolution)
             bridge = self._runtime_bridge
         errors = list(self._last_errors)
 
@@ -298,7 +248,6 @@ class NativeHotPathService:
             "running": bool(runtime_health.get("running", running)),
             "execution_mode": str(self._execution_mode),
             "subscriptions": list(runtime_health.get("subscriptions", subscriptions)),
-            "subscription_resolution": subscription_resolution,
             "reconnects": int(runtime_health.get("reconnects", 0) or 0),
             "last_error": str(runtime_health.get("last_error", "") or ""),
             "errors": errors,
@@ -384,8 +333,5 @@ class NativeHotPathService:
             )
             return 0
 
-    def reset_latency_samples(self) -> None:
-        # Rust runtime owns latency buckets; this method remains for compatibility.
-        return None
 
 __all__ = ["NativeHotPathService"]

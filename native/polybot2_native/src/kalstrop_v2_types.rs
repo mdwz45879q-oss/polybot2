@@ -5,9 +5,6 @@
 use memchr::memmem::Finder;
 use std::sync::LazyLock;
 
-#[allow(dead_code)]
-static FINDER_GENIUS_UPDATE: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"\"genius_update\""));
 static FINDER_FIXTURE_ID: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"betGeniusFixtureId\""));
 static FINDER_HOME_SCORE: LazyLock<Finder<'static>> =

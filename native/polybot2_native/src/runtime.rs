@@ -69,21 +69,8 @@ impl NativeHotPathRuntime {
             .map_err(|e| PyValueError::new_err(format!("invalid_exec_config_json:{}", e)))?;
         let worker_cfg = cfg.clone();
         self.runtime_cfg = cfg.clone();
-        let runtime_amount = cfg.amount_usdc.unwrap_or(5.0);
-        let runtime_size = cfg.size_shares.unwrap_or(5.0);
-        let runtime_price = cfg.limit_price.unwrap_or(0.52);
-        let runtime_tif = cfg
-            .time_in_force
-            .clone()
-            .unwrap_or_else(|| "FAK".to_string());
-        let dispatch_cfg = crate::dispatch::build_dispatch_config(
-            exec_cfg,
-            runtime_amount,
-            runtime_size,
-            runtime_price,
-            runtime_tif.clone(),
-        )
-        .map_err(PyValueError::new_err)?;
+        let dispatch_cfg = crate::dispatch::build_dispatch_config(exec_cfg)
+            .map_err(PyValueError::new_err)?;
         self.dispatch_cfg = dispatch_cfg.clone();
 
         // Determine sport from plan JSON and provider from config.
@@ -305,9 +292,6 @@ impl NativeHotPathRuntime {
                                     .unwrap_or_else(|| "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws".to_string()),
                                 client_id: pc.client_id.clone().unwrap_or_default(),
                                 shared_secret_raw: pc.shared_secret_raw.clone().unwrap_or_default(),
-                                subscribe_lead_minutes: cfg.subscribe_lead_minutes.unwrap_or(90),
-                                subscription_refresh_seconds: cfg.subscription_refresh_seconds.unwrap_or(120.0),
-                                reconnect_sleep_seconds: cfg.reconnect_sleep_seconds.unwrap_or(5.0),
                             });
                         }
                         "boltodds" => {

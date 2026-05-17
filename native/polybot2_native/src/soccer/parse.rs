@@ -30,16 +30,8 @@ pub(crate) fn parse_half(text: &str) -> &'static str {
     ""
 }
 
-/// Detect game completion from freeText. Same completion terms as baseball
-/// — Kalstrop V1 uses the same vocabulary across sports.
-pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
-    let s = free_text.trim();
-    s.eq_ignore_ascii_case("Ended")
-        || s.eq_ignore_ascii_case("Final")
-        || s.eq_ignore_ascii_case("Game Over")
-        || s.eq_ignore_ascii_case("Finished")
-        || s.eq_ignore_ascii_case("FT")
-}
+#[cfg(test)]
+use crate::parse_common::is_completed_free_text;
 
 #[cfg(test)]
 mod tests {

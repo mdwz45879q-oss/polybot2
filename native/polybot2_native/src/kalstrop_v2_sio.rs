@@ -4,7 +4,6 @@
 //! No external Socket.IO crate — uses raw tokio-tungstenite.
 
 use futures_util::{SinkExt, StreamExt};
-use serde_json::Value;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -14,8 +13,6 @@ pub(crate) type WsStream = tokio_tungstenite::WebSocketStream<
 
 pub(crate) struct SioConnection {
     pub ws: WsStream,
-    #[allow(dead_code)]
-    pub ping_interval: Duration,
 }
 
 #[derive(Debug)]
@@ -73,8 +70,6 @@ pub(crate) async fn connect(
     if !open_text.starts_with('0') {
         return Err(format!("v2_sio_open_bad_prefix:{}", &open_text[..open_text.len().min(60)]));
     }
-    let ping_interval = parse_ping_interval(&open_text[1..]);
-
     // Send Socket.IO CONNECT
     ws.send(Message::Text("40".to_string().into()))
         .await
@@ -93,7 +88,7 @@ pub(crate) async fn connect(
         }
     }
 
-    Ok(SioConnection { ws, ping_interval })
+    Ok(SioConnection { ws })
 }
 
 pub(crate) async fn subscribe(
@@ -114,22 +109,6 @@ pub(crate) async fn subscribe(
         .send(Message::Text(payload.into()))
         .await
         .map_err(|e| format!("v2_sio_subscribe_send:{}", e))
-}
-
-#[allow(dead_code)]
-pub(crate) async fn unsubscribe(
-    conn: &mut SioConnection,
-    fixture_id: &str,
-) -> Result<(), String> {
-    let params = serde_json::json!({
-        "fixtureId": fixture_id,
-        "activeContent": "court",
-    });
-    let payload = format!("42[\"genius_unsubscribe\",{}]", params);
-    conn.ws
-        .send(Message::Text(payload.into()))
-        .await
-        .map_err(|e| format!("v2_sio_unsubscribe_send:{}", e))
 }
 
 pub(crate) async fn send_pong(conn: &mut SioConnection) -> Result<(), String> {
@@ -199,15 +178,6 @@ fn parse_sio_event(arr_text: &str) -> Option<(&str, &str)> {
     Some((event_name, payload))
 }
 
-fn parse_ping_interval(open_json: &str) -> Duration {
-    if let Ok(v) = serde_json::from_str::<Value>(open_json) {
-        if let Some(ms) = v.get("pingInterval").and_then(|v| v.as_u64()) {
-            return Duration::from_millis(ms);
-        }
-    }
-    Duration::from_secs(25)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,15 +233,4 @@ mod tests {
         assert_eq!(payload, r#"{"key":"value"}"#);
     }
 
-    #[test]
-    fn test_parse_ping_interval() {
-        let interval = parse_ping_interval(r#"{"sid":"abc","pingInterval":25000,"pingTimeout":20000}"#);
-        assert_eq!(interval, Duration::from_millis(25000));
-    }
-
-    #[test]
-    fn test_parse_ping_interval_default() {
-        let interval = parse_ping_interval("{}");
-        assert_eq!(interval, Duration::from_secs(25));
-    }
 }

@@ -88,3 +88,38 @@ impl DispatchHandle {
         }
     }
 }
+
+pub(crate) fn dispatch_intents(
+    intents: &[crate::Intent],
+    handle: &mut DispatchHandle,
+    log: &Arc<Mutex<LogWriter>>,
+) {
+    if matches!(handle.cfg.mode, DispatchMode::Noop) {
+        for intent in intents {
+            let (sk, tok) = handle.resolve_strings(intent.target_idx);
+            if let Ok(mut g) = log.lock() {
+                g.log_order_ok(sk, tok, "noop");
+            }
+        }
+    } else {
+        let mut batch: SubmitBatch = SubmitBatch::new();
+        for intent in intents {
+            match handle.pop_for_target(intent.target_idx) {
+                Ok(orders) => {
+                    for signed in orders {
+                        batch.push((intent.target_idx, signed));
+                    }
+                }
+                Err(err) => {
+                    let (sk, tok) = handle.resolve_strings(intent.target_idx);
+                    if let Ok(mut g) = log.lock() {
+                        g.log_order_err(sk, tok, &err);
+                    }
+                }
+            }
+        }
+        if !batch.is_empty() {
+            handle.send_batch(batch, log);
+        }
+    }
+}

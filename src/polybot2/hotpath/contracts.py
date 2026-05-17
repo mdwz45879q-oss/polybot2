@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import os
-from typing import Any
 
 
 # Outcome semantics produced by the compiler. Includes two-way (home, away,
@@ -15,43 +13,10 @@ OutcomeSemantic = str
 
 @dataclass(frozen=True, slots=True)
 class HotPathConfig:
-    run_scores: bool = True
-    run_odds: bool = False
-    read_timeout_seconds: float = 0.05
     reconnect_base_sleep_seconds: float = 0.05
-    profiling_enabled: bool = False
-    native_engine_enabled: bool = False
     native_engine_required: bool = False
 
-    @classmethod
-    def from_env(cls, overrides: dict[str, object] | None = None) -> "HotPathConfig":
-        def _get(name: str) -> str | None:
-            return os.getenv(f"POLY_HOTPATH_{name}")
-
-        vals: dict[str, object] = {}
-        if (v := _get("RUN_SCORES")) is not None:
-            vals["run_scores"] = str(v).strip().lower() not in {"0", "false", "no", "off"}
-        if (v := _get("RUN_ODDS")) is not None:
-            vals["run_odds"] = str(v).strip().lower() not in {"0", "false", "no", "off"}
-        if (v := _get("READ_TIMEOUT_SECONDS")) is not None:
-            vals["read_timeout_seconds"] = float(v)
-        if (v := _get("RECONNECT_BASE_SLEEP_SECONDS")) is not None:
-            vals["reconnect_base_sleep_seconds"] = float(v)
-        if (v := _get("PROFILING_ENABLED")) is not None:
-            vals["profiling_enabled"] = str(v).strip().lower() not in {"0", "false", "no", "off"}
-        if (v := _get("NATIVE_ENGINE_ENABLED")) is not None:
-            vals["native_engine_enabled"] = str(v).strip().lower() not in {"0", "false", "no", "off"}
-        if (v := _get("NATIVE_ENGINE_REQUIRED")) is not None:
-            vals["native_engine_required"] = str(v).strip().lower() not in {"0", "false", "no", "off"}
-        if overrides:
-            vals.update(overrides)
-        return cls(**vals)
-
     def __post_init__(self) -> None:
-        if not bool(self.run_scores) and not bool(self.run_odds):
-            raise ValueError("at least one stream must be enabled")
-        if float(self.read_timeout_seconds) <= 0.0:
-            raise ValueError("read_timeout_seconds must be > 0")
         if float(self.reconnect_base_sleep_seconds) <= 0.0:
             raise ValueError("reconnect_base_sleep_seconds must be > 0")
 

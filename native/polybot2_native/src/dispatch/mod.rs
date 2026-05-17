@@ -23,6 +23,7 @@ mod submitter;
 mod types;
 
 pub(crate) use fast_submit_client::FastClobSubmitClient;
+pub(crate) use flow::dispatch_intents;
 #[cfg(test)]
 pub(crate) use fast_submit_client::build_orders_body_from_slices;
 #[cfg(any(test, feature = "bench-support"))]
@@ -74,10 +75,6 @@ pub(crate) fn simulate_small_batch_mapping_for_test(
 
 pub(crate) fn build_dispatch_config(
     exec_cfg: ExecStartConfig,
-    amount_usdc: f64,
-    size_shares: f64,
-    limit_price: f64,
-    time_in_force: String,
 ) -> Result<DispatchConfig, String> {
     let mode_text = exec_cfg
         .dispatch_mode
@@ -123,10 +120,6 @@ pub(crate) fn build_dispatch_config(
             .presign_startup_warm_timeout_seconds
             .unwrap_or(5.0)
             .max(0.1),
-        amount_usdc,
-        size_shares,
-        limit_price,
-        time_in_force: parse_time_in_force(time_in_force.as_str())?,
     })
 }
 

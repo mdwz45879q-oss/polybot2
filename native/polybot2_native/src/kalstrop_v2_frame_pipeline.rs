@@ -4,10 +4,10 @@
 //! and dispatches through the soccer engine.
 
 use crate::kalstrop_v2_types::{fast_extract_v2, map_v2_phase};
-use crate::dispatch::{DispatchHandle, SubmitBatch};
+use crate::dispatch::{dispatch_intents, DispatchHandle};
 use crate::log_writer::LogWriter;
 use crate::soccer::types::{NativeSoccerEngine, SoccerGameState};
-use crate::{DispatchMode, GameIdx};
+use crate::GameIdx;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy)]
@@ -69,34 +69,7 @@ pub(crate) fn process_v2_frame_sync(
         recv_monotonic_ns,
     )?;
 
-    if matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
-        for intent in &result.intents {
-            let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
-            if let Ok(mut g) = log.lock() {
-                g.log_order_ok(sk, tok, "noop");
-            }
-        }
-    } else {
-        let mut batch: SubmitBatch = SubmitBatch::new();
-        for intent in &result.intents {
-            match dispatch_handle.pop_for_target(intent.target_idx) {
-                Ok(orders) => {
-                    for signed in orders {
-                        batch.push((intent.target_idx, signed));
-                    }
-                }
-                Err(err) => {
-                    let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
-                    if let Ok(mut g) = log.lock() {
-                        g.log_order_err(sk, tok, &err);
-                    }
-                }
-            }
-        }
-        if !batch.is_empty() {
-            dispatch_handle.send_batch(batch, log);
-        }
-    }
+    dispatch_intents(&result.intents, dispatch_handle, log);
 
     Some(V2PendingLog {
         game_idx: result.game_idx,

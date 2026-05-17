@@ -20,7 +20,6 @@ const HMAC_B64_LEN: usize = 44;
 pub(crate) struct FastClobSubmitClient {
     http: ReqwestClient,
     order_url: String,
-    orders_url: String,
     poly_address: HeaderValue,
     poly_api_key: HeaderValue,
     poly_passphrase: HeaderValue,
@@ -34,7 +33,6 @@ impl FastClobSubmitClient {
     ) -> Result<Self, String> {
         let host = normalize_host(cfg.clob_host.as_str());
         let order_url = format!("{}order", host);
-        let orders_url = format!("{}orders", host);
         let poly_address = HeaderValue::from_str(signer_address_checksum.as_str())
             .map_err(|e| format!("submitter_invalid_poly_address:{}", e))?;
         let poly_api_key = HeaderValue::from_str(cfg.api_key.trim())
@@ -47,7 +45,7 @@ impl FastClobSubmitClient {
         let http = ReqwestClient::builder()
             .tcp_nodelay(true)
             .pool_idle_timeout(Some(std::time::Duration::from_secs(60)))
-            .pool_max_idle_per_host(3)
+            .pool_max_idle_per_host(30)
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -55,7 +53,6 @@ impl FastClobSubmitClient {
         Ok(Self {
             http,
             order_url,
-            orders_url,
             poly_address,
             poly_api_key,
             poly_passphrase,
@@ -101,49 +98,6 @@ impl FastClobSubmitClient {
         parse_json_response(status, raw.as_ref())
     }
 
-    pub(crate) async fn post_orders_bytes(
-        &self,
-        body: Vec<u8>,
-    ) -> Result<Vec<PostOrderResponse>, String> {
-        self.send_json_post(self.orders_url.as_str(), "/orders", body)
-            .await
-    }
-
-    async fn send_json_post<T: DeserializeOwned>(
-        &self,
-        url: &str,
-        path: &str,
-        body: Vec<u8>,
-    ) -> Result<T, String> {
-        let timestamp = timestamp_now_seconds();
-        let mut ts_buf = itoa::Buffer::new();
-        let ts_text = ts_buf.format(timestamp);
-        let timestamp_header = HeaderValue::from_str(ts_text)
-            .map_err(|e| format!("submitter_invalid_timestamp_header:{}", e))?;
-        let (sig_bytes, sig_len) =
-            self.hmac_signature_b64_into_stack(timestamp, Method::POST.as_str(), path, &body)?;
-        let signature_header = HeaderValue::from_bytes(&sig_bytes[..sig_len])
-            .map_err(|e| format!("submitter_invalid_signature_header:{}", e))?;
-
-        let response = self
-            .http
-            .post(url)
-            .header(POLY_ADDRESS, self.poly_address.clone())
-            .header(POLY_API_KEY, self.poly_api_key.clone())
-            .header(POLY_PASSPHRASE, self.poly_passphrase.clone())
-            .header(POLY_SIGNATURE, signature_header)
-            .header(POLY_TIMESTAMP, timestamp_header)
-            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let status = response.status();
-        let raw = response.bytes().await.map_err(|e| e.to_string())?;
-        parse_json_response(status, raw.as_ref())
-    }
-
     #[cfg(test)]
     pub(crate) fn signature_for_parts(
         &self,
@@ -159,6 +113,7 @@ impl FastClobSubmitClient {
         Ok(sig_str.to_owned())
     }
 
+    #[cfg(test)]
     fn hmac_signature_b64_into_stack(
         &self,
         timestamp: i64,

@@ -1,9 +1,10 @@
 //! Soccer V1 frame pipeline: zero-alloc live WS path via byte extractor.
 
-use crate::dispatch::{DispatchHandle, SubmitBatch};
+use crate::dispatch::{dispatch_intents, DispatchHandle};
 use crate::fast_extract;
 use crate::log_writer::LogWriter;
-use crate::soccer::parse::{is_completed_free_text, parse_half};
+use crate::parse_common::is_completed_free_text;
+use crate::soccer::parse::parse_half;
 use crate::soccer::types::*;
 use crate::*;
 use std::sync::{Arc, Mutex};
@@ -24,18 +25,13 @@ pub(crate) fn process_decoded_frame_sync(
     let Some(extract) = fast_extract::fast_extract_v1(frame_text) else {
         return;
     };
-    let mut batch: SubmitBatch = SubmitBatch::new();
     let pending = process_extracted_fields(
         engine,
         &extract,
         recv_monotonic_ns,
         dispatch_handle,
         log,
-        &mut batch,
     );
-    if !batch.is_empty() && !matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
-        dispatch_handle.send_batch(batch, log);
-    }
     if let Some(tl) = pending {
         flush_tick_logs(engine, &[tl], log);
     }
@@ -75,7 +71,6 @@ fn process_extracted_fields(
     recv_monotonic_ns: i64,
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
-    batch: &mut SubmitBatch,
 ) -> Option<PendingTickLog> {
     // Pre-parse dedup + game index resolve in one FxHashMap lookup.
     let gidx = engine.check_duplicate(
@@ -124,30 +119,7 @@ fn process_extracted_fields(
         recv_monotonic_ns,
     )?;
 
-    if matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
-        for intent in &result.intents {
-            let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
-            if let Ok(mut g) = log.lock() {
-                g.log_order_ok(sk, tok, "noop");
-            }
-        }
-    } else {
-        for intent in &result.intents {
-            match dispatch_handle.pop_for_target(intent.target_idx) {
-                Ok(orders) => {
-                    for signed in orders {
-                        batch.push((intent.target_idx, signed));
-                    }
-                }
-                Err(err) => {
-                    let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
-                    if let Ok(mut g) = log.lock() {
-                        g.log_order_err(sk, tok, &err);
-                    }
-                }
-            }
-        }
-    }
+    dispatch_intents(&result.intents, dispatch_handle, log);
 
     Some(PendingTickLog {
         game_idx: result.game_idx,

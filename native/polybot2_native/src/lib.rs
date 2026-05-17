@@ -8,6 +8,7 @@ pub(crate) mod kalstrop_v2_frame_pipeline;
 pub(crate) mod kalstrop_v2_sio;
 pub(crate) mod kalstrop_v2_types;
 mod log_writer;
+mod parse_common;
 mod runtime;
 mod soccer;
 mod ws;
@@ -221,10 +222,6 @@ impl SportEngine {
 struct RuntimeStartConfig {
     subscribe_lead_minutes: Option<i64>,
     subscription_refresh_seconds: Option<f64>,
-    amount_usdc: Option<f64>,
-    size_shares: Option<f64>,
-    limit_price: Option<f64>,
-    time_in_force: Option<String>,
     live_enabled: Option<bool>,
     reconnect_sleep_seconds: Option<f64>,
     kalstrop_ws_url: Option<String>,
@@ -285,8 +282,6 @@ struct ExecStartConfig {
     chain_id: Option<i64>,
     presign_enabled: Option<bool>,
     presign_private_key: Option<String>,
-    #[allow(dead_code)]
-    presign_pool_target_per_key: Option<i64>,
     presign_startup_warm_timeout_seconds: Option<f64>,
 }
 
@@ -343,16 +338,6 @@ struct DispatchConfig {
     presign_enabled: bool,
     presign_private_key: String,
     presign_startup_warm_timeout_seconds: f64,
-    // Order parameters carried for the no-presign sign-and-submit path used
-    // only by live tests; the WS hot path always uses presigned orders.
-    #[allow(dead_code)]
-    amount_usdc: f64,
-    #[allow(dead_code)]
-    size_shares: f64,
-    #[allow(dead_code)]
-    limit_price: f64,
-    #[allow(dead_code)]
-    time_in_force: OrderTimeInForce,
 }
 
 impl Default for DispatchConfig {
@@ -369,10 +354,6 @@ impl Default for DispatchConfig {
             presign_enabled: false,
             presign_private_key: String::new(),
             presign_startup_warm_timeout_seconds: 5.0,
-            amount_usdc: 5.0,
-            size_shares: 5.0,
-            limit_price: 0.52,
-            time_in_force: OrderTimeInForce::FAK,
         }
     }
 }

@@ -921,8 +921,11 @@ fn live_fast_submit_single_gtc_min_size_rejection() {
     );
 }
 
+// Batch endpoint tests removed: submitter now uses per-order POST /order exclusively.
+
+#[cfg(any())] // permanently disabled — batch endpoint removed
 #[test]
-fn live_fast_submit_batch_rejection() {
+fn _removed_live_fast_submit_batch_rejection() {
     if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
         eprintln!("skipping live fast submit batch test");
         return;

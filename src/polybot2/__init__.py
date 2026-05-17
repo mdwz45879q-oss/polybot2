@@ -2,11 +2,9 @@
 
 from polybot2.data import DataRuntimeConfig, Database, MarketSync, open_database
 from polybot2.execution import (
-    CancelRequest,
     FastExecutionConfig,
     FastExecutionService,
     OrderRequest,
-    ReplaceRequest,
     resolve_token_id,
 )
 from polybot2.hotpath import HotPathConfig
@@ -35,7 +33,6 @@ __all__ = [
     "BoltOddsProviderConfig",
     "KalstropV1Provider",
     "KalstropV1ProviderConfig",
-    "CancelRequest",
     "DataRuntimeConfig",
     "Database",
     "FastExecutionConfig",
@@ -47,7 +44,6 @@ __all__ = [
     "OrderRequest",
     "ProviderGameRecord",
     "ProviderSyncResult",
-    "ReplaceRequest",
     "SportsDataProviderBase",
     "build_sports_provider",
     "BindingResolver",

@@ -258,14 +258,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         exec_cfg = FastExecutionConfig.from_env(exec_cfg_overrides)
         exec_service = FastExecutionService(config=exec_cfg)
 
-        hp_cfg = HotPathConfig(
-            run_scores=True, run_odds=False, read_timeout_seconds=0.05,
-            native_engine_enabled=True, native_engine_required=True,
-        )
+        hp_cfg = HotPathConfig(native_engine_required=True)
         hotpath = NativeHotPathService(
             provider=prov, execution=exec_service,
             execution_mode=execution_mode, config=hp_cfg,
-            binding_resolver=resolver,
         )
         hotpath.set_order_policies(order_policies)
         hotpath._ws_core_idx = runtime_policy.get("ws_core_idx")

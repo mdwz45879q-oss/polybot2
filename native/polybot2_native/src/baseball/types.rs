@@ -43,7 +43,7 @@ pub(crate) struct Tick {
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct DeltaEvent {
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) material_change: bool,
     pub(crate) goal_delta_home: i64,
     pub(crate) goal_delta_away: i64,

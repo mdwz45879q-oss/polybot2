@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import threading
-from typing import Any, Sequence
+from typing import Sequence
 
 import httpx
 

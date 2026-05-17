@@ -20,12 +20,6 @@ pub(crate) enum ProviderConfig {
         ws_url: String,
         client_id: String,
         shared_secret_raw: String,
-        #[allow(dead_code)]
-        subscribe_lead_minutes: i64,
-        #[allow(dead_code)]
-        subscription_refresh_seconds: f64,
-        #[allow(dead_code)]
-        reconnect_sleep_seconds: f64,
     },
     KalstropV2(crate::ws_kalstrop_v2::KalstropV2WorkerConfig),
     BoltOdds {

@@ -115,16 +115,7 @@ fn contains_ascii_ci(haystack: &str, needle: &str) -> bool {
     false
 }
 
-/// Detect game completion from `matchStatusDisplay[0].freeText`.
-/// Kalstrop sends "Ended" when a game finishes.
-pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
-    let s = free_text.trim();
-    s.eq_ignore_ascii_case("Ended")
-        || s.eq_ignore_ascii_case("Final")
-        || s.eq_ignore_ascii_case("Game Over")
-        || s.eq_ignore_ascii_case("Finished")
-        || s.eq_ignore_ascii_case("FT")
-}
+pub(crate) use crate::parse_common::is_completed_free_text;
 
 #[cfg(test)]
 pub(crate) fn normalize_game_state_from_free_text(free_text: &str) -> &'static str {

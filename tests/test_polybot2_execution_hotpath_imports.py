@@ -21,8 +21,8 @@ def test_execution_contracts_smoke() -> None:
 
 
 def test_hotpath_contracts_smoke() -> None:
-    cfg = HotPathConfig(run_scores=True, run_odds=False)
-    assert cfg.run_scores is True
+    cfg = HotPathConfig(native_engine_required=True)
+    assert cfg.native_engine_required is True
 
 
 def test_hotpath_runtime_exports_are_native_only() -> None:
