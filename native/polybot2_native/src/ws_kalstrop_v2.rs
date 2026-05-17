@@ -50,7 +50,7 @@ pub(crate) async fn run_kalstrop_v2_worker_async(
                     return;
                 }
                 Ok(LiveWorkerCommand::SetCandidateSubscriptions(next)) => {
-                    fixture_ids = next;
+                    fixture_ids = next.into_values().flatten().collect();
                     if let Ok(mut lock) = subscriptions.write() {
                         *lock = fixture_ids.clone();
                     }
@@ -127,11 +127,12 @@ pub(crate) async fn run_kalstrop_v2_worker_async(
                         break 'event_loop;
                     }
                     Ok(LiveWorkerCommand::SetCandidateSubscriptions(next)) => {
-                        let new_ids: Vec<String> = next.iter()
+                        let flat: Vec<String> = next.into_values().flatten().collect();
+                        let new_ids: Vec<String> = flat.iter()
                             .filter(|id| !fixture_ids.contains(id))
                             .cloned()
                             .collect();
-                        fixture_ids = next;
+                        fixture_ids = flat;
                         if let Ok(mut lock) = subscriptions.write() {
                             *lock = fixture_ids.clone();
                         }

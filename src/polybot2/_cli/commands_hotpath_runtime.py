@@ -333,23 +333,37 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                 )
             hotpath.set_compiled_plan(compiled_plan)
 
-            plan_uids = [
-                str(g.provider_game_id) for g in tuple(compiled_plan.games)
-                if str(g.provider_game_id or "").strip()
-            ]
+            provider_subs: dict[str, list[str]] = {}
+            for game in compiled_plan.games:
+                gid = str(game.provider_game_id or "").strip()
+                if not gid:
+                    continue
+                league = game.canonical_league
+                primary_prov = _primary_provider_for_league(mapping.leagues.get(league, {}))
+                provider_subs.setdefault(primary_prov, []).append(gid)
+                for alt_prov, alt_id in game.alternate_provider_game_ids:
+                    alt_id = str(alt_id or "").strip()
+                    if alt_id:
+                        provider_subs.setdefault(str(alt_prov), []).append(alt_id)
             env_uids = [
                 x.strip()
                 for x in str(os.getenv("POLYBOT2_SUBSCRIBE_UNIVERSAL_IDS") or "").split(",")
                 if x.strip()
             ]
-            wanted = _apply_env_uid_filter(uids=sorted(set(plan_uids)), env_uids=env_uids)
+            if env_uids:
+                allowed = set(env_uids)
+                provider_subs = {
+                    p: [uid for uid in ids if uid in allowed]
+                    for p, ids in provider_subs.items()
+                }
+                provider_subs = {p: ids for p, ids in provider_subs.items() if ids}
 
             if hasattr(hotpath, "set_runtime_timing_policy"):
                 hotpath.set_runtime_timing_policy(
                     subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
                     subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
                 )
-            hotpath.set_subscriptions(wanted)
+            hotpath.set_subscriptions(provider_subs)
 
             template_orders = _build_hotpath_template_orders(
                 compiled_plan=compiled_plan, order_policies=order_policies,
@@ -435,7 +449,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
                             if not rust_started:
                                 hotpath.set_compiled_plan(game_plan)
-                                hotpath.set_subscriptions([resolved.fixture_id])
+                                _v2_provider_subs: dict[str, list[str]] = {_resolved_provider: [resolved.fixture_id]}
+                                for _g in game_plan.games:
+                                    for _ap, _aid in _g.alternate_provider_game_ids:
+                                        if str(_aid or "").strip():
+                                            _v2_provider_subs.setdefault(str(_ap), []).append(str(_aid))
+                                hotpath.set_subscriptions(_v2_provider_subs)
                                 if hasattr(hotpath, "set_runtime_timing_policy"):
                                     hotpath.set_runtime_timing_policy(
                                         subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),

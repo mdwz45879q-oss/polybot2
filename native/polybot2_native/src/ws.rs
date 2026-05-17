@@ -116,7 +116,8 @@ fn apply_worker_command(cmd: LiveWorkerCommand, candidate_subs: &mut Vec<String>
     match cmd {
         LiveWorkerCommand::Stop => (true, false),
         LiveWorkerCommand::SetCandidateSubscriptions(next) => {
-            let normalized = normalize_subscriptions(next);
+            let flat: Vec<String> = next.into_values().flatten().collect();
+            let normalized = normalize_subscriptions(flat);
             let changed = *candidate_subs != normalized;
             *candidate_subs = normalized;
             (false, changed)
@@ -530,12 +531,14 @@ mod tests {
     fn apply_worker_command_set_subscriptions_normalizes() {
         let mut candidates = vec!["old".to_string()];
         let (stop, changed) = apply_worker_command(
-            LiveWorkerCommand::SetCandidateSubscriptions(vec![
-                " z ".to_string(),
-                "a".to_string(),
-                "a".to_string(),
-                "".to_string(),
-            ]),
+            LiveWorkerCommand::SetCandidateSubscriptions(std::collections::HashMap::from([
+                ("provider".to_string(), vec![
+                    " z ".to_string(),
+                    "a".to_string(),
+                    "a".to_string(),
+                    "".to_string(),
+                ]),
+            ])),
             &mut candidates,
         );
         assert!(!stop);

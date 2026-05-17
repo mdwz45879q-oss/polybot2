@@ -381,7 +381,7 @@ struct SubmitterHandle {
 #[derive(Clone)]
 enum LiveWorkerCommand {
     Stop,
-    SetCandidateSubscriptions(Vec<String>),
+    SetCandidateSubscriptions(std::collections::HashMap<String, Vec<String>>),
 }
 
 use crate::baseball::types::NativeMlbEngine;

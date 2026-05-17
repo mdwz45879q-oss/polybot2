@@ -42,6 +42,7 @@ class NativeHotPathService:
         self._last_errors: deque[str] = deque(maxlen=50)
 
         self._subscriptions: list[str] = []
+        self._provider_subs: dict[str, list[str]] = {}
 
         self._compiled_plan: CompiledPlan | None = None
 
@@ -75,14 +76,15 @@ class NativeHotPathService:
     def _append_error(self, text: str) -> None:
         self._last_errors.append(str(text))
 
-    def set_subscriptions(self, universal_ids: list[str]) -> None:
-        cleaned = sorted({str(uid or "").strip() for uid in universal_ids if str(uid or "").strip()})
+    def set_subscriptions(self, provider_subs: dict[str, list[str]]) -> None:
+        flat = sorted({uid for ids in provider_subs.values() for uid in ids if str(uid or "").strip()})
         with self._lock:
-            self._subscriptions = cleaned
+            self._subscriptions = flat
+            self._provider_subs = dict(provider_subs)
         bridge = self._runtime_bridge
         if bridge is not None:
             try:
-                bridge.set_subscriptions(cleaned)
+                bridge.set_subscriptions(provider_subs)
             except Exception as exc:
                 self._append_error(f"runtime_set_subscriptions:{type(exc).__name__}:{exc}")
 
@@ -185,7 +187,7 @@ class NativeHotPathService:
             bridge = NativeHotPathRuntimeBridge(
                 required=bool(self._config.native_engine_required)
             )
-            bridge.set_subscriptions(list(self._subscriptions))
+            bridge.set_subscriptions(dict(self._provider_subs))
             if self._pending_presign_templates:
                 bridge.prewarm_presign(list(self._pending_presign_templates))
             bridge.start(
@@ -208,7 +210,7 @@ class NativeHotPathService:
                     default=str,
                 ),
             )
-            bridge.set_subscriptions(list(self._subscriptions))
+            bridge.set_subscriptions(dict(self._provider_subs))
         except NativeEngineUnavailable:
             raise
         except Exception as exc:
@@ -325,7 +327,7 @@ class NativeHotPathService:
                 added = new_game_ids - current_subs
                 if added:
                     self._subscriptions = sorted(current_subs | added)
-                    bridge.set_subscriptions(list(self._subscriptions))
+                    bridge.set_subscriptions(dict(self._provider_subs))
             return count
         except Exception as exc:
             self._append_error(

@@ -465,20 +465,20 @@ impl NativeHotPathRuntime {
         self.submitter = None;
     }
 
-    fn set_subscriptions(&mut self, subscriptions: Vec<String>) {
-        self.subscriptions = subscriptions
-            .into_iter()
+    fn set_subscriptions(&mut self, subscriptions: std::collections::HashMap<String, Vec<String>>) {
+        let mut flat: Vec<String> = subscriptions
+            .values()
+            .flatten()
             .map(|x| x.trim().to_string())
             .filter(|x| !x.is_empty())
             .collect();
-        self.subscriptions.sort();
-        self.subscriptions.dedup();
+        flat.sort();
+        flat.dedup();
+        self.subscriptions = flat;
         if let Some(worker) = self.live_worker.as_ref() {
             let _ = worker
                 .command_tx
-                .send(LiveWorkerCommand::SetCandidateSubscriptions(
-                    self.subscriptions.clone(),
-                ));
+                .send(LiveWorkerCommand::SetCandidateSubscriptions(subscriptions));
         }
     }
 

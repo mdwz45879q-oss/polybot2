@@ -32,20 +32,6 @@ type V1WsStream = tokio_tungstenite::WebSocketStream<
     tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
 >;
 
-/// Split subscription IDs by provider format.
-/// V1 UUIDs contain dashes; V2 BetGenius fixture IDs are numeric.
-fn partition_subscriptions(ids: &[String]) -> (Vec<String>, Vec<String>) {
-    let mut v1_ids = Vec::new();
-    let mut v2_ids = Vec::new();
-    for id in ids {
-        if id.contains('-') {
-            v1_ids.push(id.clone());
-        } else {
-            v2_ids.push(id.clone());
-        }
-    }
-    (v1_ids, v2_ids)
-}
 
 /// Try to connect V1 Kalstrop WS and subscribe.
 async fn try_connect_v1(
@@ -173,8 +159,7 @@ pub(crate) async fn run_multiplexed_worker_async(
     let mut v1_reconnect_count: u32 = 0;
     let mut v2_reconnect_count: u32 = 0;
     let mut bo_reconnect_count: u32 = 0;
-    let mut candidate_subs: Vec<String> = subscriptions.read()
-        .map(|s| s.clone()).unwrap_or_default();
+    let mut candidate_subs: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     let mut v1_active_subs: Vec<String> = Vec::new();
     let mut v2_active_subs: Vec<String> = Vec::new();
 
@@ -189,7 +174,7 @@ pub(crate) async fn run_multiplexed_worker_async(
                 Ok(LiveWorkerCommand::SetCandidateSubscriptions(next)) => {
                     candidate_subs = next;
                     if let Ok(mut lock) = subscriptions.write() {
-                        *lock = candidate_subs.clone();
+                        *lock = candidate_subs.values().flatten().cloned().collect();
                     }
                 }
                 Err(flume::TryRecvError::Empty) => break,
@@ -201,8 +186,9 @@ pub(crate) async fn run_multiplexed_worker_async(
         }
         let _ = apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
 
-        // --- Partition subscriptions by provider ---
-        let (v1_subs, v2_subs) = partition_subscriptions(&candidate_subs);
+        // --- Extract per-provider subscriptions ---
+        let v1_subs = candidate_subs.get("kalstrop_v1").or_else(|| candidate_subs.get("kalstrop")).cloned().unwrap_or_default();
+        let v2_subs = candidate_subs.get("kalstrop_v2").cloned().unwrap_or_default();
 
         // --- Connect/reconnect dead connections ---
         if v1_ws.is_none() {
@@ -283,7 +269,7 @@ pub(crate) async fn run_multiplexed_worker_async(
 
         // Log connection state
         {
-            let all_subs: Vec<String> = candidate_subs.clone();
+            let all_subs: Vec<String> = candidate_subs.values().flatten().cloned().collect();
             if let Ok(mut g) = log.lock() {
                 g.log_ws_connect(&all_subs);
             }
@@ -305,9 +291,10 @@ pub(crate) async fn run_multiplexed_worker_async(
                     Ok(LiveWorkerCommand::SetCandidateSubscriptions(next)) => {
                         candidate_subs = next;
                         if let Ok(mut lock) = subscriptions.write() {
-                            *lock = candidate_subs.clone();
+                            *lock = candidate_subs.values().flatten().cloned().collect();
                         }
-                        let (new_v1, new_v2) = partition_subscriptions(&candidate_subs);
+                        let new_v1 = candidate_subs.get("kalstrop_v1").or_else(|| candidate_subs.get("kalstrop")).cloned().unwrap_or_default();
+                        let new_v2 = candidate_subs.get("kalstrop_v2").cloned().unwrap_or_default();
 
                         // V1: resubscribe if the set changed
                         if new_v1 != v1_active_subs {

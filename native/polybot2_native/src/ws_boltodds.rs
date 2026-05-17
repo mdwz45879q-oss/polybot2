@@ -63,7 +63,7 @@ pub(crate) async fn run_boltodds_worker_async(
                     return;
                 }
                 Ok(LiveWorkerCommand::SetCandidateSubscriptions(labels)) => {
-                    game_labels = labels;
+                    game_labels = labels.into_values().flatten().collect();
                     if let Ok(mut lock) = subscriptions.write() {
                         *lock = game_labels.clone();
                     }
@@ -162,7 +162,7 @@ pub(crate) async fn run_boltodds_worker_async(
                     }
                     Ok(LiveWorkerCommand::SetCandidateSubscriptions(labels)) => {
                         // Re-subscribe with new labels
-                        game_labels = labels.clone();
+                        game_labels = labels.into_values().flatten().collect();
                         if let Ok(mut lock) = subscriptions.write() {
                             *lock = game_labels.clone();
                         }
