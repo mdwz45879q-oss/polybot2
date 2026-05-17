@@ -1,3 +1,0 @@
-{"ts":1779037381636,"ev":"startup","run_id":1,"games":5,"tokens":414,"mode":"noop"}
-{"ts":1779037382050,"ev":"ws_connect","subs":["Brentford vs Crystal Palace, 2026-05-17, 10","Everton vs Sunderland, 2026-05-17, 10","Leeds vs Brighton, 2026-05-17, 10","Newcastle vs West Ham United, 2026-05-17, 12","Wolverhampton vs Fulham, 2026-05-17, 10"]}
-{"ts":1779037385737,"ev":"ws_disconnect","reason":"","reconnects":0}

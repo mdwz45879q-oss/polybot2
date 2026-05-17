@@ -1,3 +1,0 @@
-{"ts":1779037352063,"ev":"startup","run_id":1,"games":15,"tokens":480,"mode":"noop"}
-{"ts":1779037352272,"ev":"ws_connect","subs":["6ac8040a-b128-4c07-a680-edf1d04cc4be"]}
-{"ts":1779037354098,"ev":"tick","gid":"6ac8040a-b128-4c07-a680-edf1d04cc4be","h":1,"a":2,"inn":3,"half":"top","gs":"LIVE"}
