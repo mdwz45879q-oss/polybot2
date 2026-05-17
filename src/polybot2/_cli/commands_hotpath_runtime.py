@@ -442,7 +442,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                         subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
                                     )
                                 template_orders = _build_hotpath_template_orders(
-                                    compiled_plan=game_plan, order_policy=order_policy,
+                                    compiled_plan=game_plan, order_policies=order_policies,
                                 )
                                 if template_orders and hasattr(hotpath, "prewarm_presign"):
                                     hotpath.prewarm_presign(template_orders)
