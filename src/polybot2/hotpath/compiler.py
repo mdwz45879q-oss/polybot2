@@ -887,7 +887,7 @@ def compile_multi_league_plan(
     plan_hash = _json_hash(canonical_payload)
 
     return CompiledPlan(
-        provider="multi",
+        provider=leagues[0][1] if leagues else "",
         league=leagues[0][0] if leagues else "baseball",
         run_id=int(run_id),
         plan_hash=plan_hash,

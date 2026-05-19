@@ -187,6 +187,7 @@ class NativeHotPathService:
             bridge = NativeHotPathRuntimeBridge(
                 required=bool(self._config.native_engine_required)
             )
+            # Pre-start: populates self.subscriptions (flat) on the Rust side, used as initial_candidates by V1 worker
             bridge.set_subscriptions(dict(self._provider_subs))
             if self._pending_presign_templates:
                 bridge.prewarm_presign(list(self._pending_presign_templates))
@@ -210,6 +211,7 @@ class NativeHotPathService:
                     default=str,
                 ),
             )
+            # Post-start: sends full per-provider HashMap to the running worker via command channel
             bridge.set_subscriptions(dict(self._provider_subs))
         except NativeEngineUnavailable:
             raise
@@ -317,17 +319,6 @@ class NativeHotPathService:
             )
             with self._lock:
                 self._compiled_plan = result.new_plan
-            if result.new_plan:
-                new_game_ids = {
-                    g.provider_game_id
-                    for g in result.new_plan.games
-                    if g.provider_game_id
-                }
-                current_subs = set(self._subscriptions)
-                added = new_game_ids - current_subs
-                if added:
-                    self._subscriptions = sorted(current_subs | added)
-                    bridge.set_subscriptions(dict(self._provider_subs))
             return count
         except Exception as exc:
             self._append_error(

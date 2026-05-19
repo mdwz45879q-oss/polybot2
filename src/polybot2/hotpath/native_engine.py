@@ -108,8 +108,8 @@ class NativeHotPathRuntimeBridge:
     def stop(self) -> None:
         self._runtime.stop()
 
-    def set_subscriptions(self, subscriptions: list[str]) -> None:
-        self._runtime.set_subscriptions(list(subscriptions))
+    def set_subscriptions(self, subscriptions: dict[str, list[str]]) -> None:
+        self._runtime.set_subscriptions(dict(subscriptions))
 
     def health_snapshot(self) -> dict[str, Any]:
         out = self._runtime.health_snapshot()

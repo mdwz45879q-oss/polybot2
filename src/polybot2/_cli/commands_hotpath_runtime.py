@@ -171,6 +171,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     else:
         league_keys = [str(l).strip().lower() for l in raw_leagues]
 
+    if len(league_keys) > 1:
+        families = {mapping.leagues.get(lk, {}).get("sport_family", "") for lk in league_keys}
+        if len(families) > 1:
+            logger.error("cannot mix sports in one process: %s", ", ".join(sorted(families)))
+            return 1
+
     # Use first league as "primary" for backward compat with single-league code paths.
     league_key = league_keys[0]
     league_cfg = mapping.leagues.get(league_key, {})
@@ -374,7 +380,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             n_targets = sum(len(m.targets) for g in compiled_plan.games for m in g.markets)
             logger.info(
                 "hotpath starting: run_id=%d games=%d targets=%d subs=%d refresh=%ds",
-                run_id, len(compiled_plan.games), n_targets, len(wanted), refresh_interval,
+                run_id, len(compiled_plan.games), n_targets, sum(len(ids) for ids in provider_subs.values()), refresh_interval,
             )
             hotpath.start()
             rust_started = True
@@ -391,6 +397,9 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         market_refresh_interval = refresh_interval
         last_v2_check = 0.0
         last_market_refresh = 0.0
+        _cumulative_provider_subs: dict[str, list[str]] = {}
+        if rust_started and 'provider_subs' in locals():
+            _cumulative_provider_subs = {p: list(ids) for p, ids in provider_subs.items()}
 
         while not stop_requested:
             time.sleep(1.0)
@@ -449,12 +458,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
                             if not rust_started:
                                 hotpath.set_compiled_plan(game_plan)
-                                _v2_provider_subs: dict[str, list[str]] = {_resolved_provider: [resolved.fixture_id]}
+                                _cumulative_provider_subs.setdefault(_resolved_provider, []).append(resolved.fixture_id)
                                 for _g in game_plan.games:
                                     for _ap, _aid in _g.alternate_provider_game_ids:
                                         if str(_aid or "").strip():
-                                            _v2_provider_subs.setdefault(str(_ap), []).append(str(_aid))
-                                hotpath.set_subscriptions(_v2_provider_subs)
+                                            _cumulative_provider_subs.setdefault(str(_ap), []).append(str(_aid))
+                                hotpath.set_subscriptions(_cumulative_provider_subs)
                                 if hasattr(hotpath, "set_runtime_timing_policy"):
                                     hotpath.set_runtime_timing_policy(
                                         subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
@@ -486,6 +495,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                     targets_inserted=len(new_targets),
                                 )
                                 count = hotpath.apply_incremental_refresh(refresh_result, order_policies)
+                                _cumulative_provider_subs.setdefault(_resolved_provider, []).append(resolved.fixture_id)
+                                for _g in game_plan.games:
+                                    for _ap, _aid in _g.alternate_provider_game_ids:
+                                        if str(_aid or "").strip():
+                                            _cumulative_provider_subs.setdefault(str(_ap), []).append(str(_aid))
+                                hotpath.set_subscriptions(_cumulative_provider_subs)
                                 logger.info(
                                     "V2 game patched: fixture_id=%s targets=%d presigned=%d",
                                     resolved.fixture_id, n_tgt, count,
@@ -496,6 +511,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             next_kickoff = min(due_times)
                             wait_min = max(0, (next_kickoff - int(now)) // 60)
                             logger.info("V2: next game in ~%d min, %d game(s) pending", wait_min, len(pending))
+                except (NameError, TypeError, AttributeError, KeyError):
+                    raise
                 except Exception as exc:
                     logger.warning("V2 resolution failed (continuing): %s: %s", type(exc).__name__, exc)
 
@@ -511,6 +528,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             live_policy=live_policy,
                             plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
                         )
+                except (NameError, TypeError, AttributeError, KeyError):
+                    raise
                 except Exception as exc:
                     logger.warning("incremental refresh failed (continuing): %s: %s", type(exc).__name__, exc)
                     continue
