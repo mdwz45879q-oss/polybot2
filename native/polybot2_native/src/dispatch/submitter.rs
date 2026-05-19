@@ -4,8 +4,6 @@ use crate::log_writer::LogWriter;
 use futures_util::future::join_all;
 use std::sync::{Arc, Mutex};
 
-const MAX_CONCURRENT_SUBMITS: usize = 30;
-
 fn with_submitter_health<F>(health: &Arc<Mutex<crate::SubmitterHealth>>, mut f: F)
 where
     F: FnMut(&mut crate::SubmitterHealth),
@@ -73,7 +71,6 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
     let mut submit_rx = sub.submit_rx;
     let shared_registry = sub.shared_registry;
     let stop_flag = sub.stop_flag;
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SUBMITS));
 
     'outer: loop {
         let mut had_work = false;
@@ -82,9 +79,8 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             match work {
                 SubmitWork::Stop => break 'outer,
                 SubmitWork::Batch(batch) => {
-                    let client = submit_client.clone();
                     let reg_guard = shared_registry.load();
-                    submit_batch_task(batch, client, &*reg_guard, &log, Arc::clone(&semaphore)).await;
+                    submit_batch_task(batch, &submit_client, &*reg_guard, &log).await;
                 }
             }
         }
@@ -124,33 +120,37 @@ async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
 
 async fn submit_batch_task(
     batch: SubmitBatch,
-    client: Option<Arc<FastClobSubmitClient>>,
+    client: &Option<Arc<FastClobSubmitClient>>,
     registry: &crate::TargetRegistry,
     log: &Arc<Mutex<LogWriter>>,
-    semaphore: Arc<tokio::sync::Semaphore>,
 ) {
     if batch.is_empty() {
         return;
     }
-    let Some(client_ref) = client else {
+    let Some(client_ref) = client.as_ref() else {
         return;
     };
 
+    // Fast path: single order (most common — single intent between score changes).
+    // Avoids join_all overhead (Vec alloc + poll machinery).
+    if batch.len() == 1 {
+        let (target_idx, prepared) = batch.into_iter().next().unwrap();
+        let outcome = match client_ref.post_order_bytes_single(prepared.order_json).await {
+            Ok(resp) => map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed"),
+            Err(e) => Err(format!("submit_failed:{}", e)),
+        };
+        log_outcome_idx(log, registry, target_idx, &outcome);
+        return;
+    }
+
+    // Multi-order: fire concurrently (dual-order, game-end frames).
     let futures = batch.into_iter().map(|(target_idx, prepared)| {
-        let sem = Arc::clone(&semaphore);
-        let client = Arc::clone(&client_ref);
+        let client = Arc::clone(client_ref);
         async move {
-            let permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return (target_idx, Err("submitter_semaphore_closed".to_string())),
-            };
             let outcome = match client.post_order_bytes_single(prepared.order_json).await {
-                Ok(resp) => {
-                    map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
-                }
+                Ok(resp) => map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed"),
                 Err(e) => Err(format!("submit_failed:{}", e)),
             };
-            drop(permit);
             (target_idx, outcome)
         }
     });
