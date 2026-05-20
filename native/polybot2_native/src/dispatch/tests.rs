@@ -921,11 +921,183 @@ fn live_fast_submit_single_gtc_min_size_rejection() {
     );
 }
 
-// Batch endpoint tests removed: submitter now uses per-order POST /order exclusively.
-
-#[cfg(any())] // permanently disabled — batch endpoint removed
 #[test]
-fn _removed_live_fast_submit_batch_rejection() {
+fn live_order_to_wire_latency_estimate() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!("skipping live order-to-wire test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+        return;
+    }
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    assert!(!token_id.trim().is_empty(), "POLYBOT2_LIVE_EXEC_TOKEN_ID required");
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    tokio_rt.block_on(async {
+        let (fast_client, sub) = build_live_fast_client().await.expect("live client setup");
+
+        // Pre-sign one order
+        let request = OrderRequestData {
+            token_id: token_id.clone(),
+            side: "buy_yes".to_string(),
+            amount_usdc: 0.5,
+            limit_price: 0.5,
+            time_in_force: OrderTimeInForce::FAK,
+            size_shares: 1.0,
+        };
+        let client_ref = sub.sdk_client_ref().expect("sdk client");
+        let signer = sub.signer_ref().expect("signer");
+        let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let order_bytes = payload.order_json;
+
+        // === Part 1: HMAC + header construction (pure CPU, no network) ===
+        let iterations = 10_000;
+        let start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64;
+            let (sig, ts) = fast_client
+                .single_order_auth_headers_for_test(timestamp, order_bytes.as_slice())
+                .expect("auth headers");
+            std::hint::black_box((&sig, &ts));
+        }
+        let hmac_elapsed = start.elapsed();
+        let hmac_per_ns = hmac_elapsed.as_nanos() / iterations as u128;
+
+        eprintln!("\n=== Order-to-wire latency breakdown ===");
+        eprintln!("HMAC + auth header construction: {}ns ({:.1}µs) per order [{} iterations]",
+            hmac_per_ns, hmac_per_ns as f64 / 1000.0, iterations);
+
+        // === Part 2: Full post_order_bytes_single including .send() but on warm connection ===
+        // Warm up connection pool
+        let _ = fast_client.post_order_bytes_single(order_bytes.clone()).await;
+
+        let runs = 20;
+        let mut rtt_durations = Vec::with_capacity(runs);
+        for _ in 0..runs {
+            let start = std::time::Instant::now();
+            let _ = fast_client.post_order_bytes_single(order_bytes.clone()).await;
+            rtt_durations.push(start.elapsed());
+        }
+        rtt_durations.sort();
+        let rtt_min = rtt_durations[0].as_secs_f64() * 1000.0;
+        let rtt_median = rtt_durations[runs / 2].as_secs_f64() * 1000.0;
+        let rtt_p90 = rtt_durations[(runs as f64 * 0.9) as usize].as_secs_f64() * 1000.0;
+
+        eprintln!("Full single-order RTT (warm conn): min={:.1}ms  median={:.1}ms  p90={:.1}ms",
+            rtt_min, rtt_median, rtt_p90);
+        eprintln!("Estimated wire-to-response (network): {:.1}ms (median RTT minus HMAC)",
+            rtt_median - (hmac_per_ns as f64 / 1_000_000.0));
+        eprintln!();
+
+        // === Part 3: Simulated ring-pop-to-send overhead (no network) ===
+        // Measures: batch iteration + Arc clone + HMAC + header construction
+        // for batch sizes 1, 2, 4, 6, 8
+        let fast_client = std::sync::Arc::new(fast_client);
+        eprintln!("Ring-pop to pre-send overhead (CPU only, no .send()):");
+        eprintln!("{:>6}  {:>12}  {:>12}", "orders", "total_µs", "per_order_µs");
+
+        for &n in &[1usize, 2, 4, 6, 8] {
+            let iters = 5_000;
+            let start = std::time::Instant::now();
+            for _ in 0..iters {
+                for _ in 0..n {
+                    let _client = std::sync::Arc::clone(&fast_client);
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64;
+                    let (sig, ts) = fast_client
+                        .single_order_auth_headers_for_test(timestamp, order_bytes.as_slice())
+                        .expect("auth headers");
+                    std::hint::black_box((&sig, &ts, &_client));
+                }
+            }
+            let elapsed = start.elapsed();
+            let total_ns = elapsed.as_nanos() / iters as u128;
+            let per_order_ns = total_ns / n as u128;
+            eprintln!("{:>6}  {:>12.1}  {:>12.1}",
+                n, total_ns as f64 / 1000.0, per_order_ns as f64 / 1000.0);
+        }
+        eprintln!();
+    });
+}
+
+#[test]
+fn live_concurrent_submit_latency_estimate() {
+    if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
+        eprintln!("skipping live concurrent latency test; set POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST=1");
+        return;
+    }
+    let token_id = env_or_default("POLYBOT2_LIVE_EXEC_TOKEN_ID", "");
+    assert!(!token_id.trim().is_empty(), "POLYBOT2_LIVE_EXEC_TOKEN_ID required");
+
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    tokio_rt.block_on(async {
+        let (fast_client, sub) = build_live_fast_client().await.expect("live client setup");
+        let fast_client = std::sync::Arc::new(fast_client);
+
+        // Pre-sign one order (sub-$1, will be rejected — we're measuring HTTP RTT)
+        let request = OrderRequestData {
+            token_id: token_id.clone(),
+            side: "buy_yes".to_string(),
+            amount_usdc: 0.5,
+            limit_price: 0.5,
+            time_in_force: OrderTimeInForce::FAK,
+            size_shares: 1.0,
+        };
+        let client_ref = sub.sdk_client_ref().expect("sdk client");
+        let signer = sub.signer_ref().expect("signer");
+        let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let order_bytes = payload.order_json;
+
+        // Warm up connection pool with one request
+        let _ = fast_client.post_order_bytes_single(order_bytes.clone()).await;
+
+        let batch_sizes = [1, 2, 4, 6, 8];
+        let runs_per_size = 5;
+
+        eprintln!("\n=== Concurrent submit latency (HTTP RTT, rejected orders) ===");
+        eprintln!("{:>6}  {:>10}  {:>10}  {:>10}", "orders", "min_ms", "median_ms", "max_ms");
+
+        for &n in &batch_sizes {
+            let mut durations = Vec::new();
+
+            for _ in 0..runs_per_size {
+                let futures = (0..n).map(|_| {
+                    let client = std::sync::Arc::clone(&fast_client);
+                    let body = order_bytes.clone();
+                    async move {
+                        let _ = client.post_order_bytes_single(body).await;
+                    }
+                });
+
+                let start = std::time::Instant::now();
+                futures_util::future::join_all(futures).await;
+                durations.push(start.elapsed());
+            }
+
+            durations.sort();
+            let min_ms = durations[0].as_secs_f64() * 1000.0;
+            let median_ms = durations[runs_per_size / 2].as_secs_f64() * 1000.0;
+            let max_ms = durations[runs_per_size - 1].as_secs_f64() * 1000.0;
+
+            eprintln!("{:>6}  {:>10.1}  {:>10.1}  {:>10.1}", n, min_ms, median_ms, max_ms);
+        }
+        eprintln!();
+    });
+}
+
+#[test]
+fn live_fast_submit_batch_rejection() {
     if !env_enabled("POLYBOT2_ENABLE_LIVE_RUST_EXECUTION_TEST") {
         eprintln!("skipping live fast submit batch test");
         return;

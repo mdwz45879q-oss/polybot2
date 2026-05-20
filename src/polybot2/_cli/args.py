@@ -78,3 +78,13 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_compile.add_argument("--link-run-id", type=int, default=None,
                                   help="Link run ID (default: latest for the league)")
     hotpath_compile.add_argument("--db", type=str, default="", help="Override SQLite DB path")
+
+    # --- guardian ---
+    guardian_p = sub.add_parser("guardian", help="Order state tracking and overturn detection")
+    guardian_sub = guardian_p.add_subparsers(dest="guardian_command", required=True)
+    guardian_track = guardian_sub.add_parser("track", help="Track order fill state from hotpath log")
+    guardian_track.add_argument("--log-file", type=str, default="", help="Path to hotpath JSONL log file")
+    guardian_track.add_argument("--log-dir", type=str, default="", help="Directory to search for log files")
+    guardian_track.add_argument("--run-id", type=int, default=None, help="Filter log files by run ID")
+    guardian_track.add_argument("--snapshot", action="store_true", help="One-shot: print current state and exit")
+    guardian_track.add_argument("--db", type=str, default="")
