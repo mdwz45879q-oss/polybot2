@@ -29,6 +29,7 @@ class TrackedOrder:
     strategy_key: str  # e.g., "gid:TOTAL:OVER:1.5"
     token_id: str
     exchange_id: str  # hex order ID returned by CLOB (empty if failed)
+    condition_id: str  # market condition ID (for WS subscription)
     time_in_force: str  # "FAK" or "GTC" (derived from order policy)
     ok: bool  # accepted by CLOB
     error: str = ""  # error message if not ok

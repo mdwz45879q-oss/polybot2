@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from polybot2.guardian.clob_client import ClobClient
+from polybot2.guardian.polymarket_ws import PolymarketUserWS
 from polybot2.guardian.state import TrackerState
 from polybot2.guardian.tracker import OrderStateTracker
 from polybot2.hotpath.live_observer import find_latest_log
@@ -103,8 +104,39 @@ def run_guardian_track(args: Any, *, logger: logging.Logger) -> int:
     except Exception:
         order_policy_cfg = {}
 
-    # Build CLOB client (for live fill queries)
+    # Load compiled plan for token_id → condition_id mapping
+    from polybot2.guardian.tracker import build_token_to_condition_map
+    token_to_condition: dict[str, str] = {}
+    compiled_plan = None
+    try:
+        link_run_id = getattr(args, "link_run_id", None)
+        league_key = str(getattr(args, "league", "") or "").strip().lower()
+        if link_run_id is not None and league_key:
+            from polybot2._cli.common import _runtime_from_args
+            from polybot2.hotpath.compiler import compile_hotpath_plan
+            from polybot2.linking import load_mapping as _load_mapping_guardian
+            runtime = _runtime_from_args(args)
+            mapping_g = _load_mapping_guardian()
+            _g_cfg = mapping_g.leagues.get(league_key, {})
+            _g_raw_p = _g_cfg.get("provider", "kalstrop_v1")
+            g_provider = (
+                str(_g_raw_p[0]).strip().lower() if isinstance(_g_raw_p, list) and _g_raw_p
+                else str(_g_raw_p).strip().lower()
+            )
+            from polybot2.data import open_database
+            with open_database(runtime) as db:
+                compiled_plan = compile_hotpath_plan(
+                    db=db, provider=g_provider, league=league_key,
+                    run_id=int(link_run_id),
+                )
+            token_to_condition = build_token_to_condition_map(compiled_plan)
+            logger.info("loaded plan: %d games, %d token→condition mappings", len(compiled_plan.games), len(token_to_condition))
+    except Exception as exc:
+        logger.debug("could not load compiled plan for condition_id mapping: %s", exc)
+
+    # Build CLOB client (for REST fallback fill queries)
     clob: ClobClient | None = None
+    ws: PolymarketUserWS | None = None
     if not snapshot_mode:
         try:
             clob = ClobClient.from_env()
@@ -114,11 +146,24 @@ def run_guardian_track(args: Any, *, logger: logging.Logger) -> int:
         except Exception as exc:
             logger.warning("CLOB client init failed: %s — fill queries disabled", exc)
             clob = None
+        # Build Polymarket user WS client
+        try:
+            ws = PolymarketUserWS.from_env()
+            if not ws._api_key:
+                logger.warning("WS credentials not set — WS fill tracking disabled")
+                ws = None
+            else:
+                logger.info("Polymarket user WS enabled")
+        except Exception as exc:
+            logger.warning("WS client init failed: %s — WS disabled", exc)
+            ws = None
 
     tracker = OrderStateTracker(
         log_path=log_file,
         clob=clob,
+        ws=ws,
         order_policy_config=order_policy_cfg,
+        token_to_condition=token_to_condition,
     )
 
     if snapshot_mode:

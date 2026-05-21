@@ -87,4 +87,6 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     guardian_track.add_argument("--log-dir", type=str, default="", help="Directory to search for log files")
     guardian_track.add_argument("--run-id", type=int, default=None, help="Filter log files by run ID")
     guardian_track.add_argument("--snapshot", action="store_true", help="One-shot: print current state and exit")
+    guardian_track.add_argument("--league", type=str, default="", help="League key for plan loading (e.g., epl, mlb)")
+    guardian_track.add_argument("--link-run-id", type=int, default=None, help="Link run ID for plan loading")
     guardian_track.add_argument("--db", type=str, default="")

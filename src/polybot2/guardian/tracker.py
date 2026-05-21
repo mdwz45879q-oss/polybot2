@@ -1,8 +1,9 @@
-"""Order state tracker: tails hotpath log, queries CLOB for fill state.
+"""Order state tracker: tails hotpath log, receives fills via Polymarket WS.
 
 Associates orders with the score changes that triggered them,
-queries Polymarket CLOB for actual fill amounts, and maintains
-an in-memory model of our current inventory per game.
+receives real-time fill notifications via the Polymarket user WebSocket,
+and maintains an in-memory model of our current inventory per game.
+Falls back to REST polling when WS is unavailable.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 
 from polybot2.guardian.clob_client import ClobClient
 from polybot2.guardian.log_tailer import tail_log, read_log_snapshot
+from polybot2.guardian.polymarket_ws import PolymarketUserWS
 from polybot2.guardian.state import (
     GameState,
     ScoreEvent,
@@ -23,27 +25,33 @@ from polybot2.guardian.state import (
 
 logger = logging.getLogger("polybot2.guardian")
 
-# How often to re-query GTC orders that are still OPEN (seconds)
+# How often to re-query GTC orders that are still OPEN (seconds) — REST fallback
 GTC_POLL_INTERVAL_S = 10.0
 
 
 class OrderStateTracker:
-    """Tracks order fill state by tailing the hotpath log and querying the CLOB."""
+    """Tracks order fill state by tailing the hotpath log and receiving WS events."""
 
     def __init__(
         self,
         log_path: str,
         clob: ClobClient | None = None,
+        ws: PolymarketUserWS | None = None,
         *,
         order_policy_config: dict[str, Any] | None = None,
+        token_to_condition: dict[str, str] | None = None,
     ):
         self.log_path = log_path
         self.clob = clob
+        self.ws = ws
         self.state = TrackerState()
         self._prev_scores: dict[str, tuple[int, int]] = {}
         self._last_gtc_poll: float = 0.0
         self._order_policy = order_policy_config or {}
+        self._token_to_condition = token_to_condition or {}
+        self._subscribed_conditions: set[str] = set()
         self._on_update_callback: Any = None
+        self._pending_ws_subscribe: set[str] = set()
 
     def set_on_update(self, callback: Any) -> None:
         """Set a callback invoked after each event is processed."""
@@ -60,19 +68,18 @@ class OrderStateTracker:
         return parts[1] if len(parts) > 1 else ""
 
     def _determine_tif(self, strategy_key: str) -> str:
-        """Determine FAK or GTC from order policy config.
-
-        Uses the strategy key to look up the market type, then checks
-        the league's HOTPATH_EXECUTION_POLICY for time_in_force.
-        Falls back to "FAK" if unknown.
-        """
+        """Determine FAK or GTC from order policy config."""
         market_type = self._extract_market_type_from_sk(strategy_key).lower()
-        # Check market overrides first
         overrides = self._order_policy.get("market_overrides", {})
         if market_type in overrides:
             return str(overrides[market_type].get("time_in_force", "")).upper() or "FAK"
-        # Base policy
         return str(self._order_policy.get("time_in_force", "FAK")).upper()
+
+    def _resolve_condition_id(self, token_id: str) -> str:
+        """Look up condition_id for a token_id from the compiled plan mapping."""
+        return self._token_to_condition.get(token_id, "")
+
+    # ---- Log event handlers ----
 
     def _on_tick(self, ev: dict[str, Any]) -> None:
         """Process a tick event from the log."""
@@ -97,18 +104,12 @@ class OrderStateTracker:
         game.current_half = half
         game.current_game_state = gs
 
-        # Detect score change
         prev = self._prev_scores.get(gid)
         if prev is None or prev != (home, away):
             prev_home, prev_away = prev if prev else (0, 0)
             score_event = ScoreEvent(
-                ts=ts,
-                home=home,
-                away=away,
-                half=half,
-                game_state=gs,
-                prev_home=prev_home,
-                prev_away=prev_away,
+                ts=ts, home=home, away=away, half=half, game_state=gs,
+                prev_home=prev_home, prev_away=prev_away,
             )
             game.score_timeline.append(score_event)
             self._prev_scores[gid] = (home, away)
@@ -127,9 +128,8 @@ class OrderStateTracker:
 
         gid = self._extract_game_id_from_sk(sk)
         tif = self._determine_tif(sk)
+        cid = self._resolve_condition_id(tok)
 
-        # Find the score change that triggered this order
-        # (orders and ticks from the same frame share the same ts)
         game = self.state.get_or_create_game(gid)
         triggered_by: ScoreEvent | None = None
         for score_ev in reversed(game.score_timeline):
@@ -138,27 +138,87 @@ class OrderStateTracker:
                 break
 
         order = TrackedOrder(
-            ts=ts,
-            strategy_key=sk,
-            token_id=tok,
-            exchange_id=eid,
-            time_in_force=tif,
-            ok=ok,
-            error=err,
+            ts=ts, strategy_key=sk, token_id=tok, exchange_id=eid,
+            condition_id=cid, time_in_force=tif, ok=ok, error=err,
             triggered_by=triggered_by,
         )
         game.orders.append(order)
 
-        # Queue for CLOB fill query if accepted
         if ok and eid and eid != "noop":
             self.state.orders_by_eid[eid] = order
+            # Queue for WS subscription if we have a condition_id
+            if cid and cid not in self._subscribed_conditions:
+                self._pending_ws_subscribe.add(cid)
+            # Queue for REST fallback
             if tif == "FAK":
                 self.state.pending_fak_queries.append(eid)
             else:
                 self.state.pending_gtc_ids.add(eid)
 
+    # ---- WebSocket event handlers ----
+
+    def _on_ws_trade(self, data: dict[str, Any]) -> None:
+        """Handle a trade event from the Polymarket user WS."""
+        asset_id = str(data.get("asset_id", ""))
+        size = data.get("size")
+        price = data.get("price")
+        status = str(data.get("status", ""))
+        taker_order_id = str(data.get("taker_order_id", ""))
+
+        # Try to match by taker_order_id (our order ID)
+        order = self.state.orders_by_eid.get(taker_order_id)
+        if order:
+            if size is not None:
+                try:
+                    order.fill_amount = float(size)
+                except (TypeError, ValueError):
+                    pass
+            if price is not None:
+                try:
+                    order.fill_price = float(price)
+                except (TypeError, ValueError):
+                    pass
+            if status:
+                order.order_status = status
+            order.clob_queried = True
+            # Remove from REST polling queues
+            self.state.pending_gtc_ids.discard(taker_order_id)
+            logger.debug("WS trade: eid=%s size=%s price=%s status=%s", taker_order_id, size, price, status)
+
+    def _on_ws_order(self, data: dict[str, Any]) -> None:
+        """Handle an order event from the Polymarket user WS."""
+        order_id = str(data.get("id", ""))
+        order_type = str(data.get("type", ""))
+        size_matched = data.get("size_matched")
+
+        order = self.state.orders_by_eid.get(order_id)
+        if not order:
+            return
+
+        if order_type == "CANCELLATION":
+            order.order_status = "CANCELLED"
+            order.clob_queried = True
+            self.state.pending_gtc_ids.discard(order_id)
+            logger.debug("WS order cancelled: eid=%s", order_id)
+        elif order_type == "UPDATE":
+            if size_matched is not None:
+                try:
+                    order.fill_amount = float(size_matched)
+                except (TypeError, ValueError):
+                    pass
+            price = data.get("price")
+            if price is not None:
+                try:
+                    order.fill_price = float(price)
+                except (TypeError, ValueError):
+                    pass
+            order.clob_queried = True
+            logger.debug("WS order update: eid=%s size_matched=%s", order_id, size_matched)
+
+    # ---- REST fallback ----
+
     async def _query_pending_fak_orders(self) -> None:
-        """Query CLOB for FAK orders that were accepted. One-shot (FAK resolves immediately)."""
+        """Query CLOB REST for FAK orders (fallback when WS missed them)."""
         if not self.clob or not self.state.pending_fak_queries:
             return
 
@@ -175,7 +235,7 @@ class OrderStateTracker:
             order.clob_queried = True
 
     async def _poll_gtc_orders(self) -> None:
-        """Re-query CLOB for GTC orders that are still OPEN."""
+        """Re-query CLOB REST for GTC orders still OPEN (fallback)."""
         if not self.clob or not self.state.pending_gtc_ids:
             return
 
@@ -190,16 +250,24 @@ class OrderStateTracker:
             if not order:
                 resolved.append(eid)
                 continue
+            if order.clob_queried:
+                # Already updated by WS
+                status = order.order_status.upper()
+                if status in ("MATCHED", "CANCELLED", "EXPIRED", "CONFIRMED"):
+                    resolved.append(eid)
+                continue
             resp = await self.clob.get_order(eid)
             if resp:
                 _apply_clob_response(order, resp)
                 order.clob_queried = True
                 status = order.order_status.upper()
-                if status in ("MATCHED", "CANCELLED", "EXPIRED"):
+                if status in ("MATCHED", "CANCELLED", "EXPIRED", "CONFIRMED"):
                     resolved.append(eid)
 
         for eid in resolved:
             self.state.pending_gtc_ids.discard(eid)
+
+    # ---- Main loops ----
 
     def process_event(self, ev: dict[str, Any]) -> None:
         """Process a single log event (synchronous, no CLOB queries)."""
@@ -209,18 +277,51 @@ class OrderStateTracker:
         elif ev_type == "order":
             self._on_order(ev)
 
+    async def _subscribe_pending_conditions(self) -> None:
+        """Subscribe new condition IDs on the WS."""
+        if not self.ws or not self._pending_ws_subscribe:
+            return
+        new_ids = list(self._pending_ws_subscribe)
+        self._pending_ws_subscribe.clear()
+        await self.ws.subscribe(new_ids)
+        self._subscribed_conditions.update(new_ids)
+
     async def run_watch(self) -> None:
         """Tail the log file and continuously update state. Blocks forever."""
-        for event in tail_log(self.log_path):
-            self.process_event(event)
+        # Start WS in background if available
+        ws_task: asyncio.Task | None = None
+        if self.ws:
+            ws_task = asyncio.create_task(
+                self.ws.run(
+                    on_trade=self._on_ws_trade,
+                    on_order=self._on_ws_order,
+                )
+            )
 
-            # Query CLOB for pending orders
-            if self.state.pending_fak_queries:
-                await self._query_pending_fak_orders()
-            await self._poll_gtc_orders()
+        try:
+            for event in tail_log(self.log_path):
+                self.process_event(event)
 
-            if self._on_update_callback:
-                self._on_update_callback(self.state)
+                # Subscribe new condition IDs on WS
+                await self._subscribe_pending_conditions()
+
+                # REST fallback for orders WS hasn't reported on
+                if self.state.pending_fak_queries and not self.ws:
+                    await self._query_pending_fak_orders()
+                if not self.ws:
+                    await self._poll_gtc_orders()
+
+                if self._on_update_callback:
+                    self._on_update_callback(self.state)
+        finally:
+            if self.ws:
+                self.ws.stop()
+            if ws_task:
+                ws_task.cancel()
+                try:
+                    await ws_task
+                except asyncio.CancelledError:
+                    pass
 
     def run_snapshot(self) -> TrackerState:
         """Read all events from the log (non-blocking) and return current state."""
@@ -232,7 +333,6 @@ class OrderStateTracker:
 def _apply_clob_response(order: TrackedOrder, resp: dict[str, Any]) -> None:
     """Update a TrackedOrder with data from a CLOB GET /order response."""
     order.order_status = str(resp.get("status", ""))
-    # Parse fill data — field names may vary by CLOB API version
     size_matched = resp.get("size_matched") or resp.get("sizeMatched") or resp.get("filled_size")
     if size_matched is not None:
         try:
@@ -245,3 +345,20 @@ def _apply_clob_response(order: TrackedOrder, resp: dict[str, Any]) -> None:
             order.fill_price = float(price)
         except (TypeError, ValueError):
             pass
+
+
+def build_token_to_condition_map(compiled_plan: Any) -> dict[str, str]:
+    """Build a token_id → condition_id mapping from a compiled plan."""
+    mapping: dict[str, str] = {}
+    if compiled_plan is None:
+        return mapping
+    for game in getattr(compiled_plan, "games", ()):
+        for market in getattr(game, "markets", ()):
+            cid = str(getattr(market, "condition_id", "") or "")
+            if not cid:
+                continue
+            for target in getattr(market, "targets", ()):
+                tok = str(getattr(target, "token_id", "") or "")
+                if tok:
+                    mapping[tok] = cid
+    return mapping
