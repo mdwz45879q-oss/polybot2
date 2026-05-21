@@ -5,9 +5,7 @@
     "league": "mlb",
     "kickoff_et": "13:10",
     "v1_fixture_id": "9cf4bbb8-05ca-43d6-9f99-0fef042ddc5c",
-    "boltodds_game_label": "Detroit Tigers vs Cleveland Guardians, 2026-05-21, 01",
-    "opta_event_id": "19424294",
-    "opta_sport": "baseball"
+    "boltodds_game_label": "Detroit Tigers vs Cleveland Guardians, 2026-05-21, 01"
   },
   {
     "name": "stl_cardinals_vs_pit_pirates",
@@ -15,9 +13,7 @@
     "league": "mlb",
     "kickoff_et": "13:15",
     "boltodds_game_label": "St Louis Cardinals vs Pittsburgh Pirates, 2026-05-21, 01",
-    "v1_fixture_id": "a1adcf47-1205-452e-8c57-89392d124254",
-    "opta_event_id": "19429573",
-    "opta_sport": "baseball"
+    "v1_fixture_id": "a1adcf47-1205-452e-8c57-89392d124254"
   },
   {
     "name": "was_nationals_vs_ny_mets",
@@ -25,9 +21,7 @@
     "league": "mlb",
     "kickoff_et": "16:05",
     "boltodds_game_label": "Washington Nationals vs New York Mets, 2026-05-21, 04",
-    "v1_fixture_id": "086da4de-0ea0-43f4-9176-ba4e25c90633",
-    "opta_event_id": "19429575",
-    "opta_sport": "baseball"
+    "v1_fixture_id": "086da4de-0ea0-43f4-9176-ba4e25c90633"
   },
   {
     "name": "mia_marlins_vs_atl_braves",
@@ -35,9 +29,7 @@
     "league": "mlb",
     "kickoff_et": "18:40",
     "boltodds_game_label": "Miami Marlins vs Atlanta Braves, 2026-05-21, 06",
-    "v1_fixture_id": "291cd164-fdc2-46c2-a3c7-08122dd662a1",
-    "opta_event_id": "19429576",
-    "opta_sport": "baseball"
+    "v1_fixture_id": "291cd164-fdc2-46c2-a3c7-08122dd662a1"
   },
   {
     "name": "ny_yankees_vs_tor_blue_jays",
@@ -45,9 +37,7 @@
     "league": "mlb",
     "kickoff_et": "19:05",
     "boltodds_game_label": "New York Yankees vs Toronto Blue Jays, 2026-05-21, 07",
-    "v1_fixture_id": "d9aa258c-e1d4-4cf8-a641-6814180ab5d3",
-    "opta_event_id": "19429578",
-    "opta_sport": "baseball"
+    "v1_fixture_id": "d9aa258c-e1d4-4cf8-a641-6814180ab5d3"
   },
     {
     "name": "la_angels_vs_athletics",
@@ -55,8 +45,6 @@
     "league": "mlb",
     "kickoff_et": "21:38",
     "v1_fixture_id": "dc613e5e-3500-4aa8-a8dc-b7a59ede3488",
-    "opta_event_id": "19483180",
-    "opta_sport": "baseball",
     "boltodds_game_label": "Los Angeles Angels vs Oakland Athletics, 2026-05-21, 09"
   },
   {
@@ -65,8 +53,6 @@
     "league": "mlb",
     "kickoff_et": "21:40",
     "boltodds_game_label": "Arizona Diamondbacks vs Colorado Rockies, 2026-05-21, 09",
-    "v1_fixture_id": "33d842ab-2799-4101-b158-ef9649740e3c",
-    "opta_event_id": "19429580",
-    "opta_sport": "baseball"
+    "v1_fixture_id": "33d842ab-2799-4101-b158-ef9649740e3c"
   }
 ]
