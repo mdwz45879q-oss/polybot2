@@ -51,7 +51,7 @@ echo
 # ───────────────────────────────────────────────────────────────────────────
 echo ">>> Installing OS packages..."
 sudo apt-get update
-sudo apt-get -y upgrade
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confold" upgrade
 sudo apt-get -y install \
   git gcc g++ make pkg-config curl \
   libssl-dev libffi-dev libbz2-dev liblzma-dev zlib1g-dev \
@@ -157,6 +157,7 @@ sudo chown -R "$APP_USER:$APP_USER" /var/log/polybot2 "$APP_DIR/runtime"
 echo ">>> Installing Python deps and building native module..."
 run_as_app_user "
   source '$CONDA_DIR/etc/profile.d/conda.sh'
+  conda activate base
   source ~/.cargo/env
 
   cd '$APP_DIR'
@@ -172,6 +173,8 @@ run_as_app_user "
 echo ">>> Running smoke tests..."
 run_as_app_user "
   source '$CONDA_DIR/etc/profile.d/conda.sh'
+  conda activate base
+  source ~/.cargo/env
 
   cd '$APP_DIR'
   cargo test --manifest-path native/polybot2_native/Cargo.toml -q
