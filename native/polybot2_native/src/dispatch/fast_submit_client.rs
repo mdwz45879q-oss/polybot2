@@ -21,6 +21,7 @@ pub(crate) struct FastClobSubmitClient {
     http: ReqwestClient,
     order_url: String,
     orders_url: String,
+    warmup_url: String,
     poly_address: HeaderValue,
     poly_api_key: HeaderValue,
     poly_passphrase: HeaderValue,
@@ -35,6 +36,7 @@ impl FastClobSubmitClient {
         let host = normalize_host(cfg.clob_host.as_str());
         let order_url = format!("{}order", host);
         let orders_url = format!("{}orders", host);
+        let warmup_url = format!("{}time", host);
         let poly_address = HeaderValue::from_str(signer_address_checksum.as_str())
             .map_err(|e| format!("submitter_invalid_poly_address:{}", e))?;
         let poly_api_key = HeaderValue::from_str(cfg.api_key.trim())
@@ -46,7 +48,7 @@ impl FastClobSubmitClient {
             .map_err(|e| format!("submitter_invalid_api_secret_base64:{}", e))?;
         let http = ReqwestClient::builder()
             .tcp_nodelay(true)
-            .pool_idle_timeout(Some(std::time::Duration::from_secs(300)))
+            .pool_idle_timeout(None)
             .pool_max_idle_per_host(30)
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(10))
@@ -56,6 +58,7 @@ impl FastClobSubmitClient {
             http,
             order_url,
             orders_url,
+            warmup_url,
             poly_address,
             poly_api_key,
             poly_passphrase,
@@ -142,6 +145,13 @@ impl FastClobSubmitClient {
         let status = response.status();
         let raw = response.bytes().await.map_err(|e| e.to_string())?;
         parse_json_response(status, raw.as_ref())
+    }
+
+    /// Pre-establish TCP + TLS + HTTP/2 connection to the CLOB so the first
+    /// real order doesn't pay the cold-start handshake (~9ms on server 1).
+    /// Hits GET /time (lightweight, no auth required). Response is discarded.
+    pub(crate) async fn warmup_connection(&self) {
+        let _ = self.http.get(&self.warmup_url).send().await;
     }
 
     #[cfg(test)]

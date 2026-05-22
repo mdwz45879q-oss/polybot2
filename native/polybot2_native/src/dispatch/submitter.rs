@@ -3,8 +3,14 @@ use super::*;
 use crate::log_writer::LogWriter;
 use futures_util::future::join_all;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 const MAX_CLOB_BATCH: usize = 15;
+/// Interval between keepalive pings to the CLOB during quiet periods.
+/// Keeps the TCP + TLS + HTTP/2 connection warm so no order ever pays
+/// the ~9ms cold-start handshake. Must be well under Cloudflare's
+/// ~300s idle timeout.
+const CLOB_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(120);
 
 struct ChunkScratch {
     body_buf: Vec<u8>,
@@ -61,7 +67,13 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             }
         };
         match FastClobSubmitClient::new(&sub.cfg, signer_address) {
-            Ok(client) => fast_client = Some(Arc::new(client)),
+            Ok(client) => {
+                let arc_client = Arc::new(client);
+                // Pre-establish TCP + TLS + HTTP/2 connection so the first
+                // real order doesn't pay the cold-start handshake.
+                arc_client.warmup_connection().await;
+                fast_client = Some(arc_client);
+            }
             Err(err) => {
                 set_init_error(&sub.health, &err);
                 if let Ok(mut g) = sub.log.lock() {
@@ -80,11 +92,13 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
     let shared_registry = sub.shared_registry;
     let stop_flag = sub.stop_flag;
     let mut scratch = ChunkScratch { body_buf: Vec::new(), idxs_buf: Vec::new() };
+    let mut last_clob_activity = Instant::now();
 
     'outer: loop {
         let mut had_work = false;
         while let Ok(work) = submit_rx.pop() {
             had_work = true;
+            last_clob_activity = Instant::now();
             match work {
                 SubmitWork::Stop => break 'outer,
                 SubmitWork::Batch(batch) => {
@@ -97,6 +111,14 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             break;
         }
         if !had_work {
+            // Keep CLOB connection warm during quiet periods so no order
+            // ever pays the cold-start TLS handshake.
+            if last_clob_activity.elapsed() >= CLOB_KEEPALIVE_INTERVAL {
+                if let Some(ref client) = submit_client {
+                    client.warmup_connection().await;
+                }
+                last_clob_activity = Instant::now();
+            }
             std::hint::spin_loop();
         }
     }
