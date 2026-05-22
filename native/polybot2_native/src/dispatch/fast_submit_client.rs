@@ -19,9 +19,9 @@ const HMAC_B64_LEN: usize = 44;
 
 pub(crate) struct FastClobSubmitClient {
     http: ReqwestClient,
-    order_url: String,
-    orders_url: String,
-    warmup_url: String,
+    order_url: reqwest::Url,
+    orders_url: reqwest::Url,
+    warmup_url: reqwest::Url,
     poly_address: HeaderValue,
     poly_api_key: HeaderValue,
     poly_passphrase: HeaderValue,
@@ -34,9 +34,12 @@ impl FastClobSubmitClient {
         signer_address_checksum: String,
     ) -> Result<Self, String> {
         let host = normalize_host(cfg.clob_host.as_str());
-        let order_url = format!("{}order", host);
-        let orders_url = format!("{}orders", host);
-        let warmup_url = format!("{}time", host);
+        let order_url = reqwest::Url::parse(&format!("{}order", host))
+            .map_err(|e| format!("submitter_invalid_order_url:{}", e))?;
+        let orders_url = reqwest::Url::parse(&format!("{}orders", host))
+            .map_err(|e| format!("submitter_invalid_orders_url:{}", e))?;
+        let warmup_url = reqwest::Url::parse(&format!("{}time", host))
+            .map_err(|e| format!("submitter_invalid_warmup_url:{}", e))?;
         let poly_address = HeaderValue::from_str(signer_address_checksum.as_str())
             .map_err(|e| format!("submitter_invalid_poly_address:{}", e))?;
         let poly_api_key = HeaderValue::from_str(cfg.api_key.trim())
@@ -87,7 +90,7 @@ impl FastClobSubmitClient {
 
         let response = self
             .http
-            .post(self.order_url.as_str())
+            .post(self.order_url.clone())
             .header(POLY_ADDRESS, self.poly_address.clone())
             .header(POLY_API_KEY, self.poly_api_key.clone())
             .header(POLY_PASSPHRASE, self.poly_passphrase.clone())
@@ -108,13 +111,13 @@ impl FastClobSubmitClient {
         &self,
         body: Vec<u8>,
     ) -> Result<Vec<PostOrderResponse>, String> {
-        self.send_json_post(self.orders_url.as_str(), "/orders", body)
+        self.send_json_post(self.orders_url.clone(), "/orders", body)
             .await
     }
 
     async fn send_json_post<T: DeserializeOwned>(
         &self,
-        url: &str,
+        url: reqwest::Url,
         path: &str,
         body: Vec<u8>,
     ) -> Result<T, String> {
@@ -151,7 +154,7 @@ impl FastClobSubmitClient {
     /// real order doesn't pay the cold-start handshake (~9ms on server 1).
     /// Hits GET /time (lightweight, no auth required). Response is discarded.
     pub(crate) async fn warmup_connection(&self) {
-        let _ = self.http.get(&self.warmup_url).send().await;
+        let _ = self.http.get(self.warmup_url.clone()).send().await;
     }
 
     #[cfg(test)]

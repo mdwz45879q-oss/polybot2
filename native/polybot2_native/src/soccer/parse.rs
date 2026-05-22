@@ -16,17 +16,18 @@ pub(crate) fn parse_half(text: &str) -> &'static str {
     if s.is_empty() {
         return "";
     }
-    let lower = s.to_ascii_lowercase();
-    if lower == "1st half" {
+    if s.eq_ignore_ascii_case("1st half") {
         return "1st";
     }
-    if lower == "halftime" || lower == "half time" || lower == "ht" {
+    if s.eq_ignore_ascii_case("halftime")
+        || s.eq_ignore_ascii_case("half time")
+        || s.eq_ignore_ascii_case("ht")
+    {
         return "Halftime";
     }
-    if lower == "2nd half" {
+    if s.eq_ignore_ascii_case("2nd half") {
         return "2nd";
     }
-    // Extra time / penalties: TODO
     ""
 }
 
