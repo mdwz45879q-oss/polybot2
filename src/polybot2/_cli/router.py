@@ -29,9 +29,9 @@ async def dispatch(args: Any, *, logger: logging.Logger) -> int:
         return run_hotpath_observe(args, logger=logger)
     if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "compile":
         return run_hotpath_compile(args, logger=logger)
-    if cmd == "guardian" and str(getattr(args, "guardian_command", "")).strip().lower() == "track":
-        from polybot2.guardian.cli import run_guardian_track
-        return run_guardian_track(args, logger=logger)
+    if cmd == "guardian" and str(getattr(args, "guardian_command", "")).strip().lower() == "watch":
+        from polybot2.guardian.cli import run_guardian_watch
+        return run_guardian_watch(args, logger=logger)
     logger.error("Unsupported command")
     return 1
 

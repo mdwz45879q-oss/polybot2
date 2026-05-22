@@ -89,7 +89,7 @@ def _resolve_kalstrop_catalog_sport_codes() -> tuple[str, ...]:
         }
         if parsed:
             return tuple(sorted(parsed))
-    return ("baseball", "soccer")
+    return ("baseball", "cs2", "soccer", "tennis")
 
 
 

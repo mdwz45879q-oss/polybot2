@@ -21,7 +21,9 @@ logger = logging.getLogger("polybot2.guardian")
 class ClobClient:
     """Authenticated client for Polymarket CLOB REST API.
 
-    Used for querying order fill state and (future) cancellation.
+    Used for querying order fill state, cancellation, and sell order submission.
+    Combines HMAC-SHA256 auth for REST queries with py_clob_client_v2 SDK
+    for EIP-712 signed order submission.
     """
 
     def __init__(
@@ -32,6 +34,10 @@ class ClobClient:
         api_secret: str,
         api_passphrase: str,
         address: str,
+        private_key: str = "",
+        chain_id: int = 137,
+        signature_type: int = 0,
+        funder: str = "",
         timeout: float = 10.0,
     ):
         self._host = clob_host.rstrip("/") + "/"
@@ -39,7 +45,30 @@ class ClobClient:
         self._decoded_secret = base64.urlsafe_b64decode(api_secret)
         self._passphrase = api_passphrase
         self._address = address
+        self._private_key = private_key
         self._client = httpx.AsyncClient(timeout=timeout)
+
+        # SDK client for EIP-712 signed order submission (sell orders)
+        self._sdk_client = None
+        if private_key and api_key:
+            try:
+                from py_clob_client_v2 import ClobClient as SdkClobClient, ApiCreds
+                creds = ApiCreds(
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    api_passphrase=api_passphrase,
+                )
+                self._sdk_client = SdkClobClient(
+                    host=clob_host.rstrip("/"),
+                    chain_id=chain_id,
+                    key=private_key,
+                    creds=creds,
+                    signature_type=signature_type,
+                    funder=funder if funder else None,
+                )
+                logger.info("SDK client initialized for order signing")
+            except Exception as exc:
+                logger.warning("SDK client init failed (sell orders disabled): %s", exc)
 
     def _sign(self, timestamp: int, method: str, path: str, body: str = "") -> str:
         """Compute HMAC-SHA256 signature (same scheme as Rust FastClobSubmitClient)."""
@@ -95,6 +124,55 @@ class ClobClient:
             logger.warning("cancel_order %s failed: %s", order_id, exc)
             return False
 
+    async def submit_sell_order(
+        self,
+        token_id: str,
+        size: float,
+        price: float,
+        neg_risk: bool = True,
+    ) -> dict[str, Any] | None:
+        """Submit a GTC sell order at the given price.
+
+        Uses py_clob_client_v2 SDK for EIP-712 signing + submission.
+        Returns the response dict or None on failure.
+        """
+        if not self._sdk_client:
+            logger.warning("sell order skipped — SDK client not initialized (no private key)")
+            return None
+        try:
+            from py_clob_client_v2 import OrderArgsV2, OrderType
+            order_args = OrderArgsV2(
+                token_id=token_id,
+                price=price,
+                size=size,
+                side="SELL",
+            )
+            signed_order = self._sdk_client.create_order(order_args)
+            resp = self._sdk_client.post_order(signed_order, order_type=OrderType.GTC)
+            logger.info(
+                "sell order submitted: token=%s size=%.4f price=%.4f resp=%s",
+                token_id[:20] + "...", size, price, str(resp)[:200],
+            )
+            return resp if isinstance(resp, dict) else {"raw": str(resp)}
+        except Exception as exc:
+            logger.warning("sell order failed: token=%s size=%.4f price=%.4f error=%s", token_id[:20] + "...", size, price, exc)
+            return None
+
+    async def cancel_order_by_id(self, order_id: str) -> bool:
+        """Cancel a resting order using the SDK client (handles signing).
+
+        Falls back to REST DELETE if SDK not available.
+        """
+        if self._sdk_client:
+            try:
+                from py_clob_client_v2 import OrderPayload
+                self._sdk_client.cancel_order(OrderPayload(orderID=order_id))
+                logger.info("order cancelled via SDK: %s", order_id)
+                return True
+            except Exception as exc:
+                logger.warning("SDK cancel failed, falling back to REST: %s", exc)
+        return await self.cancel_order(order_id)
+
     async def get_open_orders(self, *, market: str | None = None) -> list[dict[str, Any]]:
         """Get all open orders, optionally filtered by market/condition."""
         path = "/orders"
@@ -120,10 +198,17 @@ class ClobClient:
     def from_env(cls) -> ClobClient:
         """Create a ClobClient from POLY_EXEC_* environment variables."""
         import os
+        funder = os.getenv("POLY_EXEC_FUNDER", "")
+        sig_type_str = os.getenv("POLY_EXEC_SIGNATURE_TYPE", "")
+        sig_type = int(sig_type_str) if sig_type_str else (1 if funder else 0)
         return cls(
             clob_host=os.getenv("POLY_EXEC_CLOB_HOST", "https://clob.polymarket.com"),
             api_key=os.getenv("POLY_EXEC_API_KEY", ""),
             api_secret=os.getenv("POLY_EXEC_API_SECRET", ""),
             api_passphrase=os.getenv("POLY_EXEC_API_PASSPHRASE", ""),
-            address=os.getenv("POLY_EXEC_ADDRESS", ""),
+            address=os.getenv("POLY_EXEC_FUNDER", ""),
+            private_key=os.getenv("POLY_EXEC_PRESIGN_PRIVATE_KEY", ""),
+            chain_id=int(os.getenv("POLY_EXEC_CHAIN_ID", "137")),
+            signature_type=sig_type,
+            funder=funder,
         )

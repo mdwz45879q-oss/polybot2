@@ -15,9 +15,12 @@ from typing import Any
 
 from polybot2.guardian.clob_client import ClobClient
 from polybot2.guardian.log_tailer import tail_log, read_log_snapshot
+from polybot2.guardian.market_ws import PolymarketMarketWS
+from polybot2.guardian.overturn import OverturnDetector
 from polybot2.guardian.polymarket_ws import PolymarketUserWS
 from polybot2.guardian.state import (
     GameState,
+    OverturnAlert,
     ScoreEvent,
     TrackedOrder,
     TrackerState,
@@ -37,6 +40,8 @@ class OrderStateTracker:
         log_path: str,
         clob: ClobClient | None = None,
         ws: PolymarketUserWS | None = None,
+        market_ws: PolymarketMarketWS | None = None,
+        detector: OverturnDetector | None = None,
         *,
         order_policy_config: dict[str, Any] | None = None,
         token_to_condition: dict[str, str] | None = None,
@@ -44,13 +49,17 @@ class OrderStateTracker:
         self.log_path = log_path
         self.clob = clob
         self.ws = ws
+        self.market_ws = market_ws
+        self.detector = detector
         self.state = TrackerState()
         self._prev_scores: dict[str, tuple[int, int]] = {}
         self._last_gtc_poll: float = 0.0
         self._order_policy = order_policy_config or {}
         self._token_to_condition = token_to_condition or {}
         self._subscribed_conditions: set[str] = set()
+        self._subscribed_market_tokens: set[str] = set()
         self._on_update_callback: Any = None
+        self._on_overturn_callback: Any = None
         self._pending_ws_subscribe: set[str] = set()
 
     def set_on_update(self, callback: Any) -> None:
@@ -113,6 +122,21 @@ class OrderStateTracker:
             )
             game.score_timeline.append(score_event)
             self._prev_scores[gid] = (home, away)
+
+            # Overturn detection: check for score reversal
+            if self.detector and prev is not None:
+                alert = self.detector.on_score_change(
+                    game, prev_home, prev_away, home, away, ts,
+                )
+                if alert:
+                    # Subscribe affected tokens on market WS
+                    new_tokens = alert.affected_token_ids - self._subscribed_market_tokens
+                    if new_tokens:
+                        self._subscribed_market_tokens.update(new_tokens)
+                        if self.market_ws:
+                            asyncio.get_event_loop().create_task(
+                                self.market_ws.subscribe(list(new_tokens))
+                            )
 
     def _on_order(self, ev: dict[str, Any]) -> None:
         """Process an order event from the log."""
@@ -288,21 +312,29 @@ class OrderStateTracker:
 
     async def run_watch(self) -> None:
         """Tail the log file and continuously update state. Blocks forever."""
-        # Start WS in background if available
-        ws_task: asyncio.Task | None = None
+        tasks: list[asyncio.Task] = []
+
+        # Start user WS in background if available
         if self.ws:
-            ws_task = asyncio.create_task(
-                self.ws.run(
-                    on_trade=self._on_ws_trade,
-                    on_order=self._on_ws_order,
-                )
-            )
+            tasks.append(asyncio.create_task(
+                self.ws.run(on_trade=self._on_ws_trade, on_order=self._on_ws_order)
+            ))
+
+        # Start market WS in background if available (for overturn Signal 2)
+        if self.market_ws and self.detector:
+            tasks.append(asyncio.create_task(
+                self.market_ws.run(on_best_bid_ask=self.detector.on_best_bid_ask)
+            ))
+
+        # Periodic confirmation check for overturn alerts
+        if self.detector:
+            tasks.append(asyncio.create_task(self._confirmation_check_loop()))
 
         try:
             for event in tail_log(self.log_path):
                 self.process_event(event)
 
-                # Subscribe new condition IDs on WS
+                # Subscribe new condition IDs on user WS
                 await self._subscribe_pending_conditions()
 
                 # REST fallback for orders WS hasn't reported on
@@ -316,12 +348,24 @@ class OrderStateTracker:
         finally:
             if self.ws:
                 self.ws.stop()
-            if ws_task:
-                ws_task.cancel()
+            if self.market_ws:
+                self.market_ws.stop()
+            for task in tasks:
+                task.cancel()
                 try:
-                    await ws_task
+                    await task
                 except asyncio.CancelledError:
                     pass
+
+    async def _confirmation_check_loop(self) -> None:
+        """Periodically check overturn alert confirmations (Signal 1 timer)."""
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+                if self.detector:
+                    self.detector.check_confirmations()
+        except asyncio.CancelledError:
+            pass
 
     def run_snapshot(self) -> TrackerState:
         """Read all events from the log (non-blocking) and return current state."""

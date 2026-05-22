@@ -39,6 +39,7 @@ src/polybot2/guardian/__init__.py
 src/polybot2/guardian/cli.py
 src/polybot2/guardian/clob_client.py
 src/polybot2/guardian/log_tailer.py
+src/polybot2/guardian/polymarket_ws.py
 src/polybot2/guardian/state.py
 src/polybot2/guardian/tracker.py
 src/polybot2/hotpath/__init__.py

@@ -57,6 +57,27 @@ class GameState:
 
 
 @dataclass
+class OverturnAlert:
+    """An active overturn alert for a game where a score reversal was detected."""
+    game_id: str
+    # The original goal that was scored (the score change we traded on)
+    original_score_event: ScoreEvent
+    # When the reversal was first detected
+    reversal_ts: int  # milliseconds since epoch
+    # The score after reversal (e.g., back to 1-0 from 2-0)
+    reversed_home: int
+    reversed_away: int
+    # Dual-signal confirmation
+    signal1_confirmed: bool = False  # score held reversed for >N seconds
+    signal2_confirmed: bool = False  # market bid dropped below threshold
+    acted: bool = False  # sell/cancel already triggered
+    # Orders triggered by the now-reversed goal
+    affected_orders: list[TrackedOrder] = field(default_factory=list)
+    # Token IDs from affected orders (for market WS monitoring)
+    affected_token_ids: set[str] = field(default_factory=set)
+
+
+@dataclass
 class TrackerState:
     """Top-level tracker state across all games."""
     games: dict[str, GameState] = field(default_factory=dict)

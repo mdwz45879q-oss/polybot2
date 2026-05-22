@@ -10,13 +10,16 @@ import time
 from typing import Any
 
 from polybot2.guardian.clob_client import ClobClient
+from polybot2.guardian.executor import OverturnExecutor
+from polybot2.guardian.market_ws import PolymarketMarketWS
+from polybot2.guardian.overturn import OverturnDetector
 from polybot2.guardian.polymarket_ws import PolymarketUserWS
-from polybot2.guardian.state import TrackerState
+from polybot2.guardian.state import OverturnAlert, TrackerState
 from polybot2.guardian.tracker import OrderStateTracker
 from polybot2.hotpath.live_observer import find_latest_log
 
 
-def _render_tracker_state(state: TrackerState) -> str:
+def _render_tracker_state(state: TrackerState, detector: OverturnDetector | None = None) -> str:
     """Render the current tracker state as a human-readable string."""
     lines: list[str] = []
 
@@ -75,11 +78,35 @@ def _render_tracker_state(state: TrackerState) -> str:
 
     lines.append(f"\n--- Summary: {len(state.games)} games, {total_orders} orders ({ok_orders} accepted, {filled} filled), FAK pending: {pending_fak}, GTC polling: {pending_gtc} ---")
 
+    # Overturn alerts
+    if detector:
+        active_alerts = detector.get_active_alerts()
+        triggered_alerts = [a for a in detector.alerts.values() if a.acted]
+        if active_alerts or triggered_alerts:
+            lines.append("")
+            for alert in active_alerts:
+                s1 = "✓" if alert.signal1_confirmed else "…"
+                s2 = "✓" if alert.signal2_confirmed else "…"
+                orig = alert.original_score_event
+                lines.append(
+                    f"⚠️  OVERTURN ALERT: {alert.game_id}  "
+                    f"score {orig.home}-{orig.away} → {alert.reversed_home}-{alert.reversed_away}  "
+                    f"Signal1:{s1} Signal2:{s2}  "
+                    f"orders:{len(alert.affected_orders)}"
+                )
+            for alert in triggered_alerts:
+                orig = alert.original_score_event
+                lines.append(
+                    f"🚨 OVERTURN TRIGGERED: {alert.game_id}  "
+                    f"score {orig.home}-{orig.away} → {alert.reversed_home}-{alert.reversed_away}  "
+                    f"orders:{len(alert.affected_orders)} ACTED"
+                )
+
     return "\n".join(lines) + "\n"
 
 
-def run_guardian_track(args: Any, *, logger: logging.Logger) -> int:
-    """Run the order state tracker."""
+def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
+    """Run the guardian: order state tracking + overturn detection."""
     log_file = str(getattr(args, "log_file", "") or "").strip()
     if not log_file:
         log_dir = str(getattr(args, "log_dir", "") or "").strip()
@@ -158,10 +185,45 @@ def run_guardian_track(args: Any, *, logger: logging.Logger) -> int:
             logger.warning("WS client init failed: %s — WS disabled", exc)
             ws = None
 
+    # Build overturn detector + market WS (for soccer leagues)
+    market_ws: PolymarketMarketWS | None = None
+    detector: OverturnDetector | None = None
+    if not snapshot_mode:
+        bid_threshold = float(getattr(args, "bid_threshold", 0.80) or 0.80)
+        confirmation_window = float(getattr(args, "confirmation_window", 10.0) or 10.0)
+
+        # Build executor for sell/cancel actions
+        log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
+        is_live = bool(getattr(args, "live", False))
+        dry_run = not is_live
+        logger.info("guardian mode: %s", "LIVE — real orders will be executed" if is_live else "DRY RUN — logging decisions only")
+        executor: OverturnExecutor | None = None
+        if clob:
+            executor = OverturnExecutor(clob, dry_run=dry_run, log_dir=log_dir)
+
+        async def _on_overturn(alert: OverturnAlert) -> None:
+            if executor and detector:
+                await executor.execute(alert, detector._best_bids)
+            else:
+                logger.warning(
+                    "🚨 OVERTURN CONFIRMED: %s — %d affected orders (executor disabled, no action taken)",
+                    alert.game_id, len(alert.affected_orders),
+                )
+
+        detector = OverturnDetector(
+            confirmation_window_s=confirmation_window,
+            bid_threshold=bid_threshold,
+            on_overturn_triggered=_on_overturn,
+        )
+        market_ws = PolymarketMarketWS()
+        logger.info("overturn detection enabled (threshold=%.2f, window=%.1fs)", bid_threshold, confirmation_window)
+
     tracker = OrderStateTracker(
         log_path=log_file,
         clob=clob,
         ws=ws,
+        market_ws=market_ws,
+        detector=detector,
         order_policy_config=order_policy_cfg,
         token_to_condition=token_to_condition,
     )
@@ -188,7 +250,7 @@ def run_guardian_track(args: Any, *, logger: logging.Logger) -> int:
         now = time.time()
         if now - last_render >= 1.0:
             os.system("clear" if os.name != "nt" else "cls")
-            print(_render_tracker_state(state))
+            print(_render_tracker_state(state, detector=detector))
             last_render = now
 
     tracker.set_on_update(_on_update)
@@ -200,9 +262,23 @@ def run_guardian_track(args: Any, *, logger: logging.Logger) -> int:
     finally:
         signal.signal(signal.SIGINT, prev_int)
         signal.signal(signal.SIGTERM, prev_term)
+        if executor:
+            executor.close()
         if clob:
             asyncio.run(clob.close())
 
     # Final render
-    print(_render_tracker_state(tracker.state))
+    print(_render_tracker_state(tracker.state, detector=detector))
+
+    # Show executed actions summary
+    if executor and executor.actions:
+        print(f"\n--- Guardian Actions ({len(executor.actions)} total) ---")
+        for act in executor.actions:
+            action = act.get("action", "?")
+            sk = act.get("strategy_key", "")
+            ok = act.get("ok", False)
+            price = act.get("price", "")
+            print(f"  {action}: {sk} ok={ok}" + (f" price={price}" if price else ""))
+        print(f"  Action log: {executor._log_path}")
+
     return 0
