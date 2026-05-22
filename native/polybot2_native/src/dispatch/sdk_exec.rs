@@ -82,10 +82,11 @@ impl OrderSubmitter {
             self.cfg.api_passphrase.clone(),
         );
         let signature_type = map_sdk_signature_type(self.cfg.signature_type)?;
-        if !self.cfg.funder.trim().is_empty() && !matches!(signature_type, SdkSignatureType::Proxy)
+        if !self.cfg.funder.trim().is_empty()
+            && !matches!(signature_type, SdkSignatureType::Proxy | SdkSignatureType::Poly1271)
         {
             return Err(format!(
-                "invalid_signature_type_for_funder:{}:expected_proxy(1)",
+                "invalid_signature_type_for_funder:{}:expected_proxy(1)_or_poly1271(3)",
                 self.cfg.signature_type
             ));
         }

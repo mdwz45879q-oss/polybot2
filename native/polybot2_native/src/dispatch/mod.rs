@@ -159,6 +159,7 @@ pub(super) fn map_sdk_signature_type(signature_type: i64) -> Result<SdkSignature
         0 => Ok(SdkSignatureType::Eoa),
         1 => Ok(SdkSignatureType::Proxy),
         2 => Ok(SdkSignatureType::GnosisSafe),
+        3 => Ok(SdkSignatureType::Poly1271),
         other => Err(format!("unsupported_signature_type:{}", other)),
     }
 }

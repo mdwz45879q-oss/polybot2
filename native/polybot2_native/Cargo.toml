@@ -26,7 +26,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["c
 futures-util = "0.3"
 urlencoding = "2.1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-polymarket_client_sdk_v2 = { version = "0.5.1", features = ["clob"] }
+polymarket_client_sdk_v2 = { version = "0.6.0-canary.1", features = ["clob"] }
 alloy = { version = "=1.6.3", default-features = false, features = ["signers"] }
 rustls = { version = "0.23", default-features = false, features = ["std", "aws-lc-rs"] }
 smallvec = "1"
