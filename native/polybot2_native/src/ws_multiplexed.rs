@@ -373,7 +373,15 @@ pub(crate) async fn run_multiplexed_worker_async(
                                                 }
                                             }
                                         }
-                                        SioFrame::Ping => {}
+                                        SioFrame::Ping => {
+                                            if let Some(ref mut conn) = v2_conn {
+                                                if let Err(_e) = kalstrop_v2_sio::send_pong(conn).await {
+                                                    v2_conn = None;
+                                                    v2_active_subs.clear();
+                                                    reconn_v2 = true;
+                                                }
+                                            }
+                                        }
                                         SioFrame::Subscribed(_) | SioFrame::ConnectAck | SioFrame::Other => {}
                                     }
                                 }

@@ -67,9 +67,9 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames (`fast_extract_v1`). Extracts fixtureId, homeScore, awayScore, freeText without full serde parse. |
 | `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). |
 | `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`). Depth is 1-2 per token (primary + optional secondary order). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes orders per token at startup. |
-| `dispatch/fast_submit_client.rs` | `FastClobSubmitClient`: custom HTTP client bypassing the SDK for `POST /order`. Caches decoded API secret, uses stack-based `itoa` + base64 for HMAC, sends pre-serialized order bytes directly via `post_order_bytes_single`. Configured with `tcp_nodelay(true)`, `connect_timeout(5s)`, `timeout(10s)`, `pool_max_idle_per_host(30)`. |
+| `dispatch/fast_submit_client.rs` | `FastClobSubmitClient`: custom HTTP client bypassing the SDK for `POST /order` (single) and `POST /orders` (batch). Caches decoded API secret, uses stack-based `itoa` + base64 for HMAC, sends pre-serialized order bytes directly. Two methods: `post_order_bytes_single` (single order) and `post_orders_bytes` (batch, via generic `send_json_post` helper). Configured with `tcp_nodelay(true)`, `connect_timeout(5s)`, `timeout(10s)`, `pool_max_idle_per_host(30)`, `pool_idle_timeout(300s)`, HTTP/2 via ALPN. |
 | `dispatch/sdk_exec.rs` | `OrderSubmitter::new`, `ensure_sdk_runtime_async`, `sdk_client_ref`, `signer_ref` (SDK init for presign signing). `sign_order_batch` (presign warmup). `map_post_response` helper. The SDK client is used only for order signing at startup/patch — not for HTTP submission. |
-| `dispatch/submitter.rs` | `run_submitter_async`: spin-loop that pops from SPSC ring and calls `submit_batch_task` inline (no `tokio::spawn`). Per-order concurrent submission via `POST /order` — no batch endpoint. Two paths: `len==1` (single bare `.await`, no `join_all`), `len>1` (concurrent `join_all` with `Arc::clone` per order). No semaphore — all orders fire concurrently. |
+| `dispatch/submitter.rs` | `run_submitter_async`: spin-loop that pops from SPSC ring and calls `submit_batch_task` inline (no `tokio::spawn`). 3-tier dispatch: `len==1` (single `POST /order`, bare `.await`), `2..=15` (one `POST /orders` batch — 1 HMAC, 1 HTTP request), `>15` (chunked into groups of `MAX_CLOB_BATCH=15`, concurrent `join_all`). Uses `ChunkScratch` for reusable body/index buffers. No semaphore. |
 | `dispatch/flow.rs` | `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by soccer V1, BoltOdds, and V2 frame pipelines. |
 | `parse_common.rs` | Shared `is_completed_free_text()` used by both baseball and soccer parsers. |
 | `dispatch/types.rs` | `DispatchHandle`, `OrderSubmitter`, `SubmitWork`, `SubmitBatch`, `PreparedOrderPayload`, `SharedRegistry` (ArcSwap). Presign pool stores `Box<PreparedOrderPayload>` (pre-serialized JSON bytes). |
@@ -94,12 +94,12 @@ WS thread (per frame, zero-alloc live path):
   → log tick using engine.game_ids[game_idx]         (borrowed, no clone)
   → return to ws.next()                              (0 heap allocs, <1µs per material frame)
 
-Submitter thread (spin-loop, inline execution):
+Submitter thread (spin-loop, inline execution, 3-tier dispatch):
   submit_rx.pop()                                    (lock-free SPSC ring pop)
   submit_batch_task(batch, ...).await                (inline, no spawn)
-    → if 1 item: bare .await on post_order_bytes_single (no join_all overhead)
-    → if >1:    join_all over concurrent post_order_bytes_single per order
-    → each order: POST /order independently (no batch endpoint — eliminates batch poisoning)
+    → Tier 1 (len==1): bare .await on post_order_bytes_single (no join_all overhead)
+    → Tier 2 (2..=15): one POST /orders batch (1 HMAC, 1 HTTP request for all orders)
+    → Tier 3 (>15):    chunk into groups of 15, concurrent join_all over post_orders_bytes
     → log_order_ok / log_order_err   (resolve sk/tok strings via ArcSwap<TargetRegistry>)
 ```
 
@@ -160,7 +160,7 @@ Two structs back the dispatch path:
 - **`DispatchHandle`** (WS thread): `cfg`, `registry: Arc<TargetRegistry>`, `shared_registry: SharedRegistry` (ArcSwap), `presign_pool: Vec<Option<Box<PreparedOrderPayload>>>` indexed by `TokenIdx` (depth=1), `submit_tx: Option<rtrb::Producer<SubmitWork>>`. All methods are synchronous.
 - **`OrderSubmitter`** (submitter thread): `cfg`, `shared_registry: SharedRegistry`, `submit_rx: rtrb::Consumer<SubmitWork>`, `stop_flag: Arc<AtomicBool>`, `log`, `health`. Initializes `FastClobSubmitClient` at startup (custom HTTP + L2 auth, bypasses SDK for submission).
 
-Channel: `rtrb::RingBuffer<SubmitWork>` (capacity 64), lock-free SPSC. `SubmitBatch` is `SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 32]>`. With dual-order, a frame with N intents produces up to 2N batch entries. The WS thread pushes one Batch per material frame. The submitter spins on `submit_rx.pop()` and processes batches inline (no `tokio::spawn`). Each order is submitted independently via `POST /order` (no batch endpoint) — eliminates batch poisoning where one deactivated market rejects all orders in a batch. Single-order batches use a bare `.await` (no `join_all` overhead); multi-order batches fire concurrently via `join_all`.
+Channel: `rtrb::RingBuffer<SubmitWork>` (capacity 64), lock-free SPSC. `SubmitBatch` is `SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 32]>`. With dual-order, a frame with N intents produces up to 2N batch entries. The WS thread pushes one Batch per material frame. The submitter spins on `submit_rx.pop()` and processes batches inline (no `tokio::spawn`). 3-tier dispatch: single orders use bare `.await` on `POST /order`; batches of 2–15 use one `POST /orders` call (1 HMAC, 1 HTTP request — strictly faster than N individual calls); batches >15 are chunked into groups of `MAX_CLOB_BATCH` and fired concurrently via `join_all`. The tradeoff vs per-order submission: a deactivated token in a batch causes all orders in that batch to be rejected, but the common dual-order case saves ~8ms by eliminating the second HTTP round-trip.
 
 Shutdown: `stop_flag.store(true)` from the runtime `stop()` method. The submitter checks `stop_flag` after each drain cycle and exits cleanly.
 
@@ -258,7 +258,7 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 9. **Submitter thread isolation:** The WS thread never owns or references the SDK client or HTTP client. Submitter ownership is established at startup; the SPSC ring is the only communication path. `ArcSwap<TargetRegistry>` is the shared registry pointer (updated atomically on patch, loaded per batch by submitter for log attribution).
 
-10. **Frame-preserving batch:** `process_decoded_frame_sync` builds exactly one `SubmitWork::Batch` per material WS frame. All intents from the same frame ride together in one ring push. The submitter processes batches inline (strict serialized queue); concurrent chunk posting only for oversized (>15 intent) batches.
+10. **Frame-preserving batch:** `process_decoded_frame_sync` builds exactly one `SubmitWork::Batch` per material WS frame. All intents from the same frame ride together in one ring push. The submitter processes batches inline (strict serialized queue) via 3-tier dispatch: single order → `POST /order`, 2–15 orders → one `POST /orders` batch, >15 → chunked concurrent `join_all`.
 
 11. **Monotonic clock:** Engine timestamps use `worker_clock_origin: Instant` set at WS-worker startup, sourced via `Instant::elapsed().as_nanos()`. Wall-clock (`now_unix_ns`) is used only for log timestamps and L2 auth headers — never for engine math.
 
@@ -398,7 +398,7 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). The hotp
 
 - Deployment target is Linux EC2 (eu-west-1, c8gn.4xlarge — 16 vCPUs, 32 GB RAM). Dev is macOS (ARM). CPU core pinning configured per league in `HOTPATH_RUNTIME_POLICY` (`ws_core_idx`, `submitter_core_idx`). Core 0 avoided (IRQ handler).
 - Python ≥ 3.11, Rust edition 2021, PyO3 0.22 with ABI3.
-- `polymarket_client_sdk_v2` 0.5.1 (CLOB V2, migrated April 2026) pins `alloy` at 1.6.3 — do not add a different alloy version or traits will mismatch.
+- `polymarket_client_sdk_v2` 0.6.0-canary.1 (CLOB V2). Supports `SignatureType::Poly1271` (value 3) for deposit wallet accounts with ERC-7739 wrapped signatures. Pins `alloy` at 1.6.3 — do not add a different alloy version or traits will mismatch.
 - `smallvec` is a hot-path dependency (`SubmitBatch` payload). Don't replace with `Vec` without measuring — the inline `[T; 32]` capacity covers the common dual-order case without heap allocation.
 - Gamma API caps results at 100 per request regardless of `limit` parameter. `batch_size` in `sync_config.py` is set to 100 to match.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
@@ -406,7 +406,7 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). The hotp
 - The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`) shared via `Arc<Mutex<>>`. The `polybot2 hotpath observe` command reads the JSONL log file via `live_observer.py` and renders an in-place terminal scoreboard. Sport-aware: baseball shows `AWAY-HOME` with inning (`T3`, `B7`); soccer shows `HOME-AWAY` with half (`1H`, `HT`, `2H`, `FT`). Team abbreviations use Polymarket codes from `config/mappings.py`. Tick log entries include `corners` field for soccer.
 - Python canonical form for BTTS is `"btts"` (not `"both_teams_to_score"`). Must match the Rust `canonical_soccer_market_type` which also normalizes to `"btts"`.
 - SDK config uses `use_server_time(false)` to avoid a `GET /time` round-trip before every order POST. Host clock must be disciplined with chrono/NTP on the deployment target.
-- Multi-intent frames batch in `process_decoded_frame_sync` (one Batch per frame). The submitter processes batches inline (no spawn): each order is submitted independently via `POST /order`. Single-order uses bare `.await`; multi-order uses `join_all` (no semaphore). Empty `order_id` with `success: true` is treated as failure (`map_post_response`). Per-order submission eliminates batch poisoning — one deactivated market can't reject other orders.
+- Multi-intent frames batch in `process_decoded_frame_sync` (one Batch per frame). The submitter processes batches inline (no spawn) via 3-tier dispatch: single order → `POST /order` (bare `.await`), 2–15 orders → one `POST /orders` batch (1 HMAC, 1 HTTP), >15 → chunked concurrent `join_all`. No semaphore. Empty `order_id` with `success: true` is treated as failure (`map_post_response`). Batch tradeoff: a deactivated token poisons its batch, but the dual-order case saves ~8ms vs individual submission.
 - Parsing uses zero-allocation byte-level scanning (`eq_ignore_ascii_case`, byte accumulator for numbers) — no `to_lowercase()`/`to_uppercase()` heap allocations on the tick path.
 - Final-game cleanup (`cleanup_completed_game_idx`) is deferred until after intents are selected, not during `evaluate_final`. `final_resolved_games[gi] = true` blocks re-evaluation immediately; cleanup runs in `process_tick` before returning. Cleanup clears only lightweight row data (`rows`, `game_states`, `nrfi_first_inning_observed`); completion tombstones (`totals_final_under_emitted`, `nrfi_resolved_games`) are preserved for the session to prevent duplicate emission from repeated final frames.
 - Tests use temp-path `LogWriter`s (no actual log inspection in non-live tests).
@@ -439,7 +439,7 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 12. **Benchmark harness — pending (Phase 4).** No `criterion` or `iai-callgrind` benchmarks exist. Required to validate Phase 2 didn't regress and to inform any future revisit of pre-serialization.
 
-13. **CLOB V2 SDK migration — DONE.** `polymarket-client-sdk 0.4.4` → `polymarket_client_sdk_v2 0.5.1`. Same alloy 1.6.3 pin, same builder/sign/post API surface. V2 order format (removes `nonce`/`taker`/`expiration`/`feeRateBps`; adds `timestamp`/`metadata`/`builder`) is handled by the SDK internally. Collateral changed from USDC.e to pUSD (transparent to order construction). Live execution tests validated against V2 CLOB post-cutover.
+13. **CLOB V2 SDK migration — DONE.** `polymarket-client-sdk 0.4.4` → `polymarket_client_sdk_v2 0.6.0-canary.1`. Supports deposit wallet accounts via `SignatureType::Poly1271` (ERC-7739 wrapped signatures). V2 order format (removes `nonce`/`taker`/`expiration`/`feeRateBps`; adds `timestamp`/`metadata`/`builder`) is handled by the SDK internally. Collateral changed from USDC.e to pUSD (transparent to order construction). Live execution tests validated against V2 CLOB with both proxy (type 1) and deposit wallet (type 3) accounts.
 
 14. **`send_batch` zero-allocation success path — DONE.** `DispatchHandle::send_batch` sends first, recovers the batch from `SendError` on failure for diagnostics. No `Vec<TargetIdx>` allocation before the channel send.
 
@@ -457,11 +457,67 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 21. **Timer-free burst drain — DONE.** Frame drain loops in all workers (V1, V2, BoltOdds, multiplexed) use `futures_util::FutureExt::now_or_never()` for burst reads instead of `tokio::time::timeout(Duration::ZERO)`. Eliminates timer future allocation during frame bursts. Multiplexed worker uses sequential `now_or_never()` polls per provider (V2 first for goal priority) instead of `select!` with `else` (which hung indefinitely due to `std::future::pending()` keeping `else` from firing).
 
-22. **Per-order submission (no batch endpoint) — DONE.** Every order submitted individually via `POST /order`, concurrently via `join_all`. Eliminates batch poisoning where one deactivated market's 400 response rejects all orders in the batch. Single-order fast path (bare `.await`, no `join_all`). No semaphore — CLOB burst limit is 500 req/s on `POST /order`.
+22. **Batch order submission restored (3-tier dispatch) — DONE.** Rolled back from per-order `POST /order` to batch `POST /orders` for the common multi-order case. 3-tier dispatch: `len==1` (single `POST /order`, bare `.await`), `2..=15` (one `POST /orders` — 1 HMAC, 1 HTTP request regardless of order count), `>15` (chunked into groups of 15, concurrent `join_all`). Benchmarked ~28ms batch vs ~36ms for 2 individual orders. Tradeoff accepted: deactivated token poisons the batch, but this is rare and the latency win is material. `ChunkScratch` reuses body/index buffers across batches. `SmallVec<[TargetIdx; 32]>` for tier 2 index tracking. `Arc::clone` only in tier 3 futures (where ownership is needed for concurrent chunks).
 
-23. **Submitter Arc/semaphore cleanup — DONE.** Removed `Semaphore(30)` (never gated), removed per-batch `Arc::clone` of client (pass by reference since `submit_batch_task` is `.await`ed inline). Single-order path: zero atomic ops, zero heap allocs. Multi-order path: one `Arc::clone` per order (required for `join_all` futures).
+23. **Submitter Arc/semaphore cleanup — DONE.** Removed `Semaphore(30)` (never gated), removed per-batch `Arc::clone` of client (pass by reference since `submit_batch_task` is `.await`ed inline). Single-order path: zero atomic ops, zero heap allocs.
 
-See `latency_audit.md` for the source-level audit and `latency_improvements.md` for the response.
+24. **HTTP/2 via ALPN — DONE.** Added `"http2"` feature to reqwest. Cloudflare (which fronts the CLOB) negotiates HTTP/2 via ALPN, enabling multiplexed requests over a single TCP connection. Eliminates head-of-line blocking for concurrent tier-3 chunk submissions and saves connection setup overhead.
+
+25. **Connection pool idle timeout extended — DONE.** `pool_idle_timeout` increased from 60s to 300s. Prevents cold-start TLS handshakes after quiet periods (common during mid-inning breaks in baseball, ~3-4 minutes between scoring events). A full TLS handshake costs ~9ms; keeping the connection warm avoids this.
+
+26. **V2 pong fix in multiplexed burst drain — DONE.** Engine.IO `Ping` frames received during `now_or_never()` burst drain in `ws_multiplexed.rs` were silently dropped (`SioFrame::Ping => {}`). This caused V2 disconnects after ~25s (Engine.IO ping timeout). Fixed: pong is now sent inline during burst drain, with connection reset on pong failure.
+
+See `latency_audit.md` for the source-level audit, `latency_improvements.md` for the response, and `network_latency_audit.md` for the comprehensive network audit.
+
+## Guardian (Overturn Detection)
+
+Standalone Python system that monitors the hotpath's positions and detects VAR goal overturns in soccer. Runs as a separate process alongside the hotpath via `polybot2 guardian watch`.
+
+### Architecture
+
+```
+guardian/
+├── log_tailer.py      # JSONL log tail-follow (yields parsed events)
+├── state.py           # In-memory state: TrackedOrder, GameState, ScoreEvent, OverturnAlert
+├── tracker.py         # Main loop: tails log + WebSocket events + overturn detection
+├── clob_client.py     # Authenticated CLOB REST client (order queries, cancellation, sell orders via py_clob_client_v2 SDK)
+├── polymarket_ws.py   # Polymarket user channel WS (real-time fill notifications)
+├── market_ws.py       # Polymarket market channel WS (orderbook monitoring, no auth)
+├── overturn.py        # Dual-signal overturn detector
+├── executor.py        # Automated sell/cancel execution (dry-run by default)
+└── cli.py             # CLI: polybot2 guardian watch
+```
+
+### Overturn Detection (Dual-Signal)
+
+Two mandatory signals must BOTH confirm before acting:
+
+1. **Score reversal** (from hotpath log ticks): score decreased and held for >10s (configurable `--confirmation-window`). Disarms automatically if score restores within the window (wobble).
+2. **Market activity resumption** (from Polymarket market channel WS): best bid on affected tokens drops below threshold (configurable `--bid-threshold`, default $0.80), indicating the market no longer treats the outcome as determined.
+
+When both signals confirm: cancel all resting GTC orders triggered by the overturned goal, sell filled positions at current best bid.
+
+### Causal Mapping
+
+Orders are associated with the score change that triggered them via shared timestamps in the hotpath log. When a score reversal is detected, the system identifies all orders triggered by the reversed goal and marks them for unwinding.
+
+### Modes
+
+- **Dry-run (default):** `polybot2 guardian watch --run-id N --league epl --link-run-id N` — logs decisions without executing. Actions logged to `guardian_actions_*.jsonl`.
+- **Live:** `polybot2 guardian watch --run-id N --league epl --link-run-id N --live` — executes real cancel/sell orders.
+
+## Deposit Wallet Accounts
+
+New Polymarket accounts use deposit wallets (ERC-1967 proxies) with signature type 3 (`Poly1271`). The SDK handles ERC-7739 signature wrapping automatically.
+
+**Configuration for deposit wallet accounts:**
+```
+POLY_EXEC_SIGNATURE_TYPE=3
+POLY_EXEC_FUNDER=<deposit wallet address>
+POLY_EXEC_PRESIGN_PRIVATE_KEY=<EOA private key that owns the deposit wallet>
+```
+
+The `map_sdk_signature_type` function in `dispatch/mod.rs` maps integer 3 to `SdkSignatureType::Poly1271`. The funder validation in `sdk_exec.rs` accepts both `Proxy` (1) and `Poly1271` (3) with a funder address.
 
 ## Python Cleanup Audit
 

@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# bootstrap_polybot2_ubuntu.sh
+#
+# Sets up an Ubuntu 24.04 instance for polybot2:
+#   - OS-level build dependencies
+#   - Miniconda (base env with Python 3.11)
+#   - Rust toolchain via rustup
+#   - Python package + Rust native module build
+#   - Runtime directories, systemd unit, env file template
+#
+# Usage:
+#   cd /path/to/polybot2 && bash bootstrap_polybot2_ubuntu.sh
+#
+# Idempotent — safe to re-run after pulling new code.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+APP_USER="${APP_USER:-$(stat -c '%U' "$APP_DIR" 2>/dev/null || whoami)}"
+CONDA_DIR="${CONDA_DIR:-/home/$APP_USER/miniconda3}"
+PYTHON_VERSION="3.11"
+
+if [[ ! -f "$APP_DIR/pyproject.toml" ]]; then
+  echo "ERROR: $APP_DIR does not look like repo root (missing pyproject.toml)"
+  exit 1
+fi
+
+if [[ ! -d "$APP_DIR/.git" ]]; then
+  echo "ERROR: repo not initialized at $APP_DIR (missing .git). Pull/clone first."
+  exit 1
+fi
+
+run_as_app_user() {
+  if [[ "$(id -un)" == "$APP_USER" ]]; then
+    bash -lc "$*"
+  else
+    sudo -u "$APP_USER" -H bash -lc "$*"
+  fi
+}
+
+echo "=== polybot2 bootstrap (Ubuntu) ==="
+echo "Repo:        $APP_DIR"
+echo "App user:    $APP_USER"
+echo "Conda dir:   $CONDA_DIR"
+echo "Python:      $PYTHON_VERSION"
+echo
+
+# ───────────────────────────────────────────────────────────────────────────
+# 1. OS-level build dependencies
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Installing OS packages..."
+sudo apt-get update
+sudo apt-get -y upgrade
+sudo apt-get -y install \
+  git gcc g++ make pkg-config curl \
+  libssl-dev libffi-dev libbz2-dev liblzma-dev zlib1g-dev \
+  tar gzip wget htop tmux jq
+
+# ───────────────────────────────────────────────────────────────────────────
+# 1b. Network tuning (latency-critical trading settings)
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Applying network tuning..."
+
+# Persistent sysctl settings
+cat <<'SYSCTL' | sudo tee /etc/sysctl.d/99-trading.conf
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_no_metrics_save = 1
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 10
+net.ipv4.tcp_keepalive_probes = 3
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.default_qdisc = fq
+SYSCTL
+sudo sysctl --system
+
+# Apply fq qdisc to active interface immediately (sysctl only affects new interfaces)
+PRIMARY_IF=$(ip -o route get 1 2>/dev/null | awk '{print $5}')
+if [[ -n "$PRIMARY_IF" ]]; then
+  sudo tc qdisc replace dev "$PRIMARY_IF" root fq 2>/dev/null || true
+  echo "  Applied fq qdisc to $PRIMARY_IF"
+fi
+
+# Pin DNS for latency-critical hosts (eliminates 10ms+ DNS lookups per connection).
+# IPs are resolved at bootstrap time. If the services change IPs, re-run this script
+# or update /etc/hosts manually.
+pin_dns() {
+  local host="$1"
+  if grep -q "$host" /etc/hosts; then
+    echo "  $host already pinned in /etc/hosts"
+    return
+  fi
+  local ip
+  ip=$(getent ahosts "$host" 2>/dev/null | awk '$1 ~ /^[0-9]+\./{print $1; exit}')
+  if [[ -n "$ip" ]]; then
+    echo "$ip $host" | sudo tee -a /etc/hosts >/dev/null
+    echo "  Pinned $host → $ip"
+  else
+    echo "  WARNING: Could not resolve $host"
+  fi
+}
+
+pin_dns clob.polymarket.com
+pin_dns sportsapi.kalstropservice.com
+pin_dns stats.kalstropservice.com
+
+# ───────────────────────────────────────────────────────────────────────────
+# 2. Miniconda
+# ───────────────────────────────────────────────────────────────────────────
+if [[ ! -d "$CONDA_DIR" ]]; then
+  echo ">>> Installing Miniconda..."
+  INSTALLER="/tmp/miniconda_installer.sh"
+  ARCH="$(uname -m)"
+  curl -fsSL "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${ARCH}.sh" -o "$INSTALLER"
+  run_as_app_user "bash '$INSTALLER' -b -p '$CONDA_DIR'"
+  rm -f "$INSTALLER"
+
+  # Add conda init to shell profile
+  run_as_app_user "'$CONDA_DIR/bin/conda' init bash"
+else
+  echo ">>> Miniconda already installed at $CONDA_DIR"
+fi
+
+# Accept conda terms of service (required by newer conda versions)
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true"
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true"
+
+# ───────────────────────────────────────────────────────────────────────────
+# 3. Ensure base env has correct Python version
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Ensuring base conda env has Python $PYTHON_VERSION..."
+run_as_app_user "source '$CONDA_DIR/etc/profile.d/conda.sh' && conda install -y -n base python=$PYTHON_VERSION"
+
+# ───────────────────────────────────────────────────────────────────────────
+# 4. Rust toolchain
+# ───────────────────────────────────────────────────────────────────────────
+if ! run_as_app_user 'command -v rustup >/dev/null 2>&1'; then
+  echo ">>> Installing Rust toolchain..."
+  run_as_app_user 'curl https://sh.rustup.rs -sSf | sh -s -- -y'
+else
+  echo ">>> Rust toolchain already installed"
+  run_as_app_user 'source ~/.cargo/env && rustup update stable'
+fi
+run_as_app_user 'source ~/.cargo/env && rustc --version && cargo --version'
+
+# ───────────────────────────────────────────────────────────────────────────
+# 5. Runtime directories
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Setting up runtime directories..."
+sudo mkdir -p /var/log/polybot2 "$APP_DIR/runtime" /etc/polybot2
+sudo chown -R "$APP_USER:$APP_USER" /var/log/polybot2 "$APP_DIR/runtime"
+
+# ───────────────────────────────────────────────────────────────────────────
+# 6. Python deps + native Rust module build
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Installing Python deps and building native module..."
+run_as_app_user "
+  source '$CONDA_DIR/etc/profile.d/conda.sh'
+  source ~/.cargo/env
+
+  cd '$APP_DIR'
+  pip install -U pip wheel setuptools maturin
+  pip install -e '.[dev]'
+  pip install 'httpx[http2]'
+  maturin develop --release --manifest-path native/polybot2_native/Cargo.toml
+"
+
+# ───────────────────────────────────────────────────────────────────────────
+# 7. Smoke tests
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Running smoke tests..."
+run_as_app_user "
+  source '$CONDA_DIR/etc/profile.d/conda.sh'
+
+  cd '$APP_DIR'
+  cargo test --manifest-path native/polybot2_native/Cargo.toml -q
+  pytest -q tests/test_polybot2_cli_smoke.py tests/test_polybot2_execution_hotpath_imports.py || true
+"
+
+# ───────────────────────────────────────────────────────────────────────────
+# 8. systemd service unit
+# ───────────────────────────────────────────────────────────────────────────
+echo ">>> Installing systemd unit..."
+CONDA_ACTIVATE="source $CONDA_DIR/etc/profile.d/conda.sh && source ~/.cargo/env"
+
+sudo tee /etc/systemd/system/polybot2-hotpath.service >/dev/null <<UNIT
+[Unit]
+Description=polybot2 hotpath service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$APP_USER
+Group=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=/etc/polybot2/polybot2.env
+ExecStart=/bin/bash -lc '$CONDA_ACTIVATE && polybot2 \${POLYBOT2_COMMAND}'
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGINT
+LimitNOFILE=65535
+StandardOutput=append:/var/log/polybot2/hotpath.log
+StandardError=append:/var/log/polybot2/hotpath.err
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# ───────────────────────────────────────────────────────────────────────────
+# 9. Environment file template (only create if missing)
+# ───────────────────────────────────────────────────────────────────────────
+if [[ ! -f /etc/polybot2/polybot2.env ]]; then
+  echo ">>> Creating env file template at /etc/polybot2/polybot2.env..."
+  sudo tee /etc/polybot2/polybot2.env >/dev/null <<'ENV'
+# =============================================================================
+# POLYMARKET CREDENTIALS
+# =============================================================================
+POLY_EXEC_API_KEY=__SET_ME__
+POLY_EXEC_API_SECRET=__SET_ME__
+POLY_EXEC_API_PASSPHRASE=__SET_ME__
+POLY_EXEC_PRESIGN_PRIVATE_KEY=__SET_ME__
+POLY_EXEC_FUNDER=__SET_ME__
+POLY_EXEC_SIGNATURE_TYPE=1
+POLY_EXEC_CLOB_HOST=https://clob.polymarket.com
+
+# =============================================================================
+# PROVIDER CREDENTIALS
+# =============================================================================
+KALSTROP_CLIENT_ID=__SET_ME__
+KALSTROP_SHARED_SECRET_RAW=__SET_ME__
+BOLTODDS_API_KEY=__SET_ME__
+
+# =============================================================================
+# HOTPATH COMMAND
+# Edit for your actual run-id, db path, and execution mode.
+# =============================================================================
+POLYBOT2_COMMAND=hotpath live --league mlb --execution-mode paper
+ENV
+  sudo chmod 600 /etc/polybot2/polybot2.env
+  sudo chown "$APP_USER:$APP_USER" /etc/polybot2/polybot2.env
+else
+  echo ">>> Env file already exists at /etc/polybot2/polybot2.env (not overwriting)"
+fi
+
+sudo systemctl daemon-reload
+
+# ───────────────────────────────────────────────────────────────────────────
+# Done
+# ───────────────────────────────────────────────────────────────────────────
+echo
+echo "=== Bootstrap complete ==="
+echo
+echo "Env file:    /etc/polybot2/polybot2.env"
+echo
+echo "Before running the hotpath, complete the prerequisite pipeline:"
+echo "  cd $APP_DIR"
+echo "  polybot2 market sync"
+echo "  polybot2 provider sync"
+echo "  polybot2 link build"
+echo
+echo "Then run the hotpath interactively:"
+echo "  polybot2 hotpath live --league mlb --execution-mode paper"
+echo
+echo "To install additional packages:"
+echo "  conda install <package>"
+echo "  pip install <package>"
+echo
+echo "To rebuild after pulling new code:"
+echo "  cd $APP_DIR"
+echo "  pip install -e '.[dev]'"
+echo "  maturin develop --release --manifest-path native/polybot2_native/Cargo.toml"

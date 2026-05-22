@@ -897,10 +897,10 @@ fn live_fast_submit_single_gtc_min_size_rejection() {
         let request = OrderRequestData {
             token_id: token_id.clone(),
             side: "buy_yes".to_string(),
-            amount_usdc: 1.0,
+            amount_usdc: 0.25,
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::GTC,
-            size_shares: 2.0,
+            size_shares: 0.5,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");

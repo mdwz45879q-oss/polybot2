@@ -46,7 +46,7 @@ impl FastClobSubmitClient {
             .map_err(|e| format!("submitter_invalid_api_secret_base64:{}", e))?;
         let http = ReqwestClient::builder()
             .tcp_nodelay(true)
-            .pool_idle_timeout(Some(std::time::Duration::from_secs(60)))
+            .pool_idle_timeout(Some(std::time::Duration::from_secs(300)))
             .pool_max_idle_per_host(30)
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(10))
