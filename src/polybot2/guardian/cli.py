@@ -105,7 +105,7 @@ def _render_tracker_state(state: TrackerState, detector: OverturnDetector | None
     return "\n".join(lines) + "\n"
 
 
-def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
+async def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
     """Run the guardian: order state tracking + overturn detection."""
     log_file = str(getattr(args, "log_file", "") or "").strip()
     if not log_file:
@@ -256,7 +256,7 @@ def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
     tracker.set_on_update(_on_update)
 
     try:
-        asyncio.run(tracker.run_watch())
+        await tracker.run_watch()
     except KeyboardInterrupt:
         pass
     finally:
@@ -265,7 +265,7 @@ def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
         if executor:
             executor.close()
         if clob:
-            asyncio.run(clob.close())
+            await clob.close()
 
     # Final render
     print(_render_tracker_state(tracker.state, detector=detector))

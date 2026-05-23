@@ -38,8 +38,8 @@ LIVE_BETTING_MARKET_TYPES = {
 # Centralized hotpath execution profile used by league runtime plugins.
 HOTPATH_EXECUTION_POLICY = {
     "mlb": {
-        "amount_usdc": 500.0,
-        "size_shares": 500.0,
+        "amount_usdc": 750.0,
+        "size_shares": 750.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
@@ -77,6 +77,14 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_size_shares": 25.0, 
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
+        "market_overrides": {
+        "soccer_halftime_result": {"amount_usdc": 150.0, "size_shares": 150.0,
+                    "secondary_amount_usdc": 150.0, "secondary_size_shares": 150.0},
+        "moneyline":{"amount_usdc": 150.0, "size_shares": 150.0,
+                    "secondary_amount_usdc": 150.0, "secondary_size_shares": 150.0},
+        "spreads":{"amount_usdc": 150.0, "size_shares": 150.0,
+                    "secondary_amount_usdc": 150.0, "secondary_size_shares": 150.0},
+                    },
     }
 }
 
