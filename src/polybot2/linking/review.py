@@ -955,6 +955,7 @@ class LinkReviewService:
                     canonical_home_team=str(game.get("canonical_home_team") or ""),
                     canonical_away_team=str(game.get("canonical_away_team") or ""),
                     game_date_et=str(game.get("game_date_et") or ""),
+                    selected_event_id=str(game.get("selected_event_id") or ""),
                     exclude_provider=p,
                     exclude_game_id=gid,
                 ),
@@ -968,25 +969,30 @@ class LinkReviewService:
         canonical_home_team: str,
         canonical_away_team: str,
         game_date_et: str,
+        selected_event_id: str = "",
         exclude_provider: str,
         exclude_game_id: str,
     ) -> list[dict[str, Any]]:
-        """Return other provider games for the same canonical game."""
+        """Return other provider games for the same canonical game and event."""
         if not canonical_home_team or not canonical_away_team or not game_date_et:
             return []
         rows = self._db.execute(
             """
-            SELECT provider, provider_game_id, home_raw, away_raw, when_raw,
-                   league_raw, sport_raw, game_label, parse_status, binding_status
-            FROM link_run_provider_games
-            WHERE run_id = ?
-              AND canonical_home_team = ?
-              AND canonical_away_team = ?
-              AND game_date_et = ?
-              AND NOT (provider = ? AND provider_game_id = ?)
-            ORDER BY provider, provider_game_id
+            SELECT pg.provider, pg.provider_game_id, pg.home_raw, pg.away_raw, pg.when_raw,
+                   pg.league_raw, pg.sport_raw, pg.game_label, pg.parse_status, pg.binding_status
+            FROM link_run_provider_games pg
+            LEFT JOIN link_run_game_reviews gr
+              ON gr.run_id = pg.run_id AND gr.provider = pg.provider AND gr.provider_game_id = pg.provider_game_id
+            WHERE pg.run_id = ?
+              AND pg.canonical_home_team = ?
+              AND pg.canonical_away_team = ?
+              AND pg.game_date_et = ?
+              AND (? = '' OR COALESCE(gr.selected_event_id, '') = ? OR COALESCE(gr.selected_event_id, '') = '')
+              AND NOT (pg.provider = ? AND pg.provider_game_id = ?)
+            ORDER BY pg.provider, pg.provider_game_id
             """,
             (run_id, canonical_home_team, canonical_away_team, game_date_et,
+             selected_event_id, selected_event_id,
              exclude_provider, exclude_game_id),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1057,27 +1063,35 @@ class LinkReviewService:
         )
         row = self._db.execute(
             """
-            SELECT canonical_home_team, canonical_away_team, game_date_et
-            FROM link_run_provider_games
-            WHERE run_id = ? AND provider = ? AND provider_game_id = ?
+            SELECT pg.canonical_home_team, pg.canonical_away_team, pg.game_date_et,
+                   gr.selected_event_id
+            FROM link_run_provider_games pg
+            LEFT JOIN link_run_game_reviews gr
+              ON gr.run_id = pg.run_id AND gr.provider = pg.provider AND gr.provider_game_id = pg.provider_game_id
+            WHERE pg.run_id = ? AND pg.provider = ? AND pg.provider_game_id = ?
             """,
             (int(run_id), _norm(provider), str(provider_game_id)),
         ).fetchone()
         if row is None:
             return result
+        selected_event_id = str(row["selected_event_id"] or "")
         siblings = self._db.execute(
             """
-            SELECT provider, provider_game_id
-            FROM link_run_provider_games
-            WHERE run_id = ?
-              AND canonical_home_team = ?
-              AND canonical_away_team = ?
-              AND game_date_et = ?
-              AND NOT (provider = ? AND provider_game_id = ?)
-              AND parse_status = 'ok'
+            SELECT pg.provider, pg.provider_game_id
+            FROM link_run_provider_games pg
+            LEFT JOIN link_run_game_reviews gr
+              ON gr.run_id = pg.run_id AND gr.provider = pg.provider AND gr.provider_game_id = pg.provider_game_id
+            WHERE pg.run_id = ?
+              AND pg.canonical_home_team = ?
+              AND pg.canonical_away_team = ?
+              AND pg.game_date_et = ?
+              AND (? = '' OR COALESCE(gr.selected_event_id, '') = ? OR COALESCE(gr.selected_event_id, '') = '')
+              AND NOT (pg.provider = ? AND pg.provider_game_id = ?)
+              AND pg.parse_status = 'ok'
             """,
             (int(run_id), row["canonical_home_team"], row["canonical_away_team"],
-             row["game_date_et"], _norm(provider), str(provider_game_id)),
+             row["game_date_et"], selected_event_id, selected_event_id,
+             _norm(provider), str(provider_game_id)),
         ).fetchall()
         for sib in siblings:
             try:

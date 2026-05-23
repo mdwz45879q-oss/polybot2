@@ -113,8 +113,13 @@ impl DispatchHandle {
                 self.presign_templates[idx] = tpls;
             }
             if let Some(signed_orders) = new_presigned.remove(token_id) {
-                for signed in signed_orders {
-                    if let Ok(payload) = prepare_payload_from_signed(signed) {
+                let tifs: smallvec::SmallVec<[OrderTimeInForce; 2]> = self.presign_templates[idx]
+                    .iter()
+                    .map(|t| t.time_in_force)
+                    .collect();
+                for (i, signed) in signed_orders.into_iter().enumerate() {
+                    let tif = tifs.get(i).copied().unwrap_or(OrderTimeInForce::FAK);
+                    if let Ok(payload) = prepare_payload_from_signed(signed, tif) {
                         self.presign_pool[idx].push(Box::new(payload));
                     }
                 }
@@ -183,9 +188,10 @@ pub(crate) async fn warm_presign_startup_into(
                 let s = signer.clone();
                 let tpl = template.clone();
                 let i = *idx;
+                let tif = tpl.time_in_force;
                 tokio::spawn(async move {
                     let result = super::sdk_exec::sign_order_batch(&c, &s, &tpl, 1).await;
-                    (i, tpl.token_id, result)
+                    (i, tpl.token_id, tif, result)
                 })
             })
             .collect();
@@ -200,13 +206,13 @@ pub(crate) async fn warm_presign_startup_into(
             })?;
 
         for result in results {
-            let (idx, token_id, batch_result) =
+            let (idx, token_id, tif, batch_result) =
                 result.map_err(|e| format!("presign_task_panicked:{}", e))?;
             let signed_orders = batch_result.map_err(|e| {
                 format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
             })?;
             if let Some(signed) = signed_orders.into_iter().next() {
-                pool[idx].push(Box::new(prepare_payload_from_signed(signed)?));
+                pool[idx].push(Box::new(prepare_payload_from_signed(signed, tif)?));
             }
         }
 
@@ -236,8 +242,9 @@ pub(crate) async fn warm_presign_startup_into(
 
 pub(crate) fn prepare_payload_from_signed(
     signed: SdkSignedOrder,
+    time_in_force: OrderTimeInForce,
 ) -> Result<PreparedOrderPayload, String> {
     let order_json =
         serde_json::to_vec(&signed).map_err(|e| format!("presign_serialize_failed:{}", e))?;
-    Ok(PreparedOrderPayload { order_json })
+    Ok(PreparedOrderPayload { order_json, time_in_force })
 }

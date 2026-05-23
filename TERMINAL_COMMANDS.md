@@ -167,7 +167,55 @@ jq 'select(.ev == "tick" and .gid == "Chelsea vs Arsenal, 2026-05-04, 15")' logs
 tail -f logs/hotpath_*.jsonl | jq --unbuffered 'select(.ev == "order")'
 ```
 
-## 5) Raw Score Frame Capture
+### Compile plan (dry-run)
+
+Verify the compiler output before trading:
+
+```bash
+polybot2 hotpath compile --league epl
+polybot2 hotpath compile --league mlb --link-run-id 1
+```
+
+Prints team-resolved semantics, flags `⚠️ UNKNOWN SEMANTIC`, `⚠️ GENERIC KEY`, `⚠️ DUPLICATE SEMANTIC`.
+
+## 5) Guardian (Overturn Detection)
+
+### Watch mode (dry-run, default)
+
+Run alongside a live hotpath to monitor positions and detect VAR overturns:
+
+```bash
+# Auto-discover latest log file:
+polybot2 guardian watch --run-id <N> --league epl --link-run-id <N>
+
+# Specify log file directly:
+polybot2 guardian watch --log-file logs/hotpath_1_20260517T183200Z.jsonl --league epl --link-run-id <N>
+```
+
+### Snapshot mode (one-shot, print current state and exit)
+
+```bash
+polybot2 guardian watch --snapshot --log-file logs/hotpath_1_20260517T183200Z.jsonl
+```
+
+### Live mode (real cancel/sell execution)
+
+```bash
+polybot2 guardian watch --run-id <N> --league epl --link-run-id <N> --live
+```
+
+### Tuning
+
+```bash
+polybot2 guardian watch --run-id <N> --league epl --link-run-id <N> \
+  --bid-threshold 0.80 \
+  --confirmation-window 10
+```
+
+- `--bid-threshold`: best bid below this triggers Signal 2 (default: 0.80)
+- `--confirmation-window`: seconds score must stay reversed before Signal 1 confirms (default: 10)
+
+## 6) Raw Score Frame Capture
 
 Standalone scripts in `scripts/` (not part of the CLI):
 
@@ -185,7 +233,7 @@ python scripts/capture_boltodds.py --games-file games.json --out ./captures --du
 python scripts/capture_kalstrop_v2.py --fixture-id <EVENT_ID> --out ./captures --duration 7200
 ```
 
-## 6) Tests
+## 7) Tests
 
 ```bash
 # Rust tests:
@@ -198,7 +246,7 @@ pytest tests/ --ignore=tests/live -q
 pytest tests/test_polybot2_hotpath_observe.py -k "heartbeat"
 ```
 
-## 7) DB Inspection
+## 8) DB Inspection
 
 List recent link runs:
 

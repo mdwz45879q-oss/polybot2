@@ -67,7 +67,7 @@ impl DispatchHandle {
             for (target_idx, _) in &batch {
                 let (sk, tok) = self.resolve_strings(*target_idx);
                 if let Ok(mut g) = log.lock() {
-                    g.log_order_err(sk, tok, "submit_channel_uninitialized");
+                    g.log_order_err(sk, tok, "submit_channel_uninitialized", "");
                 }
             }
             return;
@@ -81,7 +81,7 @@ impl DispatchHandle {
                 for (target_idx, _) in returned {
                     let (sk, tok) = self.resolve_strings(target_idx);
                     if let Ok(mut g) = log.lock() {
-                        g.log_order_err(sk, tok, "submit_ring_full");
+                        g.log_order_err(sk, tok, "submit_ring_full", "");
                     }
                 }
             }
@@ -98,7 +98,7 @@ pub(crate) fn dispatch_intents(
         for intent in intents {
             let (sk, tok) = handle.resolve_strings(intent.target_idx);
             if let Ok(mut g) = log.lock() {
-                g.log_order_ok(sk, tok, "noop");
+                g.log_order_ok(sk, tok, "noop", "");
             }
         }
     } else {
@@ -113,7 +113,7 @@ pub(crate) fn dispatch_intents(
                 Err(err) => {
                     let (sk, tok) = handle.resolve_strings(intent.target_idx);
                     if let Ok(mut g) = log.lock() {
-                        g.log_order_err(sk, tok, &err);
+                        g.log_order_err(sk, tok, &err, "");
                     }
                 }
             }

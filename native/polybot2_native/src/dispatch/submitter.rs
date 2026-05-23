@@ -15,6 +15,7 @@ const CLOB_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_s
 struct ChunkScratch {
     body_buf: Vec<u8>,
     idxs_buf: Vec<crate::TargetIdx>,
+    tifs_buf: Vec<OrderTimeInForce>,
 }
 
 fn with_submitter_health<F>(health: &Arc<Mutex<crate::SubmitterHealth>>, mut f: F)
@@ -50,7 +51,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
         if let Err(err) = sub.ensure_sdk_runtime_async().await {
             set_init_error(&sub.health, &err);
             if let Ok(mut g) = sub.log.lock() {
-                g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err));
+                g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err), "");
             }
             drain_channel_with_error(&mut sub, &err).await;
             return;
@@ -60,7 +61,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             Err(err) => {
                 set_init_error(&sub.health, &err);
                 if let Ok(mut g) = sub.log.lock() {
-                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err));
+                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err), "");
                 }
                 drain_channel_with_error(&mut sub, &err).await;
                 return;
@@ -77,7 +78,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             Err(err) => {
                 set_init_error(&sub.health, &err);
                 if let Ok(mut g) = sub.log.lock() {
-                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err));
+                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err), "");
                 }
                 drain_channel_with_error(&mut sub, &err).await;
                 return;
@@ -91,7 +92,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
     let mut submit_rx = sub.submit_rx;
     let shared_registry = sub.shared_registry;
     let stop_flag = sub.stop_flag;
-    let mut scratch = ChunkScratch { body_buf: Vec::new(), idxs_buf: Vec::new() };
+    let mut scratch = ChunkScratch { body_buf: Vec::new(), idxs_buf: Vec::new(), tifs_buf: Vec::new() };
     let mut last_clob_activity = Instant::now();
 
     'outer: loop {
@@ -135,7 +136,7 @@ async fn drain_channel_with_error(sub: &mut OrderSubmitter, err: &str) {
                 SubmitWork::Batch(b) => {
                     let reg_guard = sub.shared_registry.load();
                     for (target_idx, _) in b {
-                        log_outcome_idx(&sub.log, &*reg_guard, target_idx, &Err(err.to_string()));
+                        log_outcome_idx(&sub.log, &*reg_guard, target_idx, &Err(err.to_string()), OrderTimeInForce::FAK);
                     }
                 }
             }
@@ -167,21 +168,22 @@ async fn submit_batch_task(
     // Tier 1: single order — bare await, no overhead.
     if batch_len == 1 {
         let (target_idx, prepared) = batch.into_iter().next().unwrap();
+        let tif = prepared.time_in_force;
         let outcome = match client_ref.post_order_bytes_single(prepared.order_json).await {
             Ok(resp) => {
                 map_post_response(resp.success, resp.order_id, resp.error_msg, "submit_failed")
             }
             Err(e) => Err(format!("submit_failed:{}", e)),
         };
-        log_outcome_idx(log, registry, target_idx, &outcome);
+        log_outcome_idx(log, registry, target_idx, &outcome, tif);
         return;
     }
 
     // Tier 2: 2..=15 — one POST /orders call (1 HMAC, 1 HTTP request).
     // All orders hit the wire in a single TCP segment.
     if batch_len <= MAX_CLOB_BATCH {
-        let target_idxs: smallvec::SmallVec<[crate::TargetIdx; 32]> =
-            batch.iter().map(|(idx, _)| *idx).collect();
+        let meta: smallvec::SmallVec<[(crate::TargetIdx, OrderTimeInForce); 32]> =
+            batch.iter().map(|(idx, p)| (*idx, p.time_in_force)).collect();
         scratch.body_buf.clear();
         scratch.body_buf.push(b'[');
         for (i, (_, prepared)) in batch.into_iter().enumerate() {
@@ -193,14 +195,15 @@ async fn submit_batch_task(
         scratch.body_buf.push(b']');
         let chunk_body = std::mem::take(&mut scratch.body_buf);
 
-        let outcomes: Vec<(crate::TargetIdx, Result<String, String>)> =
+        let outcomes: Vec<(crate::TargetIdx, OrderTimeInForce, Result<String, String>)> =
             match client_ref.post_orders_bytes(chunk_body).await {
                 Ok(responses) => {
                     let resp_len = responses.len();
-                    let mut out = Vec::with_capacity(target_idxs.len());
-                    for (tidx, resp) in target_idxs.iter().zip(&responses) {
+                    let mut out = Vec::with_capacity(meta.len());
+                    for ((tidx, tif), resp) in meta.iter().zip(&responses) {
                         out.push((
                             *tidx,
+                            *tif,
                             map_post_response(
                                 resp.success,
                                 resp.order_id.clone(),
@@ -209,65 +212,67 @@ async fn submit_batch_task(
                             ),
                         ));
                     }
-                    if resp_len < target_idxs.len() {
+                    if resp_len < meta.len() {
                         let err = format!(
                             "batch_response_short:expected={},got={}",
-                            target_idxs.len(),
+                            meta.len(),
                             resp_len
                         );
-                        for tidx in &target_idxs[resp_len..] {
-                            out.push((*tidx, Err(err.clone())));
+                        for (tidx, tif) in &meta[resp_len..] {
+                            out.push((*tidx, *tif, Err(err.clone())));
                         }
                     }
                     out
                 }
                 Err(e) => {
                     let err = format!("batch_submit_failed:{}", e);
-                    target_idxs
-                        .iter()
-                        .map(|tidx| (*tidx, Err(err.clone())))
+                    meta.iter()
+                        .map(|(tidx, tif)| (*tidx, *tif, Err(err.clone())))
                         .collect()
                 }
             };
-        for (target_idx, outcome) in outcomes {
-            log_outcome_idx(log, registry, target_idx, &outcome);
+        for (target_idx, tif, outcome) in outcomes {
+            log_outcome_idx(log, registry, target_idx, &outcome, tif);
         }
         return;
     }
 
     // Tier 3: >15 — chunk into groups of MAX_CLOB_BATCH, fire concurrently.
     let num_chunks = (batch_len + MAX_CLOB_BATCH - 1) / MAX_CLOB_BATCH;
-    let mut chunk_jobs: Vec<(Vec<crate::TargetIdx>, Vec<u8>)> = Vec::with_capacity(num_chunks);
+    let mut chunk_jobs: Vec<(Vec<(crate::TargetIdx, OrderTimeInForce)>, Vec<u8>)> = Vec::with_capacity(num_chunks);
     let mut items = batch.into_iter();
     let mut offset = 0usize;
     while offset < batch_len {
         let chunk_len = (batch_len - offset).min(MAX_CLOB_BATCH);
         scratch.idxs_buf.clear();
+        scratch.tifs_buf.clear();
         scratch.body_buf.clear();
         scratch.body_buf.push(b'[');
+        let mut chunk_meta: Vec<(crate::TargetIdx, OrderTimeInForce)> = Vec::with_capacity(chunk_len);
         for i in 0..chunk_len {
             let (tidx, prepared) = items.next().unwrap();
-            scratch.idxs_buf.push(tidx);
+            chunk_meta.push((tidx, prepared.time_in_force));
             if i > 0 {
                 scratch.body_buf.push(b',');
             }
             scratch.body_buf.extend_from_slice(&prepared.order_json);
         }
         scratch.body_buf.push(b']');
-        chunk_jobs.push((scratch.idxs_buf.clone(), scratch.body_buf.clone()));
+        chunk_jobs.push((chunk_meta, scratch.body_buf.clone()));
         offset += chunk_len;
     }
 
-    let futures = chunk_jobs.into_iter().map(|(chunk_idxs, chunk_body)| {
+    let futures = chunk_jobs.into_iter().map(|(chunk_meta, chunk_body)| {
         let client = Arc::clone(client_ref);
         async move {
             match client.post_orders_bytes(chunk_body).await {
                 Ok(responses) => {
                     let resp_len = responses.len();
-                    let mut out = Vec::with_capacity(chunk_idxs.len());
-                    for (tidx, resp) in chunk_idxs.iter().zip(&responses) {
+                    let mut out = Vec::with_capacity(chunk_meta.len());
+                    for ((tidx, tif), resp) in chunk_meta.iter().zip(&responses) {
                         out.push((
                             *tidx,
+                            *tif,
                             map_post_response(
                                 resp.success,
                                 resp.order_id.clone(),
@@ -276,23 +281,23 @@ async fn submit_batch_task(
                             ),
                         ));
                     }
-                    if resp_len < chunk_idxs.len() {
+                    if resp_len < chunk_meta.len() {
                         let err = format!(
                             "batch_response_short:expected={},got={}",
-                            chunk_idxs.len(),
+                            chunk_meta.len(),
                             resp_len
                         );
-                        for tidx in &chunk_idxs[resp_len..] {
-                            out.push((*tidx, Err(err.clone())));
+                        for (tidx, tif) in &chunk_meta[resp_len..] {
+                            out.push((*tidx, *tif, Err(err.clone())));
                         }
                     }
                     out
                 }
                 Err(e) => {
                     let err = format!("batch_submit_failed:{}", e);
-                    chunk_idxs
+                    chunk_meta
                         .iter()
-                        .map(|tidx| (*tidx, Err(err.clone())))
+                        .map(|(tidx, tif)| (*tidx, *tif, Err(err.clone())))
                         .collect()
                 }
             }
@@ -301,8 +306,8 @@ async fn submit_batch_task(
 
     let chunk_results = join_all(futures).await;
     for outcomes in chunk_results {
-        for (target_idx, outcome) in outcomes {
-            log_outcome_idx(log, registry, target_idx, &outcome);
+        for (target_idx, tif, outcome) in outcomes {
+            log_outcome_idx(log, registry, target_idx, &outcome, tif);
         }
     }
 }
@@ -423,11 +428,20 @@ pub(crate) fn simulate_small_batch_mapping_for_test(
     outcomes
 }
 
+fn tif_str(tif: OrderTimeInForce) -> &'static str {
+    match tif {
+        OrderTimeInForce::FAK => "FAK",
+        OrderTimeInForce::FOK => "FOK",
+        OrderTimeInForce::GTC => "GTC",
+    }
+}
+
 fn log_outcome_idx(
     log: &Arc<Mutex<LogWriter>>,
     registry: &crate::TargetRegistry,
     target_idx: crate::TargetIdx,
     outcome: &Result<String, String>,
+    tif: OrderTimeInForce,
 ) {
     let (sk, tok): (&str, &str) = match registry.targets.get(target_idx.0 as usize) {
         Some(target) => match registry.tokens.get(target.token_idx.0 as usize) {
@@ -436,10 +450,11 @@ fn log_outcome_idx(
         },
         None => ("_", "_"),
     };
+    let tif_s = tif_str(tif);
     if let Ok(mut g) = log.lock() {
         match outcome {
-            Ok(eid) => g.log_order_ok(sk, tok, eid),
-            Err(err) => g.log_order_err(sk, tok, err),
+            Ok(eid) => g.log_order_ok(sk, tok, eid, tif_s),
+            Err(err) => g.log_order_err(sk, tok, err, tif_s),
         }
     }
 }

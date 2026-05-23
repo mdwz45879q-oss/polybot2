@@ -96,6 +96,8 @@ class OverturnDetector:
                 affected_orders=list(affected),
                 affected_token_ids=affected_tokens,
             )
+            if game_id in self.alerts:
+                self._cleanup_alert(game_id)
             self.alerts[game_id] = alert
 
             # Register tokens for market monitoring
@@ -140,7 +142,7 @@ class OverturnDetector:
         if not token_id:
             return
 
-        bid = data.get("bid")
+        bid = data.get("best_bid")
         if bid is not None:
             try:
                 self._best_bids[token_id] = float(bid)
@@ -198,7 +200,6 @@ class OverturnDetector:
     def _check_and_trigger(self, alert: OverturnAlert) -> bool:
         """If both signals confirmed, trigger the overturn response."""
         if alert.signal1_confirmed and alert.signal2_confirmed and not alert.acted:
-            alert.acted = True
             logger.warning(
                 "🚨 OVERTURN CONFIRMED for %s — TRIGGERING sell/cancel for %d orders",
                 alert.game_id, len(alert.affected_orders),
@@ -206,9 +207,34 @@ class OverturnDetector:
             if self._on_overturn_triggered:
                 result = self._on_overturn_triggered(alert)
                 if asyncio.iscoroutine(result):
-                    asyncio.ensure_future(result)
+                    task = asyncio.ensure_future(result)
+                    task.add_done_callback(
+                        lambda t, a=alert: self._on_execution_done(t, a)
+                    )
+                else:
+                    # Synchronous callback completed — mark acted
+                    alert.acted = True
+            else:
+                alert.acted = True
             return True
         return False
+
+    def _on_execution_done(self, task: asyncio.Task, alert: OverturnAlert) -> None:
+        """Callback after async overturn execution completes or fails."""
+        exc = task.exception()
+        if exc is None:
+            alert.acted = True
+            logger.info("overturn execution completed for %s", alert.game_id)
+        else:
+            # Execution failed — do NOT mark acted, allow retry on next check
+            logger.error(
+                "🚨 OVERTURN EXECUTION FAILED for %s: %s — will retry on next confirmation check",
+                alert.game_id, exc,
+            )
+            # Reset both signals so check_confirmations re-evaluates
+            # (signals are still true from the data, so it will re-trigger immediately)
+            alert.signal1_confirmed = True
+            alert.signal2_confirmed = True
 
     def _find_original_goal_event(
         self,

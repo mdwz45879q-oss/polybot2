@@ -321,7 +321,7 @@ mod tests {
         run_timed("dispatch_channel_send (1 intent)", 10000, || {
             let signed = make_dummy_signed_order();
             let mut batch = crate::dispatch::SubmitBatch::new();
-            let prepared = crate::dispatch::prepare_payload_from_signed(signed)
+            let prepared = crate::dispatch::prepare_payload_from_signed(signed, crate::OrderTimeInForce::FAK)
                 .expect("serialize signed order");
             batch.push((TargetIdx(0), Box::new(prepared)));
             let work = crate::dispatch::SubmitWork::Batch(batch);
@@ -333,7 +333,7 @@ mod tests {
             let mut batch = crate::dispatch::SubmitBatch::new();
             for i in 0..4u16 {
                 let prepared =
-                    crate::dispatch::prepare_payload_from_signed(make_dummy_signed_order())
+                    crate::dispatch::prepare_payload_from_signed(make_dummy_signed_order(), crate::OrderTimeInForce::FAK)
                         .expect("serialize signed order");
                 batch.push((TargetIdx(i), Box::new(prepared)));
             }

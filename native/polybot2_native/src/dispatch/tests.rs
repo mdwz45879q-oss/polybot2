@@ -97,7 +97,7 @@ fn dispatch_target_inline(
     if matches!(handle.cfg.mode, DispatchMode::Noop) {
         let (sk, tok) = handle.resolve_strings(target_idx);
         if let Ok(mut g) = log.lock() {
-            g.log_order_ok(sk, tok, "noop");
+            g.log_order_ok(sk, tok, "noop", "");
         }
         return;
     }
@@ -112,7 +112,7 @@ fn dispatch_target_inline(
         Err(err) => {
             let (sk, tok) = handle.resolve_strings(target_idx);
             if let Ok(mut g) = log.lock() {
-                g.log_order_err(sk, tok, &err);
+                g.log_order_err(sk, tok, &err, "");
             }
         }
     }
@@ -142,7 +142,7 @@ fn make_dummy_signed_order() -> SdkSignedOrder {
 
 fn make_dummy_prepared_payload() -> Box<PreparedOrderPayload> {
     Box::new(
-        super::presign_pool::prepare_payload_from_signed(make_dummy_signed_order())
+        super::presign_pool::prepare_payload_from_signed(make_dummy_signed_order(), OrderTimeInForce::FAK)
             .expect("serialize dummy order"),
     )
 }
@@ -821,7 +821,7 @@ fn live_fast_submit_single_min_notional_rejection() {
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
         let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
-        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap(), OrderTimeInForce::FAK).expect("serialize");
 
         let result = fast_client.post_order_bytes_single(payload.order_json).await;
         match result {
@@ -863,7 +863,7 @@ fn live_fast_submit_single_fok_min_notional_rejection() {
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
         let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
-        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap(), OrderTimeInForce::FAK).expect("serialize");
 
         let result = fast_client.post_order_bytes_single(payload.order_json).await;
         match result {
@@ -905,7 +905,7 @@ fn live_fast_submit_single_gtc_min_size_rejection() {
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
         let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
-        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap(), OrderTimeInForce::FAK).expect("serialize");
 
         let result = fast_client.post_order_bytes_single(payload.order_json).await;
         match result {
@@ -949,7 +949,7 @@ fn live_order_to_wire_latency_estimate() {
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
         let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
-        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap(), OrderTimeInForce::FAK).expect("serialize");
         let order_bytes = payload.order_json;
 
         // === Part 1: HMAC + header construction (pure CPU, no network) ===
@@ -1056,7 +1056,7 @@ fn live_concurrent_submit_latency_estimate() {
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
         let signed = sign_order_batch(client_ref, signer, &request, 1).await.expect("sign");
-        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap()).expect("serialize");
+        let payload = prepare_payload_from_signed(signed.into_iter().next().unwrap(), OrderTimeInForce::FAK).expect("serialize");
         let order_bytes = payload.order_json;
 
         // Warm up connection pool with one request
@@ -1124,7 +1124,7 @@ fn live_fast_submit_batch_rejection() {
         let signed = sign_order_batch(client_ref, signer, &request, 2).await.expect("sign batch");
         let mut payloads: Vec<Vec<u8>> = Vec::new();
         for s in signed {
-            let p = prepare_payload_from_signed(s).expect("serialize");
+            let p = prepare_payload_from_signed(s, OrderTimeInForce::FAK).expect("serialize");
             payloads.push(p.order_json);
         }
         let slices: Vec<&[u8]> = payloads.iter().map(|b| b.as_slice()).collect();

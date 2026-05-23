@@ -117,6 +117,7 @@ def run_link_review(args: Any, *, logger: logging.Logger) -> int:
                         str(row.get("canonical_home_team") or ""),
                         str(row.get("canonical_away_team") or ""),
                         str(row.get("game_date_et") or ""),
+                        str(row.get("selected_event_id") or ""),
                     )
                     league = str(row.get("canonical_league") or "")
                     is_primary = (p == primary_by_league.get(league, ""))

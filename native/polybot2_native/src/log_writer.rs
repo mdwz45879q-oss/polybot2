@@ -87,7 +87,7 @@ impl LogWriter {
         self.flush_buf();
     }
 
-    pub fn log_order_ok(&mut self, sk: &str, tok: &str, eid: &str) {
+    pub fn log_order_ok(&mut self, sk: &str, tok: &str, eid: &str, tif: &str) {
         self.buf.clear();
         let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","sk":""#, now_unix_ms());
         write_json_escape(&mut self.buf, sk);
@@ -95,11 +95,13 @@ impl LogWriter {
         write_json_escape(&mut self.buf, tok);
         self.buf.push_str(r#"","ok":true,"eid":""#);
         write_json_escape(&mut self.buf, eid);
+        self.buf.push_str(r#"","tif":""#);
+        self.buf.push_str(tif);
         self.buf.push_str(r#""}"#);
         self.flush_buf();
     }
 
-    pub fn log_order_err(&mut self, sk: &str, tok: &str, err: &str) {
+    pub fn log_order_err(&mut self, sk: &str, tok: &str, err: &str, tif: &str) {
         self.buf.clear();
         let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","sk":""#, now_unix_ms());
         write_json_escape(&mut self.buf, sk);
@@ -107,6 +109,8 @@ impl LogWriter {
         write_json_escape(&mut self.buf, tok);
         self.buf.push_str(r#"","ok":false,"err":""#);
         write_json_escape(&mut self.buf, err);
+        self.buf.push_str(r#"","tif":""#);
+        self.buf.push_str(tif);
         self.buf.push_str(r#""}"#);
         self.flush_buf();
     }

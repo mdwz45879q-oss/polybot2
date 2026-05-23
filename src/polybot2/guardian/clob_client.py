@@ -140,15 +140,21 @@ class ClobClient:
             logger.warning("sell order skipped — SDK client not initialized (no private key)")
             return None
         try:
-            from py_clob_client_v2 import OrderArgsV2, OrderType
+            import asyncio
+            from py_clob_client_v2 import OrderArgsV2, OrderType, PartialCreateOrderOptions
             order_args = OrderArgsV2(
                 token_id=token_id,
                 price=price,
                 size=size,
                 side="SELL",
             )
-            signed_order = self._sdk_client.create_order(order_args)
-            resp = self._sdk_client.post_order(signed_order, order_type=OrderType.GTC)
+            options = PartialCreateOrderOptions(neg_risk=neg_risk)
+            signed_order = await asyncio.to_thread(
+                self._sdk_client.create_order, order_args, options,
+            )
+            resp = await asyncio.to_thread(
+                self._sdk_client.post_order, signed_order, OrderType.GTC,
+            )
             logger.info(
                 "sell order submitted: token=%s size=%.4f price=%.4f resp=%s",
                 token_id[:20] + "...", size, price, str(resp)[:200],
@@ -165,8 +171,11 @@ class ClobClient:
         """
         if self._sdk_client:
             try:
+                import asyncio
                 from py_clob_client_v2 import OrderPayload
-                self._sdk_client.cancel_order(OrderPayload(orderID=order_id))
+                await asyncio.to_thread(
+                    self._sdk_client.cancel_order, OrderPayload(orderID=order_id),
+                )
                 logger.info("order cancelled via SDK: %s", order_id)
                 return True
             except Exception as exc:

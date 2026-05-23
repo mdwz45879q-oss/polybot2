@@ -183,7 +183,7 @@ fn process_extracted_fields(
         for intent in &result.intents {
             let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
             if let Ok(mut g) = log.lock() {
-                g.log_order_ok(sk, tok, "noop");
+                g.log_order_ok(sk, tok, "noop", "");
             }
         }
     } else {
@@ -197,7 +197,7 @@ fn process_extracted_fields(
                 Err(err) => {
                     let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
                     if let Ok(mut g) = log.lock() {
-                        g.log_order_err(sk, tok, &err);
+                        g.log_order_err(sk, tok, &err, "");
                     }
                 }
             }

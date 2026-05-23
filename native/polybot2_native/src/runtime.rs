@@ -229,6 +229,7 @@ impl NativeHotPathRuntime {
                                     "_init_",
                                     "_",
                                     "submitter_thread_pin_skipped_or_failed",
+                                    "",
                                 );
                             }
                         }

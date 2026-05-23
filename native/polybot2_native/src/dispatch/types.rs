@@ -8,6 +8,7 @@ pub(crate) type SharedRegistry = Arc<arc_swap::ArcSwap<crate::TargetRegistry>>;
 #[derive(Debug)]
 pub(crate) struct PreparedOrderPayload {
     pub(crate) order_json: Vec<u8>,
+    pub(crate) time_in_force: OrderTimeInForce,
 }
 
 #[derive(Clone)]

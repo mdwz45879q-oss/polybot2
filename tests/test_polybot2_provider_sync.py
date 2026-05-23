@@ -56,7 +56,7 @@ def test_replace_provider_games_snapshot_prunes_removed_rows(tmp_path: Path) -> 
 
 def test_resolve_kalstrop_catalog_sport_codes_default() -> None:
     out = _resolve_kalstrop_catalog_sport_codes()
-    assert out == ("baseball", "soccer")
+    assert out == ("baseball", "cs2", "soccer", "tennis")
 
 
 def test_resolve_kalstrop_catalog_sport_codes_env_override(monkeypatch) -> None:

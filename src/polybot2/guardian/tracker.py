@@ -14,7 +14,7 @@ import time
 from typing import Any
 
 from polybot2.guardian.clob_client import ClobClient
-from polybot2.guardian.log_tailer import tail_log, read_log_snapshot
+from polybot2.guardian.log_tailer import tail_log, tail_log_async, read_log_snapshot
 from polybot2.guardian.market_ws import PolymarketMarketWS
 from polybot2.guardian.overturn import OverturnDetector
 from polybot2.guardian.polymarket_ws import PolymarketUserWS
@@ -125,18 +125,9 @@ class OrderStateTracker:
 
             # Overturn detection: check for score reversal
             if self.detector and prev is not None:
-                alert = self.detector.on_score_change(
+                self.detector.on_score_change(
                     game, prev_home, prev_away, home, away, ts,
                 )
-                if alert:
-                    # Subscribe affected tokens on market WS
-                    new_tokens = alert.affected_token_ids - self._subscribed_market_tokens
-                    if new_tokens:
-                        self._subscribed_market_tokens.update(new_tokens)
-                        if self.market_ws:
-                            asyncio.get_event_loop().create_task(
-                                self.market_ws.subscribe(list(new_tokens))
-                            )
 
     def _on_order(self, ev: dict[str, Any]) -> None:
         """Process an order event from the log."""
@@ -151,7 +142,7 @@ class OrderStateTracker:
             return
 
         gid = self._extract_game_id_from_sk(sk)
-        tif = self._determine_tif(sk)
+        tif = str(ev.get("tif", "")).upper() or self._determine_tif(sk)
         cid = self._resolve_condition_id(tok)
 
         game = self.state.get_or_create_game(gid)
@@ -178,6 +169,23 @@ class OrderStateTracker:
                 self.state.pending_fak_queries.append(eid)
             else:
                 self.state.pending_gtc_ids.add(eid)
+
+            # Proactive market WS subscription for overturn-relevant tokens
+            # (Over and BTTS YES are the only markets bought mid-game on goals)
+            if tok and self.market_ws:
+                sk_upper = sk.upper()
+                is_overturn_relevant = (
+                    ":TOTAL:OVER:" in sk_upper
+                    or ":BTTS:YES" in sk_upper
+                    or ":TOTAL_CORNERS:OVER:" in sk_upper
+                )
+                if is_overturn_relevant:
+                    new_tokens = {tok} - self._subscribed_market_tokens
+                    if new_tokens:
+                        self._subscribed_market_tokens.update(new_tokens)
+                        asyncio.create_task(
+                            self.market_ws.subscribe(list(new_tokens))
+                        )
 
     # ---- WebSocket event handlers ----
 
@@ -331,7 +339,7 @@ class OrderStateTracker:
             tasks.append(asyncio.create_task(self._confirmation_check_loop()))
 
         try:
-            for event in tail_log(self.log_path):
+            async for event in tail_log_async(self.log_path):
                 self.process_event(event)
 
                 # Subscribe new condition IDs on user WS
