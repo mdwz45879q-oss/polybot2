@@ -751,7 +751,8 @@ impl NativeTennisEngine {
         }
     }
 
-    /// Moneyline (match winner): fires once at match end.
+    /// Moneyline (match winner): fires when match is decided (sets_to_win reached)
+    /// or at "Ended" — whichever comes first (~45-159ms edge in 13% of matches).
     fn evaluate_moneyline_into(
         &mut self,
         gidx: GameIdx,
@@ -762,7 +763,11 @@ impl NativeTennisEngine {
         if !self.has_moneyline[gi] {
             return;
         }
-        if !state.match_completed {
+        let stw = self.sets_to_win[gi];
+        let match_decided = state.match_completed
+            || state.sets_home >= stw
+            || state.sets_away >= stw;
+        if !match_decided {
             return;
         }
         // Only fire once (final_resolved_games gate is shared with match totals;
@@ -799,13 +804,17 @@ impl NativeTennisEngine {
         let stw = self.sets_to_win[gi];
         let margin = state.sets_home - state.sets_away;
 
+        let match_decided = state.match_completed
+            || state.sets_home >= stw
+            || state.sets_away >= stw;
+
         for slot in &tgt.set_handicaps {
             let opponent_sets = match slot.side {
                 SpreadSide::Home => state.sets_away,
                 SpreadSide::Away => state.sets_home,
             };
 
-            if state.match_completed {
+            if match_decided {
                 // Match end: fire covers or not_covers based on final margin.
                 let adj_margin = match slot.side {
                     SpreadSide::Home => margin as f64,
@@ -833,7 +842,8 @@ impl NativeTennisEngine {
         }
     }
 
-    /// Completed match (yes/no): fires once at match end.
+    /// Completed match YES: fires when match is decided (sets_to_win reached)
+    /// or at "Ended" — whichever comes first.
     fn evaluate_completed_match_into(
         &mut self,
         gidx: GameIdx,
@@ -844,7 +854,11 @@ impl NativeTennisEngine {
         if !self.has_completed_match[gi] {
             return;
         }
-        if !state.match_completed {
+        let stw = self.sets_to_win[gi];
+        let match_decided = state.match_completed
+            || state.sets_home >= stw
+            || state.sets_away >= stw;
+        if !match_decided {
             return;
         }
         let tgt = &self.game_targets[gi];
@@ -1458,6 +1472,50 @@ mod tests {
         let intents = tick(&mut engine, "game1", 1, 2, 4, 6, 30, None, 3, 3, true, true);
         assert_eq!(intents.len(), 1);
         assert_eq!(intents[0].target_idx, TargetIdx(0));
+    }
+
+    #[test]
+    fn test_moneyline_fires_at_sets_to_win_before_ended() {
+        // BO5: home reaches 3 sets with match_completed=false (no "Ended" yet).
+        // Moneyline should fire immediately — match is decided.
+        let mut engine = NativeTennisEngine::new();
+        let t_home = target_json("tok_home", "home", "g1:ML:HOME");
+        let m = market_json("moneyline", None, &[t_home]);
+        let plan_str = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            m
+        );
+        engine.load_plan_from_json(&plan_str).unwrap();
+
+        // Warm-up tick
+        let intents = tick(&mut engine, "game1", 2, 1, 5, 3, 35, None, 3, 4, false, true);
+        assert!(intents.is_empty());
+
+        // Home wins 3rd set → sets=3-1, match_completed=false
+        let intents = tick(&mut engine, "game1", 3, 1, 6, 4, 45, None, 4, 4, false, true);
+        assert_eq!(intents.len(), 1, "Moneyline should fire at sets_to_win reached");
+        assert_eq!(intents[0].target_idx, TargetIdx(0));
+    }
+
+    #[test]
+    fn test_moneyline_does_not_fire_before_decided() {
+        // BO5: score 2-1 — match not decided yet (need 3 sets).
+        let mut engine = NativeTennisEngine::new();
+        let t_home = target_json("tok_home", "home", "g1:ML:HOME");
+        let m = market_json("moneyline", None, &[t_home]);
+        let plan_str = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            m
+        );
+        engine.load_plan_from_json(&plan_str).unwrap();
+
+        // Warm-up tick
+        let intents = tick(&mut engine, "game1", 1, 0, 5, 3, 15, None, 1, 2, false, true);
+        assert!(intents.is_empty());
+
+        // Score 2-1, match_completed=false — not decided
+        let intents = tick(&mut engine, "game1", 2, 1, 0, 0, 30, None, 3, 4, false, true);
+        assert!(intents.is_empty(), "Moneyline should NOT fire at 2-1 in BO5");
     }
 
     // =================================================================
