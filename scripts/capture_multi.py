@@ -134,29 +134,28 @@ def v2_auth_headers():
 
 
 def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30, sport_slug: str = "football"):
+    """Resolve V2 event_id → fixture_id with retry loop.
+
+    Uses the same resolution logic as the hotpath orchestrator (v2_resolver.py).
+    """
+    from polybot2.hotpath.v2_resolver import _resolve_fixture_id
+    from polybot2.sports.kalstrop_auth import kalstrop_auth_headers
+
     deadline = time.time() + max(max_wait, 0)
     attempt = 0
     while True:
         attempt += 1
-        try:
-            r = requests.get(f"{V2_API}/fixtures/{event_id}/providers",
-                             params={"sport": sport_slug}, headers=v2_auth_headers(), timeout=15)
-            if r.status_code == 200:
-                bg = r.json().get("providers", {}).get("bet_genius", {})
-                fid = bg.get("fixture_id")
-                if fid and str(fid) != str(event_id):
-                    print(f"  [v2] resolved event_id={event_id} → fixture_id={fid}")
-                    return bg
-                msg = "echoed event_id or missing fixture_id"
-            else:
-                msg = f"HTTP {r.status_code}: {r.text[:100]}"
-        except Exception as e:
-            msg = str(e)
+        headers = kalstrop_auth_headers(CLIENT_ID, SECRET_RAW) if CLIENT_ID and SECRET_RAW else {}
+        provider = _resolve_fixture_id(event_id, headers, sport_slug=sport_slug)
+        if provider:
+            fid = provider.get("fixture_id")
+            print(f"  [v2] resolved event_id={event_id} → fixture_id={fid}")
+            return provider
 
         if time.time() >= deadline:
             print(f"  [v2] gave up resolving event_id={event_id} after {attempt} attempts")
             return None
-        print(f"  [v2] {event_id}: {msg} — retry in {interval}s (attempt {attempt})")
+        print(f"  [v2] {event_id}: not resolved — retry in {interval}s (attempt {attempt})")
         time.sleep(interval)
 
 
@@ -167,58 +166,38 @@ def resolve_v2_live_event_id(
     away_team: str,
     scheduled_date: str,
     original_event_id: str,
+    start_ts_utc: int | None = None,
     max_wait: int = 1800,
     interval: int = 30,
     sport_slug: str = "football",
 ) -> str | None:
     """Re-fetch tournament fixtures and find the live event_id by team match.
 
-    V2 event_ids can change when a game transitions from prematch to live.
-    This function polls the fixtures endpoint, matching by team names and date
-    to discover the current event_id.
-
-    Returns the live event_id (may differ from original_event_id), or None.
+    Uses the same fixture matching logic as the hotpath orchestrator
+    (v2_resolver._match_fixture) — team name + time tolerance + status detection.
     """
+    from polybot2.hotpath.v2_resolver import _fetch_tournament_fixtures, _match_fixture
+    from polybot2.sports.kalstrop_auth import kalstrop_auth_headers
+
     deadline = time.time() + max(max_wait, 0)
     attempt = 0
-    home_norm = home_team.strip().lower()
-    away_norm = away_team.strip().lower()
-    date_norm = scheduled_date.strip()
 
     while True:
         attempt += 1
-        try:
-            url = f"{V2_API}/sports/{sport_slug}/competitions/{category_slug}/{tournament_slug}/fixtures"
-            r = requests.get(url, headers=v2_auth_headers(), timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                fixtures = data.get("fixtures", []) if isinstance(data, dict) else []
-                for f in fixtures:
-                    competitors = f.get("competitors", {})
-                    if not isinstance(competitors, dict):
-                        continue
-                    home = competitors.get("home", {})
-                    away = competitors.get("away", {})
-                    f_home = str(home.get("name") or "").strip().lower()
-                    f_away = str(away.get("name") or "").strip().lower()
-                    f_date = str(f.get("scheduled_date") or "").strip()
-                    f_eid = str(f.get("event_id") or "").strip()
-
-                    if not f_eid:
-                        continue
-                    # Match by teams (case-insensitive)
-                    if f_home != home_norm or f_away != away_norm:
-                        continue
-                    # Match by date if provided
-                    if date_norm and f_date and f_date != date_norm:
-                        continue
-                    # Found it
-                    return f_eid
-                msg = f"game not found in {len(fixtures)} fixtures"
-            else:
-                msg = f"HTTP {r.status_code}"
-        except Exception as e:
-            msg = str(e)
+        headers = kalstrop_auth_headers(CLIENT_ID, SECRET_RAW) if CLIENT_ID and SECRET_RAW else {}
+        fixtures = _fetch_tournament_fixtures(category_slug, tournament_slug, headers, sport_slug=sport_slug)
+        if fixtures:
+            match, is_finished = _match_fixture(fixtures, home_team, away_team, start_ts_utc, 900)
+            if is_finished:
+                print(f"  [v2] {original_event_id}: game already finished")
+                return None
+            if match:
+                live_eid = str(match.get("event_id") or "").strip()
+                if live_eid:
+                    return live_eid
+            msg = f"game not found in {len(fixtures)} fixtures"
+        else:
+            msg = "no fixtures returned"
 
         if time.time() >= deadline:
             print(f"  [v2] gave up finding live event_id after {attempt} attempts")
@@ -819,6 +798,7 @@ def main():
                                 away_team=away,
                                 scheduled_date=sdate,
                                 original_event_id=eid,
+                                start_ts_utc=kts,
                                 max_wait=min(120, max(0, resolve_deadline - time.time())),
                                 interval=15,
                                 sport_slug=v2_slug,
