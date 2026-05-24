@@ -109,21 +109,6 @@ class ClobClient:
             logger.warning("get_order %s failed: %s", order_id, exc)
             return None
 
-    async def cancel_order(self, order_id: str) -> bool:
-        """Cancel a resting order by exchange ID. Returns True on success."""
-        path = f"/order/{order_id}"
-        url = f"{self._host}order/{order_id}"
-        headers = self._auth_headers("DELETE", path)
-        try:
-            resp = await self._client.delete(url, headers=headers)
-            if resp.status_code == 200:
-                return True
-            logger.warning("cancel_order %s: status=%d body=%s", order_id, resp.status_code, resp.text[:200])
-            return False
-        except Exception as exc:
-            logger.warning("cancel_order %s failed: %s", order_id, exc)
-            return False
-
     async def submit_sell_order(
         self,
         token_id: str,
@@ -180,25 +165,19 @@ class ClobClient:
                 return True
             except Exception as exc:
                 logger.warning("SDK cancel failed, falling back to REST: %s", exc)
-        return await self.cancel_order(order_id)
-
-    async def get_open_orders(self, *, market: str | None = None) -> list[dict[str, Any]]:
-        """Get all open orders, optionally filtered by market/condition."""
-        path = "/orders"
-        url = f"{self._host}orders"
-        params: dict[str, str] = {}
-        if market:
-            params["market"] = market
-        headers = self._auth_headers("GET", path)
+        # REST fallback
+        path = f"/order/{order_id}"
+        url = f"{self._host}order/{order_id}"
+        headers = self._auth_headers("DELETE", path)
         try:
-            resp = await self._client.get(url, headers=headers, params=params)
+            resp = await self._client.delete(url, headers=headers)
             if resp.status_code == 200:
-                return resp.json()
-            logger.warning("get_open_orders: status=%d", resp.status_code)
-            return []
+                return True
+            logger.warning("cancel_order %s: status=%d body=%s", order_id, resp.status_code, resp.text[:200])
+            return False
         except Exception as exc:
-            logger.warning("get_open_orders failed: %s", exc)
-            return []
+            logger.warning("cancel_order %s failed: %s", order_id, exc)
+            return False
 
     async def close(self) -> None:
         await self._client.aclose()

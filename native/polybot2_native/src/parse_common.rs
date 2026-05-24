@@ -5,6 +5,7 @@ pub(crate) fn is_completed_free_text(free_text: &str) -> bool {
         || s.eq_ignore_ascii_case("Game Over")
         || s.eq_ignore_ascii_case("Finished")
         || s.eq_ignore_ascii_case("FT")
+        || s.eq_ignore_ascii_case("Interrupted")
 }
 
 #[cfg(test)]
@@ -18,7 +19,9 @@ mod tests {
         assert!(is_completed_free_text("Game Over"));
         assert!(is_completed_free_text("Finished"));
         assert!(is_completed_free_text("FT"));
+        assert!(is_completed_free_text("Interrupted"));
         assert!(is_completed_free_text(" Ended "));
+        assert!(is_completed_free_text(" Interrupted "));
     }
 
     #[test]

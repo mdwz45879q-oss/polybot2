@@ -67,10 +67,12 @@ def serialize_compiled_plan(plan: CompiledPlan | None) -> dict[str, Any]:
                     {"provider": p, "game_id": gid}
                     for p, gid in game.alternate_provider_game_ids
                 ]
+            game_entry["sets_to_win"] = int(game.sets_to_win)
             games.append(game_entry)
     return {
         "provider": ("" if plan is None else str(plan.provider or "")),
         "league": ("" if plan is None else str(plan.league or "")),
+        "sport": ("" if plan is None else str(plan.sport or "")),
         "run_id": (0 if plan is None else int(plan.run_id)),
         "games": games,
     }

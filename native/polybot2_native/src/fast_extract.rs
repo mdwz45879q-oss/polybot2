@@ -64,6 +64,12 @@ static FINDER_HOME: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"home\""));
 static FINDER_AWAY: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"away\""));
+static FINDER_CURRENT_PHASE: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"currentPhase\""));
+static FINDER_PHASES: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"phases\""));
+static FINDER_PHASE: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"phase\""));
 
 fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
     if from >= haystack.len() {
@@ -240,6 +246,229 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     })
 }
 
+pub(crate) struct TennisV1Extract<'a> {
+    pub fixture_id: &'a str,
+    pub sets_home: &'a str,        // top-level homeScore (sets won)
+    pub sets_away: &'a str,        // top-level awayScore
+    pub games_home: &'a str,       // currentPhase.homeScore (empty if null)
+    pub games_away: &'a str,       // currentPhase.awayScore (empty if null)
+    pub free_text: &'a str,        // matchStatusDisplay[0].freeText
+    pub current_phase: Option<i64>, // currentPhase.phase (None if null)
+    pub total_games: i64,          // sum of all games from phases array
+    pub first_set_games: i64,      // games in phases[0] only
+}
+
+/// Scan the `"phases"` array starting at `start` (the position of `[`).
+/// For each phase entry, extracts homeScore and awayScore as integers and
+/// sums them. Returns (total_games_across_all_phases, first_set_games).
+fn scan_phases_games(bytes: &[u8], start: usize) -> (i64, i64) {
+    let len = bytes.len();
+    let mut pos = start;
+    // Find the opening '['.
+    while pos < len && bytes[pos] != b'[' {
+        pos += 1;
+    }
+    if pos >= len {
+        return (0, 0);
+    }
+    pos += 1; // skip '['
+
+    let mut total: i64 = 0;
+    let mut first_set: i64 = 0;
+    let mut phase_count: usize = 0;
+
+    // Walk the array. Each phase object has "homeScore":"N" and "awayScore":"N".
+    // We look for balanced braces to track phase boundaries.
+    while pos < len {
+        // Skip whitespace/commas
+        while pos < len && matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r' | b',') {
+            pos += 1;
+        }
+        if pos >= len || bytes[pos] == b']' {
+            break;
+        }
+        if bytes[pos] != b'{' {
+            pos += 1;
+            continue;
+        }
+        // Found a phase object — find its end by brace counting
+        let obj_start = pos;
+        let mut depth = 1u32;
+        pos += 1;
+        while pos < len && depth > 0 {
+            match bytes[pos] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                b'"' => {
+                    // skip string contents
+                    pos += 1;
+                    while pos < len {
+                        if bytes[pos] == b'\\' {
+                            pos += 2;
+                            continue;
+                        }
+                        if bytes[pos] == b'"' {
+                            break;
+                        }
+                        pos += 1;
+                    }
+                }
+                _ => {}
+            }
+            pos += 1;
+        }
+        let obj_end = pos;
+        let obj_slice = &bytes[obj_start..obj_end.min(len)];
+
+        // Extract homeScore and awayScore from this phase object.
+        let mut phase_games: i64 = 0;
+        if let Some(hs) = find_key_value_start(&FINDER_HOME_SCORE, 11, obj_slice, 0) {
+            if let Some((val, _)) = extract_string_value(obj_slice, hs) {
+                if let Ok(s) = std::str::from_utf8(val) {
+                    if let Some(v) = fast_parse_score(s) {
+                        phase_games += v;
+                    }
+                }
+            }
+        }
+        if let Some(as_start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, obj_slice, 0) {
+            if let Some((val, _)) = extract_string_value(obj_slice, as_start) {
+                if let Ok(s) = std::str::from_utf8(val) {
+                    if let Some(v) = fast_parse_score(s) {
+                        phase_games += v;
+                    }
+                }
+            }
+        }
+        total += phase_games;
+        if phase_count == 0 {
+            first_set = phase_games;
+        }
+        phase_count += 1;
+    }
+
+    (total, first_set)
+}
+
+pub(crate) fn fast_extract_tennis_v1(json: &str) -> Option<TennisV1Extract<'_>> {
+    let bytes = json.as_bytes();
+
+    // Quick reject: check for "type":"next".
+    let is_next = find_with(&FINDER_TYPE, bytes, 0)
+        .and_then(|pos| {
+            let mut p = pos + 6; // skip past `"type"`
+            while p < bytes.len() && bytes[p] != b'"' {
+                p += 1;
+            }
+            if p < bytes.len() {
+                extract_string_value(bytes, p + 1)
+            } else {
+                None
+            }
+        })
+        .map(|(val, _)| val == b"next")
+        .unwrap_or(false);
+
+    if !is_next {
+        return None;
+    }
+
+    // fixture_id
+    let mut fixture_id: Option<&str> = None;
+    let mut pos = 0usize;
+
+    if let Some(start) = find_key_value_start(&FINDER_FIXTURE_ID, 11, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            fixture_id = Some(std::str::from_utf8(val).ok()?);
+            pos = end;
+        }
+    }
+
+    // freeText
+    let mut free_text: &str = "";
+    if let Some(start) = find_key_value_start(&FINDER_FREE_TEXT, 10, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            free_text = std::str::from_utf8(val).ok()?;
+            pos = end;
+        }
+    }
+
+    // sets_home / sets_away: FIRST occurrence of homeScore/awayScore (top-level, before currentPhase)
+    let mut sets_home: &str = "";
+    let mut sets_away: &str = "";
+    if let Some(start) = find_key_value_start(&FINDER_HOME_SCORE, 11, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            sets_home = std::str::from_utf8(val).ok()?;
+            pos = end;
+        }
+    }
+    if let Some(start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            sets_away = std::str::from_utf8(val).ok()?;
+            pos = end;
+        }
+    }
+
+    // currentPhase — may be null (match ended)
+    let mut games_home: &str = "";
+    let mut games_away: &str = "";
+    let mut current_phase: Option<i64> = None;
+
+    if let Some(cp_pos) = find_with(&FINDER_CURRENT_PHASE, bytes, pos) {
+        // Find ':' after "currentPhase"
+        let key_end = cp_pos + 14; // len of "currentPhase"
+        let mut p = key_end;
+        while p < bytes.len() && bytes[p] != b':' {
+            p += 1;
+        }
+        if p < bytes.len() {
+            p += 1; // skip ':'
+            // Skip whitespace
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                p += 1;
+            }
+            if p < bytes.len() && bytes[p] != b'n' {
+                // Not null — extract games_home, games_away, phase from within currentPhase object
+                let cp_content_start = p;
+                if let Some(start) = find_key_value_start(&FINDER_HOME_SCORE, 11, bytes, cp_content_start) {
+                    if let Some((val, _)) = extract_string_value(bytes, start) {
+                        games_home = std::str::from_utf8(val).ok()?;
+                    }
+                }
+                if let Some(start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, bytes, cp_content_start) {
+                    if let Some((val, _)) = extract_string_value(bytes, start) {
+                        games_away = std::str::from_utf8(val).ok()?;
+                    }
+                }
+                if let Some((phase_val, _)) = find_key_integer(&FINDER_PHASE, 7, bytes, cp_content_start) {
+                    current_phase = Some(phase_val);
+                }
+            }
+            // else: null — games_home/away stay "", current_phase stays None
+        }
+    }
+
+    // phases array — scan for total games and first set games
+    let mut total_games: i64 = 0;
+    let mut first_set_games: i64 = 0;
+    if let Some(phases_pos) = find_with(&FINDER_PHASES, bytes, 0) {
+        let after_key = phases_pos + 8; // len of "phases"
+        (total_games, first_set_games) = scan_phases_games(bytes, after_key);
+    }
+
+    Some(TennisV1Extract {
+        fixture_id: fixture_id?,
+        sets_home,
+        sets_away,
+        games_home,
+        games_away,
+        free_text,
+        current_phase,
+        total_games,
+        first_set_games,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,5 +523,89 @@ mod tests {
         assert_eq!(result.free_text, "2nd half");
         assert_eq!(result.corners_home, Some(5));
         assert_eq!(result.corners_away, Some(3));
+    }
+
+    // =================================================================
+    // Tennis V1 extraction tests
+    // =================================================================
+
+    #[test]
+    fn test_tennis_v1_set1_in_progress() {
+        // Real frame from captured fixture: 1st set, home 2-1 games, sets 0-0
+        let frame = r#"{"id":"ks-tennis","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"05d39a19-ddad-4afb-9438-5a73ce03bc6d","matchSummary":{"matchStatusDisplay":[{"freeText":"1st set"}],"homeScore":"0","awayScore":"0","currentPhase":{"phase":1,"homeScore":"2","awayScore":"1","homeGameScore":"0","awayGameScore":"15"},"phases":[{"phase":1,"homeScore":"2","awayScore":"1","homeGameScore":"0","awayGameScore":"15"}]}}}}}"#;
+        let result = fast_extract_tennis_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "05d39a19-ddad-4afb-9438-5a73ce03bc6d");
+        assert_eq!(result.sets_home, "0");
+        assert_eq!(result.sets_away, "0");
+        assert_eq!(result.games_home, "2");
+        assert_eq!(result.games_away, "1");
+        assert_eq!(result.free_text, "1st set");
+        assert_eq!(result.current_phase, Some(1));
+        assert_eq!(result.total_games, 3);  // 2 + 1
+        assert_eq!(result.first_set_games, 3);
+    }
+
+    #[test]
+    fn test_tennis_v1_set2_frame() {
+        // Real frame: 2nd set start, home won set 1 (7-6), sets 1-0
+        let frame = r#"{"id":"ks-tennis","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"05d39a19-ddad-4afb-9438-5a73ce03bc6d","matchSummary":{"matchStatusDisplay":[{"freeText":"2nd set"}],"homeScore":"1","awayScore":"0","currentPhase":{"phase":2,"homeScore":"0","awayScore":"0","homeGameScore":"0","awayGameScore":"0"},"phases":[{"phase":1,"homeScore":"7","awayScore":"6"},{"phase":2,"homeScore":"0","awayScore":"0","homeGameScore":"0","awayGameScore":"0"}]}}}}}"#;
+        let result = fast_extract_tennis_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "05d39a19-ddad-4afb-9438-5a73ce03bc6d");
+        assert_eq!(result.sets_home, "1");
+        assert_eq!(result.sets_away, "0");
+        assert_eq!(result.games_home, "0");
+        assert_eq!(result.games_away, "0");
+        assert_eq!(result.free_text, "2nd set");
+        assert_eq!(result.current_phase, Some(2));
+        assert_eq!(result.total_games, 13); // 7+6 + 0+0
+        assert_eq!(result.first_set_games, 13); // 7+6
+    }
+
+    #[test]
+    fn test_tennis_v1_ended_frame() {
+        // Real frame: match ended, home wins 2-1 in sets, currentPhase is null
+        let frame = r#"{"id":"ks-tennis","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"05d39a19-ddad-4afb-9438-5a73ce03bc6d","matchSummary":{"matchStatusDisplay":[{"freeText":"Ended"}],"homeScore":"2","awayScore":"1","currentPhase":null,"phases":[{"phase":1,"homeScore":"7","awayScore":"6"},{"phase":2,"homeScore":"3","awayScore":"6"},{"phase":3,"homeScore":"6","awayScore":"2"}]}}}}}"#;
+        let result = fast_extract_tennis_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "05d39a19-ddad-4afb-9438-5a73ce03bc6d");
+        assert_eq!(result.sets_home, "2");
+        assert_eq!(result.sets_away, "1");
+        assert_eq!(result.games_home, "");
+        assert_eq!(result.games_away, "");
+        assert_eq!(result.free_text, "Ended");
+        assert_eq!(result.current_phase, None);
+        assert_eq!(result.total_games, 30); // (7+6) + (3+6) + (6+2)
+        assert_eq!(result.first_set_games, 13); // 7+6
+    }
+
+    #[test]
+    fn test_tennis_v1_tiebreak_frame() {
+        // Real frame: 1st set tiebreak, games 6-6
+        let frame = r#"{"id":"ks-tennis","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"05d39a19-ddad-4afb-9438-5a73ce03bc6d","matchSummary":{"matchStatusDisplay":[{"freeText":"1st set"}],"homeScore":"0","awayScore":"0","currentPhase":{"phase":1,"homeScore":"6","awayScore":"6","homeGameScore":"0","awayGameScore":"0"},"phases":[{"phase":1,"homeScore":"6","awayScore":"6","homeGameScore":"0","awayGameScore":"0"}]}}}}}"#;
+        let result = fast_extract_tennis_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "05d39a19-ddad-4afb-9438-5a73ce03bc6d");
+        assert_eq!(result.sets_home, "0");
+        assert_eq!(result.sets_away, "0");
+        assert_eq!(result.games_home, "6");
+        assert_eq!(result.games_away, "6");
+        assert_eq!(result.free_text, "1st set");
+        assert_eq!(result.current_phase, Some(1));
+        assert_eq!(result.total_games, 12); // 6+6
+        assert_eq!(result.first_set_games, 12);
+    }
+
+    #[test]
+    fn test_tennis_v1_non_next_rejected() {
+        let frame = r#"{"id":"ks-tennis","type":"connection_ack","payload":{}}"#;
+        assert!(fast_extract_tennis_v1(frame).is_none());
+    }
+
+    #[test]
+    fn test_tennis_v1_empty_phases() {
+        // Edge case: phases array is empty
+        let frame = r#"{"id":"ks-tennis","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"abc-123","matchSummary":{"matchStatusDisplay":[{"freeText":"1st set"}],"homeScore":"0","awayScore":"0","currentPhase":{"phase":1,"homeScore":"0","awayScore":"0"},"phases":[]}}}}}"#;
+        let result = fast_extract_tennis_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "abc-123");
+        assert_eq!(result.total_games, 0);
+        assert_eq!(result.first_set_games, 0);
     }
 }

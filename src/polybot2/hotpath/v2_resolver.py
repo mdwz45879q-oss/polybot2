@@ -106,6 +106,7 @@ def try_resolve_games(
     client_id: str = "",
     shared_secret_raw: str = "",
     time_tolerance_seconds: int = 900,
+    sport_slug: str = "football",
 ) -> V2ResolutionResult:
     if not pending:
         return V2ResolutionResult(resolved=[], finished=[])
@@ -120,7 +121,7 @@ def try_resolve_games(
     resolved: list[V2ResolvedGame] = []
     finished: list[V2PendingGame] = []
     for (cat_slug, tourn_slug), games in by_tournament.items():
-        fixtures = _fetch_tournament_fixtures(cat_slug, tourn_slug, headers)
+        fixtures = _fetch_tournament_fixtures(cat_slug, tourn_slug, headers, sport_slug=sport_slug)
         if not fixtures:
             continue
         for game in games:
@@ -137,7 +138,7 @@ def try_resolve_games(
             if not live_event_id:
                 continue
             match_status = str(match.get("match_status") or "").strip()
-            provider_info = _resolve_fixture_id(live_event_id, headers)
+            provider_info = _resolve_fixture_id(live_event_id, headers, sport_slug=sport_slug)
             if provider_info is None:
                 continue
             fixture_id = str(provider_info.get("fixture_id") or "").strip()
@@ -166,12 +167,16 @@ def compile_for_resolved_game(
     league: str,
     live_policy: Any = None,
     plan_horizon_hours: int | None = None,
+    sport: str = "",
+    sets_to_win: int = 2,
 ) -> CompiledPlan | None:
     plan = compile_hotpath_plan(
         db=db,
         provider=provider,
         league=league,
         run_id=run_id,
+        sport=sport,
+        sets_to_win=sets_to_win,
         live_policy=live_policy,
         now_ts_utc=int(time.time()),
         plan_horizon_hours=plan_horizon_hours,
@@ -204,8 +209,9 @@ def resolution_time_delta_seconds(resolved: V2ResolvedGame) -> int:
 
 def _fetch_tournament_fixtures(
     category_slug: str, tournament_slug: str, headers: dict[str, str] | None = None,
+    sport_slug: str = "football",
 ) -> list[dict[str, Any]]:
-    url = f"{V2_API}/sports/football/competitions/{category_slug}/{tournament_slug}/fixtures"
+    url = f"{V2_API}/sports/{sport_slug}/competitions/{category_slug}/{tournament_slug}/fixtures"
     try:
         resp = requests.get(url, headers=headers or {}, timeout=_REQUEST_TIMEOUT)
         if resp.status_code != 200:
@@ -218,10 +224,10 @@ def _fetch_tournament_fixtures(
         return []
 
 
-def _resolve_fixture_id(event_id: str, headers: dict[str, str] | None = None) -> dict[str, Any] | None:
+def _resolve_fixture_id(event_id: str, headers: dict[str, str] | None = None, sport_slug: str = "football") -> dict[str, Any] | None:
     url = f"{V2_API}/fixtures/{event_id}/providers"
     try:
-        resp = requests.get(url, params={"sport": "football"}, headers=headers or {}, timeout=_REQUEST_TIMEOUT)
+        resp = requests.get(url, params={"sport": sport_slug}, headers=headers or {}, timeout=_REQUEST_TIMEOUT)
         if resp.status_code != 200:
             logger.debug("V2 /providers HTTP %d for event_id=%s", resp.status_code, event_id)
             return None

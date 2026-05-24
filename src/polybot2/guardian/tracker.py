@@ -45,6 +45,7 @@ class OrderStateTracker:
         *,
         order_policy_config: dict[str, Any] | None = None,
         token_to_condition: dict[str, str] | None = None,
+        game_id_map: dict[str, str] | None = None,
     ):
         self.log_path = log_path
         self.clob = clob
@@ -56,15 +57,30 @@ class OrderStateTracker:
         self._last_gtc_poll: float = 0.0
         self._order_policy = order_policy_config or {}
         self._token_to_condition = token_to_condition or {}
+        self._game_id_map: dict[str, str] = game_id_map or {}
         self._subscribed_conditions: set[str] = set()
         self._subscribed_market_tokens: set[str] = set()
         self._on_update_callback: Any = None
         self._on_overturn_callback: Any = None
         self._pending_ws_subscribe: set[str] = set()
+        self._stop_requested = False
 
     def set_on_update(self, callback: Any) -> None:
         """Set a callback invoked after each event is processed."""
         self._on_update_callback = callback
+
+    def update_mappings(
+        self,
+        token_to_condition: dict[str, str],
+        game_id_map: dict[str, str],
+    ) -> None:
+        """Merge new mappings into the tracker (thread-safe for CPython GIL)."""
+        self._token_to_condition.update(token_to_condition)
+        self._game_id_map.update(game_id_map)
+
+    def request_stop(self) -> None:
+        """Signal the run_watch loop to stop."""
+        self._stop_requested = True
 
     def _extract_game_id_from_sk(self, strategy_key: str) -> str:
         """Extract game_id from strategy key like 'gid:MARKET_TYPE:SIDE:LINE'."""
@@ -95,6 +111,8 @@ class OrderStateTracker:
         gid = str(ev.get("gid", ""))
         if not gid:
             return
+        # Normalize alternate provider ID → canonical game ID (strategy key prefix)
+        gid = self._game_id_map.get(gid, gid)
         home = ev.get("h")
         away = ev.get("a")
         half = str(ev.get("half", ""))
@@ -340,6 +358,8 @@ class OrderStateTracker:
 
         try:
             async for event in tail_log_async(self.log_path):
+                if self._stop_requested:
+                    break
                 self.process_event(event)
 
                 # Subscribe new condition IDs on user WS
@@ -413,4 +433,27 @@ def build_token_to_condition_map(compiled_plan: Any) -> dict[str, str]:
                 tok = str(getattr(target, "token_id", "") or "")
                 if tok:
                     mapping[tok] = cid
+    return mapping
+
+
+def build_game_id_map(compiled_plan: Any) -> dict[str, str]:
+    """Build an alternate_provider_game_id → canonical game_id mapping.
+
+    The canonical game_id is ``provider_game_id`` from the compiled plan,
+    which is the prefix used in strategy keys.  Alternate IDs (e.g. V2
+    fixture IDs) are mapped to the canonical so that tick events using
+    alternate IDs resolve to the correct game bucket.
+    """
+    mapping: dict[str, str] = {}
+    if compiled_plan is None:
+        return mapping
+    for game in getattr(compiled_plan, "games", ()):
+        gid = str(getattr(game, "provider_game_id", "") or "")
+        if not gid:
+            continue
+        mapping[gid] = gid  # canonical maps to itself
+        for _prov, alt_id in getattr(game, "alternate_provider_game_ids", ()):
+            alt = str(alt_id or "").strip()
+            if alt:
+                mapping[alt] = gid
     return mapping

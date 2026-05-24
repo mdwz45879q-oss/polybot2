@@ -55,12 +55,15 @@ class CompiledGamePlan:
     # Alternate provider game IDs for the same canonical game.
     # Each entry is (provider_name, provider_game_id).
     alternate_provider_game_ids: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # Tennis: number of sets needed to win (2 for BO3, 3 for BO5). Ignored by other sports.
+    sets_to_win: int = 2
 
 
 @dataclass(frozen=True, slots=True)
 class CompiledPlan:
     provider: str
     league: str
+    sport: str
     run_id: int
     plan_hash: str
     compiled_at: int

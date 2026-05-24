@@ -497,6 +497,15 @@ pub(crate) async fn run_live_worker_async(
                             &log,
                         );
                     }
+                    SportEngine::Tennis(e) => {
+                        crate::tennis::frame_pipeline::process_decoded_frame_sync(
+                            e,
+                            frame_text,
+                            source_recv_ns,
+                            &mut dispatch_handle,
+                            &log,
+                        );
+                    }
                 }
             }
             if let Ok(mut g) = log.lock() {

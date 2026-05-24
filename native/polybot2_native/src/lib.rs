@@ -11,6 +11,7 @@ mod log_writer;
 mod parse_common;
 mod runtime;
 mod soccer;
+mod tennis;
 mod ws;
 pub(crate) mod ws_boltodds;
 pub(crate) mod ws_kalstrop_v2;
@@ -137,6 +138,7 @@ struct Intent {
 enum SportEngine {
     Baseball(baseball::types::NativeMlbEngine),
     Soccer(soccer::types::NativeSoccerEngine),
+    Tennis(tennis::types::NativeTennisEngine),
 }
 
 impl SportEngine {
@@ -157,6 +159,11 @@ impl SportEngine {
                 now_ts_utc,
                 subscribe_lead_minutes,
             ),
+            Self::Tennis(e) => e.active_subscriptions_for_candidates(
+                candidates,
+                now_ts_utc,
+                subscribe_lead_minutes,
+            ),
         }
     }
 
@@ -164,6 +171,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => e.merge_plan(plan_json),
             Self::Soccer(e) => e.merge_plan(plan_json),
+            Self::Tennis(e) => e.merge_plan(plan_json),
         }
     }
 
@@ -171,6 +179,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => &e.tokens,
             Self::Soccer(e) => &e.tokens,
+            Self::Tennis(e) => &e.tokens,
         }
     }
 
@@ -178,6 +187,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => &e.target_slots,
             Self::Soccer(e) => &e.target_slots,
+            Self::Tennis(e) => &e.target_slots,
         }
     }
 
@@ -185,6 +195,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => e.registry = reg,
             Self::Soccer(e) => e.registry = reg,
+            Self::Tennis(e) => e.registry = reg,
         }
     }
 
@@ -192,6 +203,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => &e.game_ids,
             Self::Soccer(e) => &e.game_ids,
+            Self::Tennis(e) => &e.game_ids,
         }
     }
 
@@ -199,6 +211,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => e.all_token_ids(),
             Self::Soccer(e) => e.all_token_ids(),
+            Self::Tennis(e) => e.all_token_ids(),
         }
     }
 
@@ -206,6 +219,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => e.clone_registry(),
             Self::Soccer(e) => e.clone_registry(),
+            Self::Tennis(e) => e.clone_registry(),
         }
     }
 
@@ -213,6 +227,7 @@ impl SportEngine {
         match self {
             Self::Baseball(e) => e.token_ids_by_game.len(),
             Self::Soccer(e) => e.token_ids_by_game.len(),
+            Self::Tennis(e) => e.token_ids_by_game.len(),
         }
     }
 }

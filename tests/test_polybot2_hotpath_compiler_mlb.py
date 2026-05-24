@@ -168,7 +168,7 @@ def test_compile_requires_approval_when_not_forced(tmp_path: Path) -> None:
         # However a "skip" decision != "reject", so the game IS eligible.
         # The game was approved in _seed_run, then overwritten to "skip" above.
         # Since skip != reject, the game remains eligible and should compile.
-        plan = compile_hotpath_plan(db=db, provider="kalstrop_v1", league="mlb", run_id=run_id, include_inactive=True)
+        plan = compile_hotpath_plan(db=db, provider="kalstrop_v1", league="mlb", sport="baseball", run_id=run_id, include_inactive=True)
         assert len(tuple(plan.games)) >= 1
 
 
@@ -182,6 +182,7 @@ def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
                 db=db,
                 provider="kalstrop_v1",
                 league="mlb",
+                sport="baseball",
                 run_id=run_id,
                 now_ts_utc=1_776_553_200 - (26 * 3600),
                 plan_horizon_hours=24,
@@ -192,6 +193,7 @@ def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
             db=db,
             provider="kalstrop_v1",
             league="mlb",
+            sport="baseball",
             run_id=run_id,
             now_ts_utc=1_776_553_200 - 1800,
             plan_horizon_hours=24,
@@ -203,6 +205,7 @@ def test_compile_window_filters_games_by_kickoff(tmp_path: Path) -> None:
             db=db,
             provider="kalstrop_v1",
             league="mlb",
+            sport="baseball",
             run_id=run_id,
             now_ts_utc=1_776_553_200 + (3 * 3600),
             plan_horizon_hours=24,
@@ -233,6 +236,7 @@ def test_compile_hotpath_plan_stays_pinned_to_selected_run_id(tmp_path: Path) ->
                 db=db,
                 provider="kalstrop_v1",
                 league="mlb",
+                sport="baseball",
                 run_id=int(pending_run_id),
                 include_inactive=True,
             )
@@ -241,7 +245,10 @@ def test_compile_hotpath_plan_stays_pinned_to_selected_run_id(tmp_path: Path) ->
             db=db,
             provider="kalstrop_v1",
             league="mlb",
+            sport="baseball",
             run_id=int(approved_run_id),
             include_inactive=True,
         )
         assert int(approved_plan.run_id) == int(approved_run_id)
+
+sport="baseball",

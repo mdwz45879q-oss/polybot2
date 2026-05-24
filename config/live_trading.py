@@ -9,6 +9,7 @@ LIVE_BETTING_LEAGUES = {
     "epl",
     "ucl",
     "laliga",
+    "rolgar",
 }
 LIVE_BETTING_MARKET_TYPES = {
     "mlb": ["nrfi", 
@@ -27,12 +28,18 @@ LIVE_BETTING_MARKET_TYPES = {
             "both_teams_to_score", 
             "spreads", 
             "soccer_halftime_result",],
-    "laliga": ["moneyline", 
-            "totals", 
-            "both_teams_to_score", 
-            "spreads", 
+    "laliga": ["moneyline",
+            "totals",
+            "both_teams_to_score",
+            "spreads",
             "soccer_halftime_result",],
-
+    "rolgar": ["moneyline",
+            "tennis_match_totals",
+            "tennis_first_set_totals",
+            "tennis_first_set_winner",
+            "tennis_set_totals",
+            "tennis_set_handicap",
+            "tennis_completed_match",],
 }
 
 # Centralized hotpath execution profile used by league runtime plugins.
@@ -85,7 +92,14 @@ HOTPATH_EXECUTION_POLICY = {
         "spreads":{"amount_usdc": 150.0, "size_shares": 150.0,
                     "secondary_amount_usdc": 150.0, "secondary_size_shares": 150.0},
                     },
-    }
+    },
+    "rolgar": {
+        "amount_usdc": 5.0,
+        "size_shares": 5.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+    },
 }
 
 # Runtime timing controls for live snapshot refresh and subscription windows.
@@ -125,5 +139,12 @@ HOTPATH_RUNTIME_POLICY = {
         "refresh_interval_seconds": 300,
         "ws_core_idx": 7,
         "submitter_core_idx": 8,
+    },
+    "rolgar": {
+        "plan_horizon_hours": 24,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 20000,
+        "refresh_interval_seconds": 1800,
     },
 }

@@ -115,6 +115,7 @@ def _compile(runtime: DataRuntimeConfig, run_id: int):
     with open_database(runtime) as db:
         return compile_hotpath_plan(
             db=db, provider="kalstrop_v1", league="mlb", run_id=run_id,
+            sport="baseball",
             now_ts_utc=_KICKOFF_TS - 3600,
         )
 
@@ -260,7 +261,7 @@ def test_extract_helpers() -> None:
         kickoff_ts_utc=None, markets=(m1,),
     )
     old_plan = CompiledPlan(
-        provider="kalstrop_v1", league="mlb", run_id=1,
+        provider="kalstrop_v1", league="mlb", sport="baseball", run_id=1,
         plan_hash="h1", compiled_at=0, games=(g,),
     )
     g_new = CompiledGamePlan(
@@ -269,7 +270,7 @@ def test_extract_helpers() -> None:
         kickoff_ts_utc=None, markets=(m1, m2),
     )
     new_plan = CompiledPlan(
-        provider="kalstrop_v1", league="mlb", run_id=1,
+        provider="kalstrop_v1", league="mlb", sport="baseball", run_id=1,
         plan_hash="h2", compiled_at=0, games=(g_new,),
     )
     assert _extract_strategy_keys(old_plan) == {"gid:TOTAL:OVER:8.5"}

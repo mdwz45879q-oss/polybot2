@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA
-
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES
 
 MAPPING_VERSION = "v1"
 STRICT_FAIL_CLOSED = True  # never guess
@@ -44,6 +44,12 @@ LEAGUES = {
         "sport_family": "soccer",
         "provider": ["kalstrop_v2", "kalstrop_v1"],
     },
+    "rolgar": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 3,
+    },
 
 }
 
@@ -54,11 +60,13 @@ PROVIDER_LEAGUE_ALIASES = {
         "mlb": "mlb",
         "bundesliga": "bundesliga",
         "laliga": "laliga",
+        "french open men singles": "rolgar",
     },
     "kalstrop_v2":{
         "uefa-champions-league": "ucl",
         "english-premier-league": "epl",
-        "spanish-la-liga-primera": "laliga"
+        "spanish-la-liga-primera": "laliga",
+        "french-open-mens-singles": "rolgar",
     },
     "kalstrop_opta": {
         "premier league": "epl",
@@ -83,6 +91,7 @@ PROVIDER_LEAGUE_COUNTRY = {
     "kalstrop_v1": {
         "england|premier league": "epl",
         "spain|laliga": "laliga",
+        "atp|french open men singles": "rolgar",
     },
 }
 
@@ -109,6 +118,7 @@ TEAM_MAP = {
     "epl": TEAM_MAP_EPL,
     "ucl": TEAM_MAP_UCL,
     "laliga": TEAM_MAP_LALIGA,
+    "rolgar": PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES,
 }
 
 # =============================================================================
@@ -118,6 +128,7 @@ PM_LEAGUE_ORDERINGS = {
     "mlb": "away",
     "epl": "home", 
     "ucl": "home", 
+    "rolgar": "home",
 }
 
 # =============================================================================
@@ -126,13 +137,13 @@ PM_LEAGUE_ORDERINGS = {
 LEAGUE_MATCH_RULES = {
     "default":{
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 31,
+        "kickoff_tolerance_minutes": 300,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
     "mlb": {
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 59,
+        "kickoff_tolerance_minutes": 300,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     }

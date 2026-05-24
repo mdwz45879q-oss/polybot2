@@ -22,17 +22,16 @@ fn pin_current_thread(core_idx: Option<usize>) -> Option<CoreId> {
 }
 
 /// Determine the sport league from the compiled plan JSON.
-fn detect_league_from_plan(plan_json: &str) -> &'static str {
-    // Quick scan for "league" key to avoid full parse.
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(plan_json) {
-        if let Some(league) = val.get("league").and_then(|v| v.as_str()) {
-            return match league {
-                "soccer" | "epl" | "ucl" | "bundesliga" | "laliga" | "la_liga" | "ligue1" | "serie_a" => "soccer",
-                _ => "baseball",
-            };
-        }
+fn detect_sport_from_plan(plan_json: &str) -> Result<&'static str, String> {
+    let val = serde_json::from_str::<serde_json::Value>(plan_json)
+        .map_err(|e| format!("plan_json_parse: {}", e))?;
+    match val.get("sport").and_then(|v| v.as_str()) {
+        Some("baseball") => Ok("baseball"),
+        Some("soccer") => Ok("soccer"),
+        Some("tennis") => Ok("tennis"),
+        Some(other) => Err(format!("unknown_sport: {}", other)),
+        None => Err("missing_sport_field_in_plan".to_string()),
     }
-    "baseball"
 }
 
 #[cfg(feature = "python-extension")]
@@ -74,7 +73,8 @@ impl NativeHotPathRuntime {
         self.dispatch_cfg = dispatch_cfg.clone();
 
         // Determine sport from plan JSON and provider from config.
-        let sport = detect_league_from_plan(compiled_plan_json);
+        let sport = detect_sport_from_plan(compiled_plan_json)
+            .map_err(|e| PyValueError::new_err(format!("sport_detection: {}", e)))?;
         let provider = cfg.provider.clone().unwrap_or_default();
 
         // Create engine based on sport type.
@@ -85,6 +85,13 @@ impl NativeHotPathRuntime {
                     .map_err(|err| PyValueError::new_err(format!("soccer_load_plan:{}", err)))?;
                 e.reset_runtime_state();
                 SportEngine::Soccer(e)
+            }
+            "tennis" => {
+                let mut e = crate::tennis::types::NativeTennisEngine::new();
+                e.load_plan_from_json(compiled_plan_json)
+                    .map_err(|err| PyValueError::new_err(format!("tennis_load_plan:{}", err)))?;
+                e.reset_runtime_state();
+                SportEngine::Tennis(e)
             }
             _ => {
                 let mut e = NativeMlbEngine::new();
@@ -261,6 +268,7 @@ impl NativeHotPathRuntime {
             let mut worker_engine = match worker_engine {
                 SportEngine::Baseball(e) => SportEngine::Baseball(e.clone()),
                 SportEngine::Soccer(e) => SportEngine::Soccer(e.clone()),
+                SportEngine::Tennis(e) => SportEngine::Tennis(e.clone()),
             };
             let worker_dispatch_handle = dispatch_handle;
             let subs_clone = Arc::clone(&subs);

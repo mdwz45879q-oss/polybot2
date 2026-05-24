@@ -147,6 +147,7 @@ def sync_provider_games(
         client = KalstropV2Provider(config=KalstropV2ProviderConfig(
             client_id=v2_client_id,
             shared_secret_raw=v2_secret,
+            catalog_sport_slugs=("football", "tennis"),
         ))
     try:
         records = client.load_game_catalog()

@@ -312,6 +312,8 @@ async def discover_new_markets(
         provider=provider,
         league=league,
         run_id=run_id,
+        sport=getattr(current_plan, "sport", "") or "",
+        sets_to_win=int(getattr(current_plan.games[0], "sets_to_win", 2)) if current_plan.games else 2,
         live_policy=policy,
         now_ts_utc=now_ts_utc if now_ts_utc is not None else int(time.time()),
         plan_horizon_hours=plan_horizon_hours,

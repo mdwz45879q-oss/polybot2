@@ -9,6 +9,9 @@ CANONICAL_MARKET_TYPES = {
     "totals", "nrfi", "moneyline", "spread",
     "btts", "soccer_halftime_result",
     "soccer_exact_score", "total_corners",
+    "tennis_match_totals", "tennis_first_set_totals",
+    "tennis_first_set_winner", "tennis_set_totals",
+    "tennis_set_handicap", "tennis_completed_match",
     "other",
 }
 

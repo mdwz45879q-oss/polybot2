@@ -76,12 +76,16 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
                     str(_obs_raw_p[0]).strip().lower() if isinstance(_obs_raw_p, list) and _obs_raw_p
                     else str(_obs_raw_p).strip().lower()
                 )
+                _obs_sport = str(obs_league_cfg.get("sport_family", "baseball")).strip().lower()
+                _obs_stw = int(obs_league_cfg.get("sets_to_win", 2))
                 with open_database(runtime) as db:
                     compiled_plan = compile_hotpath_plan(
                         db=db,
                         provider=obs_provider,
                         league=league_key,
                         run_id=int(link_run_id),
+                        sport=_obs_sport,
+                        sets_to_win=_obs_stw,
                     )
                 logger.info("loaded plan: %d games", len(compiled_plan.games))
         except Exception as exc:
@@ -180,6 +184,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     # Use first league as "primary" for backward compat with single-league code paths.
     league_key = league_keys[0]
     league_cfg = mapping.leagues.get(league_key, {})
+    sport_family = str(league_cfg.get("sport_family", "baseball")).strip().lower()
+    league_sets_to_win = int(league_cfg.get("sets_to_win", 2))
     raw_provider = league_cfg.get("provider", "")
     if isinstance(raw_provider, list):
         provider_names = [str(p).strip().lower() for p in raw_provider if str(p).strip()]
@@ -242,6 +248,11 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
     is_v2_league = (provider_name == "kalstrop_v2")
     resolved_prematch_ids: set[str] = set()
     rust_started = False
+    guardian = None
+    is_soccer = any(
+        mapping.leagues.get(lk, {}).get("sport_family") == "soccer"
+        for lk in league_keys
+    )
     hotpath: _NativeHotPathService | None = None
     try:
         # --- Build provider + execution + hotpath service (shared by V2 and non-V2) ---
@@ -328,11 +339,17 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                 (lk, _primary_provider_for_league(cfg))
                 for lk, cfg in _non_v2_leagues
             ]
+            _stw_by_league = {
+                lk: int(mapping.leagues.get(lk, {}).get("sets_to_win", 2))
+                for lk in league_keys
+            }
             with open_database(runtime) as db:
                 compiled_plan = compile_multi_league_plan(
                     db=db,
                     leagues=_non_v2_pairs,
                     run_id=run_id,
+                    sport=sport_family,
+                    sets_to_win_by_league=_stw_by_league,
                     live_policy=live_policy,
                     now_ts_utc=int(time.time()),
                     plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
@@ -385,6 +402,28 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             hotpath.start()
             rust_started = True
 
+        # --- Guardian (soccer only, dry-run) ---
+        if is_soccer and rust_started:
+            try:
+                from polybot2.guardian.manager import GuardianManager
+                from polybot2.hotpath.live_observer import find_latest_log as _find_guardian_log
+
+                _guardian_log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
+                _guardian_log = _find_guardian_log(_guardian_log_dir, run_id=run_id)
+                if _guardian_log:
+                    guardian = GuardianManager(
+                        log_path=_guardian_log,
+                        compiled_plan=compiled_plan,
+                        order_policy_config=order_policies,
+                    )
+                    guardian.start()
+                    logger.info("guardian started (dry-run): %s", _guardian_log)
+                else:
+                    logger.warning("guardian: no log file found for run_id=%d — skipping", run_id)
+            except Exception as exc:
+                logger.warning("guardian start failed (continuing without): %s", exc)
+                guardian = None
+
         # --- V2 credentials (loaded once, needed whenever any league uses V2) ---
         v2_client_id = ""
         v2_shared_secret_raw = ""
@@ -423,8 +462,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                     pending = all_pending
                     due = [g for g in pending if g.start_ts_utc is not None and g.start_ts_utc <= int(now)]
                     if due:
+                        _v2_sport_slug = "football" if sport_family == "soccer" else sport_family
                         resolution = try_resolve_games(
                             due, client_id=v2_client_id, shared_secret_raw=v2_shared_secret_raw,
+                            sport_slug=_v2_sport_slug,
                         )
                         for fg in resolution.finished:
                             resolved_prematch_ids.add(fg.prematch_event_id)
@@ -451,6 +492,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                     provider=_resolved_provider, league=_resolved_league,
                                     live_policy=live_policy,
                                     plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                                    sport=sport_family,
+                                    sets_to_win=league_sets_to_win,
                                 )
                             if game_plan is None:
                                 logger.warning("V2 resolved %s but no targets compiled", resolved.fixture_id)
@@ -480,6 +523,24 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 )
                                 hotpath.start()
                                 rust_started = True
+                                # Start guardian for V2-only soccer leagues
+                                if guardian is None and is_soccer:
+                                    try:
+                                        from polybot2.guardian.manager import GuardianManager
+                                        from polybot2.hotpath.live_observer import find_latest_log as _find_guardian_log
+
+                                        _guardian_log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
+                                        _guardian_log = _find_guardian_log(_guardian_log_dir, run_id=run_id)
+                                        if _guardian_log:
+                                            guardian = GuardianManager(
+                                                log_path=_guardian_log,
+                                                compiled_plan=game_plan,
+                                                order_policy_config=order_policies,
+                                            )
+                                            guardian.start()
+                                            logger.info("guardian started (dry-run, V2): %s", _guardian_log)
+                                    except Exception as exc:
+                                        logger.warning("guardian start failed (continuing without): %s", exc)
                             else:
                                 new_targets = tuple(
                                     t for g in game_plan.games for m in g.markets for t in m.targets
@@ -505,6 +566,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                     "V2 game patched: fixture_id=%s targets=%d presigned=%d",
                                     resolved.fixture_id, n_tgt, count,
                                 )
+                                if guardian is not None:
+                                    guardian.update_plan(game_plan)
                     elif pending and not rust_started:
                         due_times = [g.start_ts_utc for g in pending if g.start_ts_utc is not None]
                         if due_times:
@@ -547,6 +610,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 if market.condition_id in result.new_condition_ids and market.condition_id not in seen_cids:
                                     seen_cids.add(market.condition_id)
                                     logger.info("  + %s", market.question)
+                        if guardian is not None:
+                            guardian.update_plan(result.new_plan)
                 else:
                     logger.info("incremental refresh cycle=%d: no new markets (events_fetched=%d)", iteration, result.events_fetched)
 
@@ -557,6 +622,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         logger.error("startup failed: %s: %s", type(exc).__name__, exc)
         return 1
     finally:
+        if guardian is not None:
+            try:
+                guardian.stop()
+                logger.info("guardian stopped")
+            except Exception:
+                pass
         if hotpath is not None:
             try:
                 hotpath.stop()
@@ -611,6 +682,9 @@ def run_hotpath_compile(args: Any, *, logger: logging.Logger) -> int:
         live_policy=live_policy, league_key=league_key,
     )
 
+    sport_family = str(league_cfg.get("sport_family", "baseball")).strip().lower()
+    league_sets_to_win = int(league_cfg.get("sets_to_win", 2))
+
     try:
         with open_database(runtime) as db:
             compiled_plan = compile_hotpath_plan(
@@ -618,6 +692,8 @@ def run_hotpath_compile(args: Any, *, logger: logging.Logger) -> int:
                 provider=provider_name,
                 league=league_key,
                 run_id=run_id,
+                sport=sport_family,
+                sets_to_win=league_sets_to_win,
                 live_policy=live_policy,
                 now_ts_utc=int(time.time()),
                 plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),

@@ -140,10 +140,15 @@ def _parse_outcome_semantic(
 
     # ── Moneyline: team-name labels (baseball) or slug (soccer 3-way) ─
     if sports_type == "moneyline":
-        # Baseball: outcome labels are team names
+        # Baseball / tennis: outcome labels are team/player names
         if home_norm and (home_norm in label or (len(label) >= 4 and label in home_norm)):
             return "home"
         if away_norm and (away_norm in label or (len(label) >= 4 and label in away_norm)):
+            return "away"
+        # Tennis: label contains PM name, match via polymarket code
+        if home_code and home_code in label:
+            return "home"
+        if away_code and away_code in label:
             return "away"
         # Soccer: slug determines side, index determines yes/no
         side = _three_way_side_from_slug(slug_norm, home_code, away_code)
@@ -175,6 +180,34 @@ def _parse_outcome_semantic(
         if "-exact-score-any" in slug_norm:
             return "any_other_yes" if idx == 0 else "any_other_no"
         return "unknown"
+
+    # ── Tennis match totals / first-set totals: "Over" / "Under" ─────
+    if sports_type in {"tennis_match_totals", "tennis_first_set_totals"}:
+        if label == "over":
+            return "over"
+        if label == "under":
+            return "under"
+        return "over" if idx == 0 else "under"
+
+    # ── Tennis set totals: "Over 3.5" / "Under 3.5" ─────────────────
+    if sports_type == "tennis_set_totals":
+        if "over" in label:
+            return "over"
+        if "under" in label:
+            return "under"
+        return "over" if idx == 0 else "under"
+
+    # ── Tennis first-set winner: index 0=home, 1=away (no draw) ──────
+    if sports_type == "tennis_first_set_winner":
+        return "home" if idx == 0 else "away"
+
+    # ── Tennis set handicap: index 0=home_covers, 1=away_covers ──────
+    if sports_type == "tennis_set_handicap":
+        return "home_covers" if idx == 0 else "away_covers"
+
+    # ── Tennis completed match: index 0=yes, 1=no ────────────────────
+    if sports_type == "tennis_completed_match":
+        return "yes" if idx == 0 else "no"
 
     return "unknown"
 
@@ -395,12 +428,16 @@ def compile_hotpath_plan(
     provider: str,
     league: str,
     run_id: int,
+    sport: str = "",
+    sets_to_win: int = 2,
     live_policy: LoadedLiveTradingPolicy | None = None,
     now_ts_utc: int | None = None,
     plan_horizon_hours: int | None = None,
     exclude_strategy_keys: set[str] | None = None,
     include_inactive: bool = False,
 ) -> CompiledPlan:
+    if sport not in {"baseball", "soccer", "tennis"}:
+        raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis, got: {sport!r}")
     policy = live_policy or load_live_trading_policy()
     scope = evaluate_hotpath_scope(
         db=db,
@@ -618,6 +655,22 @@ def compile_hotpath_plan(
         elif sports_market_type == "soccer_exact_score" and outcome_semantic in {"any_other_yes", "any_other_no"}:
             yes_no = "YES" if outcome_semantic == "any_other_yes" else "NO"
             strategy_key = f"{gid}:EXACT_SCORE:ANY_OTHER:{yes_no}"
+        elif sports_market_type == "tennis_match_totals" and outcome_semantic in {"over", "under"} and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:TENNIS_MATCH_TOTAL:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "tennis_first_set_totals" and outcome_semantic in {"over", "under"} and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:TENNIS_FIRST_SET_TOTAL:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "tennis_set_totals" and outcome_semantic in {"over", "under"} and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:TENNIS_SET_TOTAL:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "tennis_first_set_winner" and outcome_semantic in {"home", "away"}:
+            strategy_key = f"{gid}:TENNIS_FIRST_SET_WINNER:{outcome_semantic.upper()}"
+        elif sports_market_type == "tennis_set_handicap" and outcome_semantic in {"home_covers", "away_covers"} and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:TENNIS_SET_HANDICAP:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "tennis_completed_match" and outcome_semantic in {"yes", "no"}:
+            strategy_key = f"{gid}:TENNIS_COMPLETED_MATCH:{outcome_semantic.upper()}"
         else:
             strategy_key = f"{gid}:{sports_market_type.upper()}:{condition_id}:{outcome_index}"
 
@@ -636,6 +689,12 @@ def compile_hotpath_plan(
             or (sports_market_type == "soccer_exact_score" and outcome_semantic in {
                 "exact_yes", "exact_no", "any_other_yes", "any_other_no",
             })
+            or (sports_market_type == "tennis_match_totals" and outcome_semantic in {"over", "under"})
+            or (sports_market_type == "tennis_first_set_totals" and outcome_semantic in {"over", "under"})
+            or (sports_market_type == "tennis_set_totals" and outcome_semantic in {"over", "under"})
+            or (sports_market_type == "tennis_first_set_winner" and outcome_semantic in {"home", "away"})
+            or (sports_market_type == "tennis_set_handicap" and outcome_semantic in {"home_covers", "away_covers"})
+            or (sports_market_type == "tennis_completed_match" and outcome_semantic in {"yes", "no"})
         ):
             # Some live snapshots can contain duplicated logical markets (same game+family+side+line).
             # Keep the first deterministic candidate and skip later duplicates instead of hard-failing compile.
@@ -759,6 +818,7 @@ def compile_hotpath_plan(
                 kickoff_ts_utc=(None if meta.kickoff_ts_utc is None else int(meta.kickoff_ts_utc)),
                 markets=tuple(compiled_markets),
                 alternate_provider_game_ids=_alternates,
+                sets_to_win=int(sets_to_win),
             )
         )
 
@@ -812,6 +872,7 @@ def compile_hotpath_plan(
     return CompiledPlan(
         provider=scope.provider,
         league=scope.league,
+        sport=sport,
         run_id=int(scope.run_id),
         plan_hash=plan_hash,
         compiled_at=int(time.time()),
@@ -824,6 +885,8 @@ def compile_multi_league_plan(
     db: Any,
     leagues: list[tuple[str, str]],
     run_id: int,
+    sport: str = "",
+    sets_to_win_by_league: dict[str, int] | None = None,
     live_policy: LoadedLiveTradingPolicy | None = None,
     now_ts_utc: int | None = None,
     plan_horizon_hours: int | None = None,
@@ -838,17 +901,22 @@ def compile_multi_league_plan(
     Skips leagues that have no in-scope games (HotPathPlanError with
     code 'scope_blocked'). Raises only if ALL leagues fail.
     """
+    if sport not in {"baseball", "soccer", "tennis"}:
+        raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis, got: {sport!r}")
     all_games: list[CompiledGamePlan] = []
     seen_game_ids: set[str] = set()
     successes = 0
 
     for league_key, provider_name in leagues:
         try:
+            _stw = (sets_to_win_by_league or {}).get(league_key, 2)
             plan = compile_hotpath_plan(
                 db=db,
                 provider=provider_name,
                 league=league_key,
                 run_id=run_id,
+                sport=sport,
+                sets_to_win=_stw,
                 live_policy=live_policy,
                 now_ts_utc=now_ts_utc,
                 plan_horizon_hours=plan_horizon_hours,
@@ -888,7 +956,8 @@ def compile_multi_league_plan(
 
     return CompiledPlan(
         provider=leagues[0][1] if leagues else "",
-        league=leagues[0][0] if leagues else "baseball",
+        league=leagues[0][0] if leagues else "",
+        sport=sport,
         run_id=int(run_id),
         plan_hash=plan_hash,
         compiled_at=int(time.time()),

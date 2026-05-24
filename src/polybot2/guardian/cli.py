@@ -1,25 +1,21 @@
-"""Guardian CLI command handlers."""
+"""Guardian CLI command handlers.
+
+Supports ``--snapshot`` mode only.  The live watch loop is now handled by
+the hotpath orchestrator via :class:`GuardianManager`.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-import signal
-import time
 from typing import Any
 
-from polybot2.guardian.clob_client import ClobClient
-from polybot2.guardian.executor import OverturnExecutor
-from polybot2.guardian.market_ws import PolymarketMarketWS
-from polybot2.guardian.overturn import OverturnDetector
-from polybot2.guardian.polymarket_ws import PolymarketUserWS
-from polybot2.guardian.state import OverturnAlert, TrackerState
+from polybot2.guardian.state import TrackerState
 from polybot2.guardian.tracker import OrderStateTracker
 from polybot2.hotpath.live_observer import find_latest_log
 
 
-def _render_tracker_state(state: TrackerState, detector: OverturnDetector | None = None) -> str:
+def _render_tracker_state(state: TrackerState) -> str:
     """Render the current tracker state as a human-readable string."""
     lines: list[str] = []
 
@@ -49,7 +45,7 @@ def _render_tracker_state(state: TrackerState, detector: OverturnDetector | None
                 sk_short = sk_parts[1] if len(sk_parts) > 1 else order.strategy_key
 
                 if not order.ok:
-                    status = f"FAILED"
+                    status = "FAILED"
                     fill_str = "—"
                     price_str = "—"
                 elif order.exchange_id == "noop":
@@ -78,35 +74,24 @@ def _render_tracker_state(state: TrackerState, detector: OverturnDetector | None
 
     lines.append(f"\n--- Summary: {len(state.games)} games, {total_orders} orders ({ok_orders} accepted, {filled} filled), FAK pending: {pending_fak}, GTC polling: {pending_gtc} ---")
 
-    # Overturn alerts
-    if detector:
-        active_alerts = detector.get_active_alerts()
-        triggered_alerts = [a for a in detector.alerts.values() if a.acted]
-        if active_alerts or triggered_alerts:
-            lines.append("")
-            for alert in active_alerts:
-                s1 = "✓" if alert.signal1_confirmed else "…"
-                s2 = "✓" if alert.signal2_confirmed else "…"
-                orig = alert.original_score_event
-                lines.append(
-                    f"⚠️  OVERTURN ALERT: {alert.game_id}  "
-                    f"score {orig.home}-{orig.away} → {alert.reversed_home}-{alert.reversed_away}  "
-                    f"Signal1:{s1} Signal2:{s2}  "
-                    f"orders:{len(alert.affected_orders)}"
-                )
-            for alert in triggered_alerts:
-                orig = alert.original_score_event
-                lines.append(
-                    f"🚨 OVERTURN TRIGGERED: {alert.game_id}  "
-                    f"score {orig.home}-{orig.away} → {alert.reversed_home}-{alert.reversed_away}  "
-                    f"orders:{len(alert.affected_orders)} ACTED"
-                )
-
     return "\n".join(lines) + "\n"
 
 
-async def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
-    """Run the guardian: order state tracking + overturn detection."""
+def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
+    """Run a guardian snapshot (one-shot read of log, print state, exit).
+
+    Live watch mode is handled by the hotpath orchestrator
+    (``polybot2 hotpath live``).
+    """
+    snapshot_mode = bool(getattr(args, "snapshot", False))
+    if not snapshot_mode:
+        logger.error(
+            "guardian watch mode is now integrated into the orchestrator. "
+            "Use 'polybot2 hotpath live --sport soccer' for live monitoring, "
+            "or 'polybot2 guardian watch --snapshot' for a one-shot state dump."
+        )
+        return 1
+
     log_file = str(getattr(args, "log_file", "") or "").strip()
     if not log_file:
         log_dir = str(getattr(args, "log_dir", "") or "").strip()
@@ -118,23 +103,13 @@ async def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
         logger.error("no hotpath log file found (use --log-file or set POLYBOT2_LOG_DIR)")
         return 1
 
-    snapshot_mode = bool(getattr(args, "snapshot", False))
-    logger.info("guardian tracking: %s (mode=%s)", log_file, "snapshot" if snapshot_mode else "watch")
+    logger.info("guardian snapshot: %s", log_file)
 
-    # Load order policy config for TIF determination
-    try:
-        from polybot2.linking import load_live_trading_policy
-        live_policy = load_live_trading_policy()
-        # Use the first available league's execution policy as default
-        exec_by_league = getattr(live_policy, "hotpath_execution_by_league", {}) or {}
-        order_policy_cfg = next(iter(exec_by_league.values()), {}) if exec_by_league else {}
-    except Exception:
-        order_policy_cfg = {}
+    # Load compiled plan for token→condition + game-ID mappings
+    from polybot2.guardian.tracker import build_game_id_map, build_token_to_condition_map
 
-    # Load compiled plan for token_id → condition_id mapping
-    from polybot2.guardian.tracker import build_token_to_condition_map
     token_to_condition: dict[str, str] = {}
-    compiled_plan = None
+    game_id_map: dict[str, str] = {}
     try:
         link_run_id = getattr(args, "link_run_id", None)
         league_key = str(getattr(args, "league", "") or "").strip().lower()
@@ -142,143 +117,45 @@ async def run_guardian_watch(args: Any, *, logger: logging.Logger) -> int:
             from polybot2._cli.common import _runtime_from_args
             from polybot2.hotpath.compiler import compile_hotpath_plan
             from polybot2.linking import load_mapping as _load_mapping_guardian
+
             runtime = _runtime_from_args(args)
             mapping_g = _load_mapping_guardian()
             _g_cfg = mapping_g.leagues.get(league_key, {})
             _g_raw_p = _g_cfg.get("provider", "kalstrop_v1")
             g_provider = (
-                str(_g_raw_p[0]).strip().lower() if isinstance(_g_raw_p, list) and _g_raw_p
+                str(_g_raw_p[0]).strip().lower()
+                if isinstance(_g_raw_p, list) and _g_raw_p
                 else str(_g_raw_p).strip().lower()
             )
             from polybot2.data import open_database
+
+            _g_sport = str(_g_cfg.get("sport_family", "baseball")).strip().lower()
+            _g_stw = int(_g_cfg.get("sets_to_win", 2))
             with open_database(runtime) as db:
                 compiled_plan = compile_hotpath_plan(
-                    db=db, provider=g_provider, league=league_key,
+                    db=db,
+                    provider=g_provider,
+                    league=league_key,
                     run_id=int(link_run_id),
+                    sport=_g_sport,
+                    sets_to_win=_g_stw,
                 )
             token_to_condition = build_token_to_condition_map(compiled_plan)
-            logger.info("loaded plan: %d games, %d token→condition mappings", len(compiled_plan.games), len(token_to_condition))
+            game_id_map = build_game_id_map(compiled_plan)
+            logger.info(
+                "loaded plan: %d games, %d token→condition, %d game-id mappings",
+                len(compiled_plan.games),
+                len(token_to_condition),
+                len(game_id_map),
+            )
     except Exception as exc:
-        logger.debug("could not load compiled plan for condition_id mapping: %s", exc)
-
-    # Build CLOB client (for REST fallback fill queries)
-    clob: ClobClient | None = None
-    ws: PolymarketUserWS | None = None
-    if not snapshot_mode:
-        try:
-            clob = ClobClient.from_env()
-            if not clob._api_key:
-                logger.warning("CLOB credentials not set — fill queries disabled")
-                clob = None
-        except Exception as exc:
-            logger.warning("CLOB client init failed: %s — fill queries disabled", exc)
-            clob = None
-        # Build Polymarket user WS client
-        try:
-            ws = PolymarketUserWS.from_env()
-            if not ws._api_key:
-                logger.warning("WS credentials not set — WS fill tracking disabled")
-                ws = None
-            else:
-                logger.info("Polymarket user WS enabled")
-        except Exception as exc:
-            logger.warning("WS client init failed: %s — WS disabled", exc)
-            ws = None
-
-    # Build overturn detector + market WS (for soccer leagues)
-    market_ws: PolymarketMarketWS | None = None
-    detector: OverturnDetector | None = None
-    if not snapshot_mode:
-        bid_threshold = float(getattr(args, "bid_threshold", 0.80) or 0.80)
-        confirmation_window = float(getattr(args, "confirmation_window", 10.0) or 10.0)
-
-        # Build executor for sell/cancel actions
-        log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
-        is_live = bool(getattr(args, "live", False))
-        dry_run = not is_live
-        logger.info("guardian mode: %s", "LIVE — real orders will be executed" if is_live else "DRY RUN — logging decisions only")
-        executor: OverturnExecutor | None = None
-        if clob:
-            executor = OverturnExecutor(clob, dry_run=dry_run, log_dir=log_dir)
-
-        async def _on_overturn(alert: OverturnAlert) -> None:
-            if executor and detector:
-                await executor.execute(alert, detector._best_bids)
-            else:
-                logger.warning(
-                    "🚨 OVERTURN CONFIRMED: %s — %d affected orders (executor disabled, no action taken)",
-                    alert.game_id, len(alert.affected_orders),
-                )
-
-        detector = OverturnDetector(
-            confirmation_window_s=confirmation_window,
-            bid_threshold=bid_threshold,
-            on_overturn_triggered=_on_overturn,
-        )
-        market_ws = PolymarketMarketWS()
-        logger.info("overturn detection enabled (threshold=%.2f, window=%.1fs)", bid_threshold, confirmation_window)
+        logger.debug("could not load compiled plan: %s", exc)
 
     tracker = OrderStateTracker(
         log_path=log_file,
-        clob=clob,
-        ws=ws,
-        market_ws=market_ws,
-        detector=detector,
-        order_policy_config=order_policy_cfg,
         token_to_condition=token_to_condition,
+        game_id_map=game_id_map,
     )
-
-    if snapshot_mode:
-        state = tracker.run_snapshot()
-        print(_render_tracker_state(state))
-        return 0
-
-    # Watch mode: tail log and continuously update
-    stop = False
-
-    def _on_signal(_sig: int, _frame: Any) -> None:
-        nonlocal stop
-        stop = True
-
-    prev_int = signal.signal(signal.SIGINT, _on_signal)
-    prev_term = signal.signal(signal.SIGTERM, _on_signal)
-
-    last_render = 0.0
-
-    def _on_update(state: TrackerState) -> None:
-        nonlocal last_render
-        now = time.time()
-        if now - last_render >= 1.0:
-            os.system("clear" if os.name != "nt" else "cls")
-            print(_render_tracker_state(state, detector=detector))
-            last_render = now
-
-    tracker.set_on_update(_on_update)
-
-    try:
-        await tracker.run_watch()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        signal.signal(signal.SIGINT, prev_int)
-        signal.signal(signal.SIGTERM, prev_term)
-        if executor:
-            executor.close()
-        if clob:
-            await clob.close()
-
-    # Final render
-    print(_render_tracker_state(tracker.state, detector=detector))
-
-    # Show executed actions summary
-    if executor and executor.actions:
-        print(f"\n--- Guardian Actions ({len(executor.actions)} total) ---")
-        for act in executor.actions:
-            action = act.get("action", "?")
-            sk = act.get("strategy_key", "")
-            ok = act.get("ok", False)
-            price = act.get("price", "")
-            print(f"  {action}: {sk} ok={ok}" + (f" price={price}" if price else ""))
-        print(f"  Action log: {executor._log_path}")
-
+    state = tracker.run_snapshot()
+    print(_render_tracker_state(state))
     return 0
