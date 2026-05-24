@@ -779,7 +779,12 @@ impl NativeTennisEngine {
         }
     }
 
-    /// Set handicap: fires once at match end (same pattern as soccer spreads).
+    /// Set handicap: covers fires at match end, not_covers fires early when
+    /// the favored player can no longer achieve a sufficient margin.
+    ///
+    /// not_covers guaranteed when: max_margin + line <= 0, where
+    /// max_margin = sets_to_win - opponent_sets (best case: favored wins match).
+    /// covers can never fire early — favored could still lose the match.
     fn evaluate_set_handicap_into(
         &mut self,
         gidx: GameIdx,
@@ -790,23 +795,39 @@ impl NativeTennisEngine {
         if !self.has_set_handicap[gi] {
             return;
         }
-        if !state.match_completed {
-            return;
-        }
         let tgt = &self.game_targets[gi];
-        let margin = state.sets_home - state.sets_away; // positive = home won more sets
+        let stw = self.sets_to_win[gi];
+        let margin = state.sets_home - state.sets_away;
+
         for slot in &tgt.set_handicaps {
-            let adj_margin = match slot.side {
-                SpreadSide::Home => margin as f64,
-                SpreadSide::Away => -(margin as f64),
+            let opponent_sets = match slot.side {
+                SpreadSide::Home => state.sets_away,
+                SpreadSide::Away => state.sets_home,
             };
-            if adj_margin + slot.line > 0.0 {
-                if let Some(tidx) = slot.covers_idx {
-                    intents.push(Intent { target_idx: tidx });
+
+            if state.match_completed {
+                // Match end: fire covers or not_covers based on final margin.
+                let adj_margin = match slot.side {
+                    SpreadSide::Home => margin as f64,
+                    SpreadSide::Away => -(margin as f64),
+                };
+                if adj_margin + slot.line > 0.0 {
+                    if let Some(tidx) = slot.covers_idx {
+                        intents.push(Intent { target_idx: tidx });
+                    }
+                } else {
+                    if let Some(tidx) = slot.not_covers_idx {
+                        intents.push(Intent { target_idx: tidx });
+                    }
                 }
             } else {
-                if let Some(tidx) = slot.not_covers_idx {
-                    intents.push(Intent { target_idx: tidx });
+                // Mid-match: check if not_covers is already guaranteed.
+                // Best case for favored: win match at sets_to_win, opponent stays.
+                let max_margin = stw - opponent_sets;
+                if (max_margin as f64) + slot.line <= 0.0 {
+                    if let Some(tidx) = slot.not_covers_idx {
+                        intents.push(Intent { target_idx: tidx });
+                    }
                 }
             }
         }
@@ -1516,6 +1537,75 @@ mod tests {
         let intents = tick(&mut engine, "game1", 3, 0, 6, 4, 30, None, 3, 3, true, true);
         assert_eq!(intents.len(), 1, "home_covers should fire");
         assert_eq!(intents[0].target_idx, TargetIdx(0));
+    }
+
+    #[test]
+    fn test_set_handicap_not_covers_fires_early_bo5() {
+        // BO5 line -2.5: not_covers guaranteed when opponent has >= 1 set.
+        // max_margin = 3 - 1 = 2, 2 + (-2.5) = -0.5 <= 0 → guaranteed.
+        let mut engine = NativeTennisEngine::new();
+        let t_covers = target_json("tok_covers", "home_covers", "g1:SH:HOME_COVERS:-2.5");
+        let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
+        let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
+        let plan_str = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            m
+        );
+        engine.load_plan_from_json(&plan_str).unwrap();
+
+        // Warm-up tick (baseline)
+        let intents = tick(&mut engine, "game1", 0, 0, 3, 2, 5, Some(5), 0, 1, false, false);
+        assert!(intents.is_empty());
+
+        // Opponent wins 1st set (score 0-1): not_covers fires immediately
+        let intents = tick(&mut engine, "game1", 0, 1, 0, 0, 10, Some(10), 1, 2, false, true);
+        assert_eq!(intents.len(), 1, "not_covers should fire when opponent has 1 set");
+        assert_eq!(intents[0].target_idx, TargetIdx(1)); // not_covers
+    }
+
+    #[test]
+    fn test_set_handicap_no_early_fire_when_favored_leads() {
+        // BO5 line -2.5: favored leads 2-0. max_margin = 3-0 = 3, 3+(-2.5) = 0.5 > 0.
+        // not_covers NOT guaranteed (could still win 3-0). covers not yet determined.
+        let mut engine = NativeTennisEngine::new();
+        let t_covers = target_json("tok_covers", "home_covers", "g1:SH:HOME_COVERS:-2.5");
+        let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
+        let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
+        let plan_str = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            m
+        );
+        engine.load_plan_from_json(&plan_str).unwrap();
+
+        // Warm-up tick
+        let intents = tick(&mut engine, "game1", 0, 0, 3, 2, 5, Some(5), 0, 1, false, false);
+        assert!(intents.is_empty());
+
+        // Favored leads 2-0: nothing fires
+        let intents = tick(&mut engine, "game1", 2, 0, 0, 0, 20, Some(10), 2, 3, false, true);
+        assert!(intents.is_empty(), "Nothing should fire when favored leads 2-0");
+    }
+
+    #[test]
+    fn test_set_handicap_not_covers_fires_early_bo3() {
+        // BO3 line -1.5: not_covers guaranteed when opponent has >= 1 set.
+        // max_margin = 2-1 = 1, 1 + (-1.5) = -0.5 <= 0 → guaranteed.
+        // At score 1-1, not_covers fires.
+        let mut engine = NativeTennisEngine::new();
+        let t_covers = target_json("tok_covers", "home_covers", "g1:SH:HOME_COVERS:-1.5");
+        let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-1.5");
+        let m = market_json("tennis_set_handicap", Some(-1.5), &[t_covers, t_not]);
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        // Warm-up tick
+        let intents = tick(&mut engine, "game1", 0, 0, 3, 2, 5, Some(5), 0, 1, false, false);
+        assert!(intents.is_empty());
+
+        // Score 1-1: not_covers fires
+        let intents = tick(&mut engine, "game1", 1, 1, 0, 0, 20, Some(10), 2, 3, false, true);
+        assert_eq!(intents.len(), 1, "not_covers should fire at 1-1 in BO3");
+        assert_eq!(intents[0].target_idx, TargetIdx(1));
     }
 
     // =================================================================
