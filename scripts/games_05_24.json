@@ -1,0 +1,93 @@
+[
+  {
+    "name": "boston_red_sox_vs_minnesota_twins",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "13:35",
+    "v1_fixture_id": "cbd36510-a66b-40e2-8d26-b1f9f68bdb40",
+    "boltodds_game_label": "Boston Red Sox vs Minnesota Twins, 2026-05-24, 01"
+  },
+  {
+    "name": "miami_marlins_vs_new_york_mets",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "13:40",
+    "boltodds_game_label": "Miami Marlins vs New York Mets, 2026-05-24, 01"
+  },
+  {
+    "name": "milwaukee_brewers_vs_los_angeles_dodgers",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "14:10",
+    "v1_fixture_id": "88b851bc-8369-4129-b425-09ebe05342d2",
+    "boltodds_game_label": "Milwaukee Brewers vs Los Angeles Dodgers, 2026-05-24, 02"
+  },
+  {
+    "name": "kansas_city_royals_vs_seattle_mariners",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "14:10",
+    "v1_fixture_id": "bf5c06c4-036f-4bc1-a3ae-5ea5f1c8337e",
+    "boltodds_game_label": "Kansas City Royals vs Seattle Mariners, 2026-05-24, 02"
+  },
+  {
+    "name": "chicago_cubs_vs_houston_astros",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "14:20",
+    "v1_fixture_id": "46d66e9e-2317-420a-9697-42ad789bf8f7",
+    "boltodds_game_label": "Chicago Cubs vs Houston Astros, 2026-05-24, 02"
+
+  },
+  {
+    "name": "san_francisco_giants_vs_chicago_white_sox",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "16:05",
+    "v1_fixture_id": "0283abfc-a445-4be9-b2ea-12f7e30375d6",
+    "boltodds_game_label": "San Francisco Giants vs Chicago White Sox, 2026-05-24, 04"
+
+  },
+  {
+    "name": "arizona_diamondbacks_vs_colorado_rockies",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "16:10",
+    "v1_fixture_id": "3b578ae1-707e-4f86-831e-7785c2a7af1d",
+    "boltodds_game_label": "Arizona Diamondbacks vs Colorado Rockies, 2026-05-24, 04"
+
+  },
+  {
+    "name": "atlanta_braves_vs_washington_nationals",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "16:10",
+    "v1_fixture_id": "82dcd80b-4df8-4eab-85de-7d261196fc31",
+    "boltodds_game_label": "Atlanta Braves vs Washington Nationals, 2026-05-24, 04"
+
+  },
+  {
+    "name": "sd_padres_vs_athletics",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "16:11",
+    "v1_fixture_id": "199fb7b4-a7da-441a-9e66-7c0d3e1d355b",
+    "boltodds_game_label": "San Diego Padres vs Oakland Athletics, 2026-05-24, 04"
+  },
+  {
+    "name": "baltimore_orioles_vs_detroit_tigers",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "18:05",
+    "v1_fixture_id": "6a3c0f68-b624-4aec-b2a6-033b57969ff6",
+    "boltodds_game_label": "Baltimore Orioles vs Detroit Tigers, 2026-05-24, 06"
+  },
+  {
+    "name": "los_angeles_angels_vs_texas_rangers",
+    "sport": "baseball",
+    "league": "mlb",
+    "kickoff_et": "19:20",
+    "v1_fixture_id": "63548865-bab1-4c7d-9538-b2077d239687",
+    "boltodds_game_label": "Los Angeles Angels vs Texas Rangers, 2026-05-24, 07"
+  }
+]
