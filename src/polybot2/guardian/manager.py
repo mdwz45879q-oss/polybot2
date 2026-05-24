@@ -61,22 +61,24 @@ class GuardianManager:
         try:
             clob = ClobClient.from_env()
             if not clob._api_key:
-                logger.warning("CLOB credentials not set — fill queries disabled")
                 clob = None
-        except Exception as exc:
-            logger.warning("SDK client init failed (sell orders disabled): %s", exc)
+        except Exception:
             clob = None
+
+        if not clob:
+            raise RuntimeError("guardian requires POLY_EXEC_* credentials (CLOB client failed to initialize)")
 
         # Build Polymarket user WS (for real-time fill notifications)
         ws: PolymarketUserWS | None = None
         try:
             ws = PolymarketUserWS.from_env()
             if not ws._api_key:
-                logger.warning("WS credentials not set — WS fill tracking disabled")
                 ws = None
-        except Exception as exc:
-            logger.warning("WS client init failed: %s", exc)
+        except Exception:
             ws = None
+
+        if not ws:
+            raise RuntimeError("guardian requires POLY_EXEC_* credentials (user WS failed to initialize)")
 
         # Build overturn detector + market WS
         market_ws = PolymarketMarketWS()
