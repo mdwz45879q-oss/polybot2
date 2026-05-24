@@ -201,9 +201,15 @@ def _parse_outcome_semantic(
     if sports_type == "tennis_first_set_winner":
         return "home" if idx == 0 else "away"
 
-    # ── Tennis set handicap: index 0=home_covers, 1=away_covers ──────
+    # ── Tennis set handicap: slug determines which side is favored ─────
     if sports_type == "tennis_set_handicap":
-        return "home_covers" if idx == 0 else "away_covers"
+        if "-handicap-home-" in slug_norm or slug_norm.endswith("-handicap-home"):
+            side = "home"
+        elif "-handicap-away-" in slug_norm or slug_norm.endswith("-handicap-away"):
+            side = "away"
+        else:
+            return "unknown"
+        return f"{side}_covers" if idx == 0 else f"{side}_not_covers"
 
     # ── Tennis completed match: index 0=yes, 1=no ────────────────────
     if sports_type == "tennis_completed_match":
@@ -666,7 +672,9 @@ def compile_hotpath_plan(
             strategy_key = f"{gid}:TENNIS_SET_TOTAL:{outcome_semantic.upper()}:{line_key}"
         elif sports_market_type == "tennis_first_set_winner" and outcome_semantic in {"home", "away"}:
             strategy_key = f"{gid}:TENNIS_FIRST_SET_WINNER:{outcome_semantic.upper()}"
-        elif sports_market_type == "tennis_set_handicap" and outcome_semantic in {"home_covers", "away_covers"} and line_val is not None:
+        elif sports_market_type == "tennis_set_handicap" and outcome_semantic in {
+            "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+        } and line_val is not None:
             line_key = _line_key(line_val)
             strategy_key = f"{gid}:TENNIS_SET_HANDICAP:{outcome_semantic.upper()}:{line_key}"
         elif sports_market_type == "tennis_completed_match" and outcome_semantic in {"yes", "no"}:
@@ -693,7 +701,9 @@ def compile_hotpath_plan(
             or (sports_market_type == "tennis_first_set_totals" and outcome_semantic in {"over", "under"})
             or (sports_market_type == "tennis_set_totals" and outcome_semantic in {"over", "under"})
             or (sports_market_type == "tennis_first_set_winner" and outcome_semantic in {"home", "away"})
-            or (sports_market_type == "tennis_set_handicap" and outcome_semantic in {"home_covers", "away_covers"})
+            or (sports_market_type == "tennis_set_handicap" and outcome_semantic in {
+                "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+            })
             or (sports_market_type == "tennis_completed_match" and outcome_semantic in {"yes", "no"})
         ):
             # Some live snapshots can contain duplicated logical markets (same game+family+side+line).

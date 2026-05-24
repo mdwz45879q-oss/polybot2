@@ -106,12 +106,13 @@ fn flush_tick_logs(
                 .unwrap_or("_");
             g.log_tick(
                 game_id,
-                tl.state.home,
-                tl.state.away,
-                tl.state.inning_number,
-                tl.state.inning_half,
+                tl.state.home.unwrap_or(0),
+                tl.state.away.unwrap_or(0),
                 tl.state.game_state,
-                None, // no corners for baseball
+                &crate::log_writer::TickExtra::Baseball {
+                    inn: tl.state.inning_number,
+                    half: tl.state.inning_half,
+                },
             );
         }
     }

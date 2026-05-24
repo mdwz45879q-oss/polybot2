@@ -97,12 +97,15 @@ pub(crate) fn process_decoded_frame_sync(
         if let Ok(mut g) = log.lock() {
             g.log_tick(
                 game_id,
-                Some(tick_result.state.sets_home),
-                Some(tick_result.state.sets_away),
-                None, // no inning equivalent
-                extract.free_text,
+                tick_result.state.sets_home,
+                tick_result.state.sets_away,
                 game_state,
-                None, // no corners
+                &crate::log_writer::TickExtra::Tennis {
+                    half: extract.free_text,
+                    games_h: tick_result.state.games_home,
+                    games_a: tick_result.state.games_away,
+                    tg: tick_result.state.total_games,
+                },
             );
         }
     }

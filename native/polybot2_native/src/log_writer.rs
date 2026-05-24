@@ -2,6 +2,12 @@ use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
+pub(crate) enum TickExtra<'a> {
+    Baseball { inn: Option<i64>, half: &'a str },
+    Soccer { half: &'a str, corners: Option<i64> },
+    Tennis { half: &'a str, games_h: i64, games_a: i64, tg: i64 },
+}
+
 pub(crate) struct LogWriter {
     writer: BufWriter<File>,
     buf: String,
@@ -55,33 +61,45 @@ impl LogWriter {
         let _ = self.writer.flush();
     }
 
-    pub fn log_tick(
-        &mut self,
-        gid: &str,
-        home: Option<i64>,
-        away: Option<i64>,
-        inn: Option<i64>,
-        half: &str,
-        gs: &str,
-        corners: Option<i64>,
-    ) {
+    pub fn log_tick(&mut self, gid: &str, home: i64, away: i64, gs: &str, extra: &TickExtra<'_>) {
         self.buf.clear();
         let _ = write!(self.buf, r#"{{"ts":{},"ev":"tick","gid":""#, now_unix_ms());
         write_json_escape(&mut self.buf, gid);
         self.buf.push_str(r#"","h":"#);
-        write_opt_i64(&mut self.buf, home);
+        let _ = write!(self.buf, "{}", home);
         self.buf.push_str(r#","a":"#);
-        write_opt_i64(&mut self.buf, away);
-        self.buf.push_str(r#","inn":"#);
-        write_opt_i64(&mut self.buf, inn);
-        self.buf.push_str(r#","half":""#);
-        write_json_escape(&mut self.buf, half);
-        self.buf.push_str(r#"","gs":""#);
+        let _ = write!(self.buf, "{}", away);
+        self.buf.push_str(r#","gs":""#);
         write_json_escape(&mut self.buf, gs);
         self.buf.push('"');
-        if let Some(c) = corners {
-            self.buf.push_str(r#","corners":"#);
-            let _ = write!(self.buf, "{}", c);
+        match extra {
+            TickExtra::Baseball { inn, half } => {
+                self.buf.push_str(r#","inn":"#);
+                write_opt_i64(&mut self.buf, *inn);
+                self.buf.push_str(r#","half":""#);
+                write_json_escape(&mut self.buf, half);
+                self.buf.push('"');
+            }
+            TickExtra::Soccer { half, corners } => {
+                self.buf.push_str(r#","half":""#);
+                write_json_escape(&mut self.buf, half);
+                self.buf.push('"');
+                if let Some(c) = corners {
+                    self.buf.push_str(r#","corners":"#);
+                    let _ = write!(self.buf, "{}", c);
+                }
+            }
+            TickExtra::Tennis { half, games_h, games_a, tg } => {
+                self.buf.push_str(r#","half":""#);
+                write_json_escape(&mut self.buf, half);
+                self.buf.push('"');
+                self.buf.push_str(r#","games_h":"#);
+                let _ = write!(self.buf, "{}", games_h);
+                self.buf.push_str(r#","games_a":"#);
+                let _ = write!(self.buf, "{}", games_a);
+                self.buf.push_str(r#","tg":"#);
+                let _ = write!(self.buf, "{}", tg);
+            }
         }
         self.buf.push('}');
         self.flush_buf();

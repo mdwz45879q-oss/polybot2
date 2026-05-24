@@ -60,11 +60,11 @@ HOTPATH_EXECUTION_POLICY = {
         "size_shares": 25.0,
         "time_in_force": "GTC",
         "require_presign": True,
-        "limit_price": 0.99,
+        "limit_price": 0.90,
         "secondary_amount_usdc": 25.0,
         "secondary_size_shares": 25.0, 
         "secondary_time_in_force": "FAK",
-        "secondary_limit_price": 0.99,
+        "secondary_limit_price": 0.90,
         "market_overrides": {
         "soccer_halftime_result": {"amount_usdc": 150.0, "size_shares": 150.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 150.0, "secondary_size_shares": 150.0, "secondary_limit_price": 0.99,},
@@ -107,10 +107,6 @@ HOTPATH_EXECUTION_POLICY = {
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
-        "secondary_amount_usdc": 5.0,
-        "secondary_size_shares": 5.0, 
-        "secondary_time_in_force": "FAK",
-        "secondary_limit_price": 0.99,
     },
 }
 

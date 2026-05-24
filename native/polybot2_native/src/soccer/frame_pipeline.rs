@@ -54,12 +54,13 @@ fn flush_tick_logs(
                 .unwrap_or("_");
             g.log_tick(
                 game_id,
-                tl.state.home,
-                tl.state.away,
-                None, // no inning number for soccer
-                tl.state.half,
+                tl.state.home.unwrap_or(0),
+                tl.state.away.unwrap_or(0),
                 tl.state.game_state,
-                tl.state.total_corners,
+                &crate::log_writer::TickExtra::Soccer {
+                    half: tl.state.half,
+                    corners: tl.state.total_corners,
+                },
             );
         }
     }

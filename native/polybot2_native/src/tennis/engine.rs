@@ -350,7 +350,9 @@ impl NativeTennisEngine {
                             if let Some(l) = effective_line {
                                 let (side, is_covers) = match semantic.as_str() {
                                     "home_covers" => (SpreadSide::Home, true),
+                                    "home_not_covers" => (SpreadSide::Home, false),
                                     "away_covers" => (SpreadSide::Away, true),
+                                    "away_not_covers" => (SpreadSide::Away, false),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled tennis_set_handicap semantic '{}' for game {}", other, game_id_ref);
                                         continue;
@@ -496,6 +498,11 @@ impl NativeTennisEngine {
     ) -> Option<TennisLiveTickResult> {
         let gi = gidx.0 as usize;
 
+        // Detect first observation before overwriting the dedup row.
+        // On first tick, rows[gi] is None → prev fields must be None to prevent
+        // spurious intent storm (cold-start protection, matching baseball/soccer).
+        let is_first_observation = self.rows[gi].is_none();
+
         // Update dedup row.
         self.rows[gi] = Some(TennisStateRow {
             sets_home: InlineStr::from_str(sets_home_raw),
@@ -515,17 +522,34 @@ impl NativeTennisEngine {
             games_home,
             games_away,
             total_games,
-            prev_total_games: Some(prev.total_games),
+            prev_total_games: if is_first_observation { None } else { Some(prev.total_games) },
             first_set_games: resolved_first_set_games,
-            prev_first_set_games: Some(prev.first_set_games),
+            prev_first_set_games: if is_first_observation { None } else { Some(prev.first_set_games) },
             total_sets,
-            prev_total_sets: Some(prev.total_sets),
+            prev_total_sets: if is_first_observation { None } else { Some(prev.total_sets) },
             current_set,
             match_completed: match_completed || prev.match_completed,
             first_set_completed: first_set_completed || prev.first_set_completed,
             game_state: gs,
         };
         self.game_states[gi] = state;
+
+        // Cold-start: mark already-occurred events so evaluators don't fire
+        // on stale outcomes. Progressive evaluators are already guarded by
+        // Option<i64> prev fields (None on first tick), but event-based
+        // evaluators (first-set under/winner, match-end markets) need
+        // explicit tombstones.
+        if is_first_observation {
+            if state.first_set_completed {
+                self.first_set_winner_resolved[gi] = true;
+                self.first_set_total_under_emitted[gi] = true;
+            }
+            if state.match_completed {
+                self.match_total_under_emitted[gi] = true;
+                self.set_total_under_emitted[gi] = true;
+                self.final_resolved_games[gi] = true;
+            }
+        }
 
         // Evaluate directly into stack-allocated SmallVec — no intermediate type.
         let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
@@ -1052,7 +1076,9 @@ impl NativeTennisEngine {
                             if let Some(l) = effective_line {
                                 let (side, is_covers) = match semantic.as_str() {
                                     "home_covers" => (SpreadSide::Home, true),
+                                    "home_not_covers" => (SpreadSide::Home, false),
                                     "away_covers" => (SpreadSide::Away, true),
+                                    "away_not_covers" => (SpreadSide::Away, false),
                                     other => {
                                         eprintln!("[polybot2] WARN: unhandled tennis_set_handicap semantic '{}' for game {}", other, uid);
                                         continue;
@@ -1322,6 +1348,10 @@ mod tests {
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
+        // Warm-up tick during set 1 (establishes baseline, cold-start skips)
+        let intents = tick(&mut engine, "game1", 0, 0, 5, 4, 9, Some(9), 0, 1, false, false);
+        assert!(intents.is_empty());
+
         // First set ends with 10 games -> under 10.5 fires
         let intents = tick(&mut engine, "game1", 1, 0, 0, 0, 10, Some(10), 1, 2, false, true);
         assert_eq!(intents.len(), 1);
@@ -1455,24 +1485,37 @@ mod tests {
     }
 
     #[test]
-    fn test_set_handicap_away_covers_when_home_doesnt() {
-        // Tennis set handicap: two-outcome market. Home_covers and away_covers
-        // are separate markets (not covers/not_covers on the same slot).
-        // When home wins 2-1 with line -1.5, home doesn't cover.
-        // The away_covers market (line +1.5) fires instead.
+    fn test_set_handicap_single_slot_covers_and_not_covers() {
+        // Tennis set handicap: single SpreadSlot with both covers_idx and
+        // not_covers_idx. The slug determines the side (home or away).
+        // When the favored player doesn't cover, not_covers fires.
         let mut engine = NativeTennisEngine::new();
-        let t_home = target_json("tok_hc_home", "home_covers", "g1:SH:HOME_COVERS:-1.5");
-        let t_away = target_json("tok_hc_away", "away_covers", "g1:SH:AWAY_COVERS:-1.5");
-        let m = market_json("tennis_set_handicap", Some(-1.5), &[t_home, t_away]);
+        let t_covers = target_json("tok_hc_covers", "home_covers", "g1:SH:HOME_COVERS:-1.5");
+        let t_not = target_json("tok_hc_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-1.5");
+        let m = market_json("tennis_set_handicap", Some(-1.5), &[t_covers, t_not]);
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
-        // Home wins 2-1 -> margin=1
-        // Home: 1 + (-1.5) = -0.5 <= 0 -> home doesn't cover
-        // Away: -(1) + (-1.5) = -2.5 <= 0 -> away doesn't cover either
-        // (Both fail because margin is only 1, line is -1.5)
+        // Home wins 2-1 -> margin=1, 1 + (-1.5) = -0.5 <= 0 -> home doesn't cover
+        // not_covers_idx fires (TargetIdx 1)
         let intents = tick(&mut engine, "game1", 2, 1, 6, 4, 32, None, 3, 3, true, true);
-        assert!(intents.is_empty(), "Neither side covers with margin=1 and line=-1.5");
+        assert_eq!(intents.len(), 1, "home_not_covers should fire");
+        assert_eq!(intents[0].target_idx, TargetIdx(1));
+    }
+
+    #[test]
+    fn test_set_handicap_covers_fires_when_margin_sufficient() {
+        // Home wins 3-0 -> margin=3, 3 + (-2.5) = 0.5 > 0 -> covers
+        let mut engine = NativeTennisEngine::new();
+        let t_covers = target_json("tok_hc_covers", "home_covers", "g1:SH:HOME_COVERS:-2.5");
+        let t_not = target_json("tok_hc_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
+        let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        let intents = tick(&mut engine, "game1", 3, 0, 6, 4, 30, None, 3, 3, true, true);
+        assert_eq!(intents.len(), 1, "home_covers should fire");
+        assert_eq!(intents[0].target_idx, TargetIdx(0));
     }
 
     // =================================================================

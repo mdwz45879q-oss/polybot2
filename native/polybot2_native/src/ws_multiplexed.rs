@@ -632,12 +632,12 @@ pub(crate) async fn run_multiplexed_worker_async(
                         for tl in &pending_v2_logs {
                             let gid = e.game_ids.get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str()).unwrap_or("_");
-                            g.log_tick(gid, tl.state.home, tl.state.away, None, tl.half, tl.game_state, tl.state.total_corners);
+                            g.log_tick(gid, tl.state.home.unwrap_or(0), tl.state.away.unwrap_or(0), tl.game_state, &crate::log_writer::TickExtra::Soccer { half: tl.half, corners: tl.state.total_corners });
                         }
                         for tl in &pending_bo_logs {
                             let gid = e.game_ids.get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str()).unwrap_or("_");
-                            g.log_tick(gid, tl.state.home, tl.state.away, None, tl.half, tl.game_state, tl.state.total_corners);
+                            g.log_tick(gid, tl.state.home.unwrap_or(0), tl.state.away.unwrap_or(0), tl.game_state, &crate::log_writer::TickExtra::Soccer { half: tl.half, corners: tl.state.total_corners });
                         }
                     }
                 }

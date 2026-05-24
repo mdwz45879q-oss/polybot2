@@ -236,12 +236,13 @@ pub(crate) async fn run_kalstrop_v2_worker_async(
                                 .unwrap_or("_");
                             g.log_tick(
                                 gid,
-                                tl.state.home,
-                                tl.state.away,
-                                None,
-                                tl.half,
+                                tl.state.home.unwrap_or(0),
+                                tl.state.away.unwrap_or(0),
                                 tl.game_state,
-                                tl.state.total_corners,
+                                &crate::log_writer::TickExtra::Soccer {
+                                    half: tl.half,
+                                    corners: tl.state.total_corners,
+                                },
                             );
                         }
                     }
