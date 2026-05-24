@@ -515,11 +515,11 @@ impl NativeTennisEngine {
             games_home,
             games_away,
             total_games,
-            prev_total_games: prev.total_games,
+            prev_total_games: Some(prev.total_games),
             first_set_games: resolved_first_set_games,
-            prev_first_set_games: prev.first_set_games,
+            prev_first_set_games: Some(prev.first_set_games),
             total_sets,
-            prev_total_sets: prev.total_sets,
+            prev_total_sets: Some(prev.total_sets),
             current_set,
             match_completed: match_completed || prev.match_completed,
             first_set_completed: first_set_completed || prev.first_set_completed,
@@ -574,16 +574,18 @@ impl NativeTennisEngine {
             return;
         }
         let tgt = &self.game_targets[gi];
-        let prev = state.prev_total_games;
         let now = state.total_games;
 
         // Over crossings: fire when half_int crosses from prev to now.
-        if now > prev {
-            let prev_u = prev.max(0) as u16;
-            let now_u = now.max(0) as u16;
-            for ol in &tgt.match_total_over_lines {
-                if ol.half_int >= prev_u && ol.half_int < now_u {
-                    intents.push(Intent { target_idx: ol.target_idx });
+        // prev = None on first tick (cold start) → skip to establish baseline.
+        if let Some(prev) = state.prev_total_games {
+            if now > prev {
+                let prev_u = prev.max(0) as u16;
+                let now_u = now.max(0) as u16;
+                for ol in &tgt.match_total_over_lines {
+                    if ol.half_int >= prev_u && ol.half_int < now_u {
+                        intents.push(Intent { target_idx: ol.target_idx });
+                    }
                 }
             }
         }
@@ -613,18 +615,19 @@ impl NativeTennisEngine {
             return;
         }
         let tgt = &self.game_targets[gi];
-        let prev = state.prev_first_set_games;
         let now = state.first_set_games;
 
-        // Over crossings. Safe without a first_set_completed guard because
-        // first_set_games comes from phases[0] which freezes after set 1 —
-        // on subsequent ticks now == prev, so no spurious fires.
-        if now > prev {
-            let prev_u = prev.max(0) as u16;
-            let now_u = now.max(0) as u16;
-            for ol in &tgt.first_set_total_over_lines {
-                if ol.half_int >= prev_u && ol.half_int < now_u {
-                    intents.push(Intent { target_idx: ol.target_idx });
+        // Over crossings. prev = None on first tick → skip (cold-start safe).
+        // No first_set_completed guard needed: first_set_games comes from
+        // phases[0] which freezes after set 1 — subsequent ticks have now == prev.
+        if let Some(prev) = state.prev_first_set_games {
+            if now > prev {
+                let prev_u = prev.max(0) as u16;
+                let now_u = now.max(0) as u16;
+                for ol in &tgt.first_set_total_over_lines {
+                    if ol.half_int >= prev_u && ol.half_int < now_u {
+                        intents.push(Intent { target_idx: ol.target_idx });
+                    }
                 }
             }
         }
@@ -654,7 +657,6 @@ impl NativeTennisEngine {
             return;
         }
         let tgt = &self.game_targets[gi];
-        let prev = state.prev_total_sets;
         let now = state.total_sets;
 
         // Over: fire when outcome becomes guaranteed (not when set completes).
@@ -663,7 +665,9 @@ impl NativeTennisEngine {
         // Condition: min(sets_home, sets_away) >= N + 1 - sets_to_win.
         // Example BO3: Over 2.5 guaranteed when min(h,a) >= 1 (i.e., 1-1).
         // Example BO5: Over 4.5 guaranteed when min(h,a) >= 2 (i.e., 2-2).
-        if now > prev {
+        // prev = None on first tick → skip (cold-start safe).
+        if let Some(prev) = state.prev_total_sets {
+            if now > prev {
             let stw = self.sets_to_win[gi];
             let min_sets = state.sets_home.min(state.sets_away);
             for ol in &tgt.set_total_over_lines {
@@ -672,6 +676,7 @@ impl NativeTennisEngine {
                 if min_sets >= min_needed {
                     intents.push(Intent { target_idx: ol.target_idx });
                 }
+            }
             }
         }
 

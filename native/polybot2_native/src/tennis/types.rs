@@ -50,17 +50,18 @@ pub(crate) struct TennisGameTargets {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Default)]
+#[allow(dead_code)] // Fields read by log output and future observer scoreboard.
 pub(crate) struct TennisGameState {
     pub(crate) sets_home: i64,
     pub(crate) sets_away: i64,
     pub(crate) games_home: i64,        // games in current set (home)
     pub(crate) games_away: i64,        // games in current set (away)
-    pub(crate) total_games: i64,       // cumulative games across all sets + current
-    pub(crate) prev_total_games: i64,
-    pub(crate) first_set_games: i64,   // frozen after set 1 ends
-    pub(crate) prev_first_set_games: i64,
-    pub(crate) total_sets: i64,        // sets completed so far
-    pub(crate) prev_total_sets: i64,
+    pub(crate) total_games: i64,              // cumulative games across all sets + current
+    pub(crate) prev_total_games: Option<i64>, // None on first tick (cold-start safe)
+    pub(crate) first_set_games: i64,          // frozen after set 1 ends
+    pub(crate) prev_first_set_games: Option<i64>,
+    pub(crate) total_sets: i64,               // sets completed so far
+    pub(crate) prev_total_sets: Option<i64>,
     pub(crate) current_set: i64,       // 1, 2, 3, ...
     pub(crate) match_completed: bool,
     pub(crate) first_set_completed: bool,
