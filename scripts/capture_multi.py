@@ -133,14 +133,14 @@ def v2_auth_headers():
     }
 
 
-def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30):
+def resolve_v2_provider(event_id: str, max_wait: int = 1800, interval: int = 30, sport_slug: str = "football"):
     deadline = time.time() + max(max_wait, 0)
     attempt = 0
     while True:
         attempt += 1
         try:
             r = requests.get(f"{V2_API}/fixtures/{event_id}/providers",
-                             params={"sport": "football"}, headers=v2_auth_headers(), timeout=15)
+                             params={"sport": sport_slug}, headers=v2_auth_headers(), timeout=15)
             if r.status_code == 200:
                 bg = r.json().get("providers", {}).get("bet_genius", {})
                 fid = bg.get("fixture_id")
@@ -169,6 +169,7 @@ def resolve_v2_live_event_id(
     original_event_id: str,
     max_wait: int = 1800,
     interval: int = 30,
+    sport_slug: str = "football",
 ) -> str | None:
     """Re-fetch tournament fixtures and find the live event_id by team match.
 
@@ -187,7 +188,7 @@ def resolve_v2_live_event_id(
     while True:
         attempt += 1
         try:
-            url = f"{V2_API}/sports/football/competitions/{category_slug}/{tournament_slug}/fixtures"
+            url = f"{V2_API}/sports/{sport_slug}/competitions/{category_slug}/{tournament_slug}/fixtures"
             r = requests.get(url, headers=v2_auth_headers(), timeout=15)
             if r.status_code == 200:
                 data = r.json()
@@ -637,6 +638,7 @@ def _run_single_game(
                         scheduled_date=v2_scheduled_date,
                         original_event_id=v2_event_id,
                         max_wait=min(120, max(0, resolve_deadline - time.time())),
+                        sport_slug=v2_slug,
                     )
                     if live_eid:
                         if live_eid != last_eid:
@@ -649,7 +651,7 @@ def _run_single_game(
                 remaining = max(0, resolve_deadline - time.time())
                 if remaining <= 0:
                     break
-                provider = resolve_v2_provider(resolve_eid, max_wait=min(120, remaining))
+                provider = resolve_v2_provider(resolve_eid, max_wait=min(120, remaining), sport_slug=v2_slug)
                 if not provider and time.time() < resolve_deadline:
                     print(f"  [v2] resolution failed, will re-discover event_id...")
 
@@ -779,13 +781,15 @@ def main():
             game_dir = out_dir / name
             game_dir.mkdir(parents=True, exist_ok=True)
 
-            # V2/BetGenius covers soccer only -- skip for baseball and other sports
-            if v2_event_id and sport in ("soccer", "football"):
+            # V2/BetGenius covers soccer and tennis
+            v2_sport_slug = "football" if sport in ("soccer", "football") else sport
+            if v2_event_id and sport in ("soccer", "football", "tennis"):
                 kickoff_ts = _parse_kickoff_ts(game)
 
                 def _v2_worker(eid=v2_event_id, gdir=game_dir, gname=name, kts=kickoff_ts,
                                cat_slug=v2_category_slug, tourn_slug=v2_tournament_slug,
-                               home=v2_home_team, away=v2_away_team, sdate=v2_scheduled_date):
+                               home=v2_home_team, away=v2_away_team, sdate=v2_scheduled_date,
+                               v2_slug=v2_sport_slug):
                     # Wait until V2_LEAD_MINUTES before kickoff
                     if kts is not None:
                         start_resolve_at = kts - (V2_LEAD_MINUTES * 60)
@@ -817,6 +821,7 @@ def main():
                                 original_event_id=eid,
                                 max_wait=min(120, max(0, resolve_deadline - time.time())),
                                 interval=15,
+                                sport_slug=v2_slug,
                             )
                             if live_eid:
                                 if live_eid != last_eid:
@@ -834,6 +839,7 @@ def main():
                             resolve_eid,
                             max_wait=min(120, remaining),
                             interval=15,
+                            sport_slug=v2_slug,
                         )
                         if not provider and time.time() < resolve_deadline:
                             print(f"  [v2/{gname}] resolution failed, will re-discover event_id...")
