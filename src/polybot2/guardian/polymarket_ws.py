@@ -105,18 +105,21 @@ class PolymarketUserWS:
                 reconnect_delay = RECONNECT_BASE_S  # reset on clean disconnect
             except websockets.exceptions.ConnectionClosed as exc:
                 logger.warning("user WS connection closed: %s", exc)
+                if self._stop:
+                    break
+                logger.info("user WS reconnecting in %.1fs...", reconnect_delay)
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, RECONNECT_MAX_S)
             except Exception as exc:
                 logger.warning("user WS error: %s: %s", type(exc).__name__, exc)
+                if self._stop:
+                    break
+                logger.info("user WS reconnecting in %.1fs...", reconnect_delay)
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, RECONNECT_MAX_S)
 
             self._connected = False
             self._ws = None
-
-            if self._stop:
-                break
-
-            logger.info("user WS reconnecting in %.1fs...", reconnect_delay)
-            await asyncio.sleep(reconnect_delay)
-            reconnect_delay = min(reconnect_delay * 2, RECONNECT_MAX_S)
 
     async def _run_session(
         self,
