@@ -768,13 +768,16 @@ def main():
                 def _v2_worker(eid=v2_event_id, gdir=game_dir, gname=name, kts=kickoff_ts,
                                cat_slug=v2_category_slug, tourn_slug=v2_tournament_slug,
                                home=v2_home_team, away=v2_away_team, sdate=v2_scheduled_date,
-                               v2_slug=v2_sport_slug):
-                    # Wait until V2_LEAD_MINUTES before kickoff
+                               v2_slug=v2_sport_slug, v2_sport=sport):
+                    # Wait until kickoff for tennis (fixture_id unavailable before match starts),
+                    # or V2_LEAD_MINUTES before kickoff for soccer (prematch resolution works).
                     if kts is not None:
-                        start_resolve_at = kts - (V2_LEAD_MINUTES * 60)
+                        lead = 0 if v2_sport == "tennis" else V2_LEAD_MINUTES * 60
+                        start_resolve_at = kts - lead
                         wait_seconds = start_resolve_at - time.time()
                         if wait_seconds > 0:
-                            print(f"  [v2/{gname}] waiting {wait_seconds:.0f}s until {V2_LEAD_MINUTES}min before kickoff")
+                            label = "kickoff" if lead == 0 else f"{V2_LEAD_MINUTES}min before kickoff"
+                            print(f"  [v2/{gname}] waiting {wait_seconds:.0f}s until {label}")
                             while wait_seconds > 0 and not stop_flag[0]:
                                 time.sleep(min(wait_seconds, 5.0))
                                 wait_seconds = start_resolve_at - time.time()
