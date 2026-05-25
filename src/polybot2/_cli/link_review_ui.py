@@ -53,10 +53,13 @@ def _render_provider_panels_text(all_pgs: list[dict[str, Any]], primary_pg: dict
         _league = str(_pg.get("league_raw") or "") or str(_pg.get("sport_raw") or "")
         _is_primary = (_pg is primary_pg)
 
+        _is_rejected = (not _is_primary and str(_pg.get("binding_status") or "") == "unresolved")
         title = Text()
-        title.append(f" {_prov} ", style="bold" if _is_primary else "")
+        title.append(f" {_prov} ", style="bold" if _is_primary else ("dim" if _is_rejected else ""))
         if _is_primary:
             title.append("* ", style="bold bright_magenta")
+        if _is_rejected:
+            title.append("✗ ", style="bold red")
         if _prov == "kalstrop_v2":
             title.append("! ", style="bold red")
 
@@ -523,7 +526,12 @@ def _build_game_card_renderable(
         _id_display = _gid[:28] if len(_gid) > 28 else _gid
         _tz = _PROVIDER_TIMEZONE.get(_prov, "UTC")
         _when = str(_pg.get("when_raw") or "")
-        _prov_display = f"[bold green]{_prov}[/bold green]" if _is_primary else _prov
+        if _is_primary:
+            _prov_display = f"[bold green]{_prov}[/bold green]"
+        elif str(_pg.get("binding_status") or "") == "unresolved":
+            _prov_display = f"❌ {_prov}"
+        else:
+            _prov_display = _prov
         _col_rows = [
             ("Provider", _prov_display),
             (_id_label, _id_display),
@@ -917,7 +925,8 @@ def _build_card_document_lines(
             _when = str(_pg.get("when_raw") or "")
             _tz = _PROVIDER_TIMEZONE.get(_prov, "UTC")
             _is_primary = (_pg is provider_game)
-            _marker = " *" if _is_primary else ""
+            _is_rejected = (not _is_primary and str(_pg.get("binding_status") or "") == "unresolved")
+            _marker = " *" if _is_primary else (" ✗" if _is_rejected else "")
             lines.append(f"  {_prov}{_marker}: {_id_label}={_gid[:30]}")
             lines.append(f"    \"{_home}\" vs \"{_away}\"  {_when} ({_tz})")
     lines.append("")
