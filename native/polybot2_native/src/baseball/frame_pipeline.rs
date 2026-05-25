@@ -1,4 +1,4 @@
-use crate::baseball::parse::{is_completed_free_text, parse_period};
+use crate::baseball::parse::parse_period;
 use crate::baseball::types::*;
 use crate::dispatch::{DispatchHandle, SubmitBatch};
 use crate::fast_extract;
@@ -145,7 +145,7 @@ fn process_extracted_fields(
     let is_completed = if free_text.is_empty() {
         false
     } else {
-        is_completed_free_text(free_text)
+        free_text.trim().eq_ignore_ascii_case("Ended")
     };
     let match_completed = if free_text.is_empty() {
         None

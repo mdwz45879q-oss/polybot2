@@ -3,7 +3,6 @@
 use crate::dispatch::{dispatch_intents, DispatchHandle};
 use crate::fast_extract;
 use crate::log_writer::LogWriter;
-use crate::parse_common::is_completed_free_text;
 use crate::soccer::parse::parse_half;
 use crate::soccer::types::*;
 use crate::*;
@@ -90,7 +89,7 @@ fn process_extracted_fields(
     let is_completed = if extract.free_text.is_empty() {
         false
     } else {
-        is_completed_free_text(extract.free_text)
+        extract.free_text.trim().eq_ignore_ascii_case("Ended")
     };
     let match_completed = if extract.free_text.is_empty() {
         None

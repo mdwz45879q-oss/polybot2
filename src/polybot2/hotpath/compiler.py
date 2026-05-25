@@ -211,10 +211,6 @@ def _parse_outcome_semantic(
             return "unknown"
         return f"{side}_covers" if idx == 0 else f"{side}_not_covers"
 
-    # ── Tennis completed match: index 0=yes, 1=no ────────────────────
-    if sports_type == "tennis_completed_match":
-        return "yes" if idx == 0 else "no"
-
     return "unknown"
 
 
@@ -677,8 +673,6 @@ def compile_hotpath_plan(
         } and line_val is not None:
             line_key = _line_key(line_val)
             strategy_key = f"{gid}:TENNIS_SET_HANDICAP:{outcome_semantic.upper()}:{line_key}"
-        elif sports_market_type == "tennis_completed_match" and outcome_semantic in {"yes", "no"}:
-            strategy_key = f"{gid}:TENNIS_COMPLETED_MATCH:{outcome_semantic.upper()}"
         else:
             strategy_key = f"{gid}:{sports_market_type.upper()}:{condition_id}:{outcome_index}"
 
@@ -704,7 +698,6 @@ def compile_hotpath_plan(
             or (sports_market_type == "tennis_set_handicap" and outcome_semantic in {
                 "home_covers", "home_not_covers", "away_covers", "away_not_covers",
             })
-            or (sports_market_type == "tennis_completed_match" and outcome_semantic in {"yes", "no"})
         ):
             # Some live snapshots can contain duplicated logical markets (same game+family+side+line).
             # Keep the first deterministic candidate and skip later duplicates instead of hard-failing compile.

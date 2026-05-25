@@ -32,9 +32,6 @@ pub(crate) fn parse_half(text: &str) -> &'static str {
 }
 
 #[cfg(test)]
-use crate::parse_common::is_completed_free_text;
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -66,20 +63,5 @@ mod tests {
     #[test]
     fn parse_half_empty() {
         assert_eq!(parse_half(""), "");
-    }
-
-    #[test]
-    fn completion_ended() {
-        assert!(is_completed_free_text("Ended"));
-    }
-
-    #[test]
-    fn completion_ft() {
-        assert!(is_completed_free_text("FT"));
-    }
-
-    #[test]
-    fn not_completed_live() {
-        assert!(!is_completed_free_text("1st half"));
     }
 }

@@ -56,7 +56,7 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `kalstrop_types.rs` | Zero-copy serde structs for Kalstrop WS frames (`KalstropFrame<'a>`, etc.) |
 | `baseball/` | Sport-specific: `engine.rs` (NativeMlbEngine, process_tick_live, merge_plan), `eval.rs` (totals, NRFI, walkoff, moneyline, spreads), `parse.rs` (inning parsing), `frame_pipeline.rs` (zero-alloc live path), `types.rs` (GameState, GameTargets, etc.) |
 | `soccer/` | Sport-specific: `engine.rs` (NativeSoccerEngine), `eval.rs` (totals, three-way moneyline, BTTS, spreads, corners, halftime result, exact score with early NO), `parse.rs` (half parsing), `frame_pipeline.rs`, `types.rs` |
-| `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 7 evaluators: match totals, first-set totals, set totals, moneyline, first-set winner, set handicap, completed match), `frame_pipeline.rs`, `types.rs`. Per-game `sets_to_win` (2 for BO3, 3 for BO5). |
+| `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 6 evaluators: match totals, first-set totals, set totals, moneyline, first-set winner, set handicap), `frame_pipeline.rs`, `types.rs`. Per-game `sets_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-module dependency on soccer). |
 | `kalstrop_v2_sio.rs` | Socket.IO/Engine.IO client for Kalstrop V2 (`SioConnection`, handshake, `subscribe`/`unsubscribe`, frame classification) |
 | `kalstrop_v2_types.rs` | V2 frame extractor (`fast_extract_v2`): fixture_id, home/away scores, currentPhase. Prebuilt finders. |
 | `kalstrop_v2_frame_pipeline.rs` | V2 soccer frame pipeline: extract → dedup → phase map → engine → dispatch |
@@ -66,18 +66,16 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `boltodds_frame_pipeline.rs` | BoltOdds soccer frame pipeline: extract → dedup → eval → dispatch. Uses integer-based dedup (goals + corners + period). |
 | `ws_boltodds.rs` | BoltOdds WS worker: plain WS connection (`?key=TOKEN`), subscribe by game labels, frame drain loop. Simpler protocol than V1 (no GraphQL). |
 | `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames. `fast_extract_v1` (soccer/baseball): fixtureId, homeScore, awayScore, freeText, corners. `fast_extract_tennis_v1` (tennis): adds nested currentPhase fields (games_home/away, phase number) and phases array scan for total_games/first_set_games. |
-| `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). |
+| `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by baseball, soccer (V1, BoltOdds, V2), and tennis frame pipelines. |
 | `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`). Depth is 1-2 per token (primary + optional secondary order). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes orders per token at startup. |
 | `dispatch/fast_submit_client.rs` | `FastClobSubmitClient`: custom HTTP client bypassing the SDK for `POST /order` (single) and `POST /orders` (batch). Caches decoded API secret, uses stack-based `itoa` + base64 for HMAC, sends pre-serialized order bytes directly. Two methods: `post_order_bytes_single` (single order) and `post_orders_bytes` (batch, via generic `send_json_post` helper). `warmup_connection()` pre-establishes TCP + TLS + HTTP/2 via `GET /time`. Configured with `tcp_nodelay(true)`, `connect_timeout(5s)`, `timeout(10s)`, `pool_max_idle_per_host(30)`, `pool_idle_timeout(None)`, HTTP/2 via ALPN. |
 | `dispatch/sdk_exec.rs` | `OrderSubmitter::new`, `ensure_sdk_runtime_async`, `sdk_client_ref`, `signer_ref` (SDK init for presign signing). `sign_order_batch` (presign warmup). `map_post_response` helper. The SDK client is used only for order signing at startup/patch — not for HTTP submission. |
 | `dispatch/submitter.rs` | `run_submitter_async`: spin-loop that pops from SPSC ring and calls `submit_batch_task` inline (no `tokio::spawn`). 3-tier dispatch: `len==1` (single `POST /order`, bare `.await`), `2..=15` (one `POST /orders` batch — 1 HMAC, 1 HTTP request), `>15` (chunked into groups of `MAX_CLOB_BATCH=15`, concurrent `join_all`). Uses `ChunkScratch` for reusable body/index buffers. No semaphore. Keeps CLOB connection warm via `CLOB_KEEPALIVE_INTERVAL` (120s) pings during idle — no order ever pays cold-start TLS. |
-| `dispatch/flow.rs` | `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by soccer V1, BoltOdds, and V2 frame pipelines. |
-| `parse_common.rs` | Shared `is_completed_free_text()` used by baseball, soccer, and tennis parsers. Recognizes "Ended", "Final", "Game Over", "Finished", "FT", "Interrupted". |
 | `dispatch/types.rs` | `DispatchHandle`, `OrderSubmitter`, `SubmitWork`, `SubmitBatch`, `PreparedOrderPayload`, `SharedRegistry` (ArcSwap). `PreparedOrderPayload` stores pre-serialized order JSON bytes + `time_in_force: OrderTimeInForce` (carried through to log output). |
 | `ws.rs` | Kalstrop V1 live worker: GraphQL WS connect, subscription management, frame drain loop. Uses `worker_clock_origin: Instant` for monotonic timestamps. Dispatches to sport-specific frame pipeline via `SportEngine` enum (`Baseball`/`Soccer`/`Tennis` variants). Drains `patch_rx` at quiescent points for hot-patch application. |
 | `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), `ws_boltodds.rs` (BoltOdds), or `ws_multiplexed.rs` (multi-provider) based on `provider`/`providers` in config. Sport engine selected from explicit `sport` field in plan JSON via `detect_sport_from_plan()` — returns `Result`, crashes on unknown sport (no silent fallback). CPU core pinning via `core_affinity` for WS + submitter threads (`ws_core_idx`/`submitter_core_idx` in config). `health_snapshot()` exposes WS + submitter health. |
 | `lib.rs` | Shared types (`GameIdx`, `TargetIdx`, `TokenIdx`, `OverLine`, `SpreadSide`, `Intent`, `RawIntent`), `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`), `PatchPayload`, `NativeHotPathRuntime`, config structs. Sport-specific types live in `baseball/types.rs`, `soccer/types.rs`, `tennis/types.rs`. |
-| `log_writer.rs` | Structured JSONL log. Wrapped in `Arc<Mutex<LogWriter>>` and shared by WS thread (logs ticks) and submitter thread (logs order outcomes). Order events include `tif` field ("FAK"/"GTC"/"FOK") carried through from `PreparedOrderPayload`. |
+| `log_writer.rs` | Structured JSONL log. Wrapped in `Arc<Mutex<LogWriter>>` and shared by WS thread (logs ticks) and submitter thread (logs order outcomes). Order events include `tif` field ("FAK"/"GTC"/"FOK") carried through from `PreparedOrderPayload`. `log_tick` uses `TickExtra` enum (`Baseball`/`Soccer`/`Tennis`) for sport-specific fields — each sport emits only its own fields, no cross-sport `None` padding. |
 
 ### Hot Path Pipeline
 
@@ -144,8 +142,7 @@ The Python compiler (`compiler.py`) produces strategy keys (`"gid:TOTAL:OVER:5.5
 | **Tennis match/first-set totals** | Label "Over"/"Under" or outcome_index fallback | `over`, `under` |
 | **Tennis set totals** | Label contains "over"/"under" (includes line number) | `over`, `under` |
 | **Tennis first-set winner** | outcome_index (0=home, 1=away) | `home`, `away` |
-| **Tennis set handicap** | outcome_index (0=home_covers, 1=away_covers) | `home_covers`, `away_covers` |
-| **Tennis completed match** | outcome_index (0=yes, 1=no) | `yes`, `no` |
+| **Tennis set handicap** | Slug (`-handicap-home-` / `-handicap-away-`) + outcome_index | `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers` |
 | **Moneyline (tennis)** | PM code in label (fallback after team-name match) | `home`, `away` |
 
 Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exact_score_from_slug`. Polymarket codes looked up from `TEAM_MAP_*` / `PLAYER_MAP_*` via the mapping at compile time.
@@ -157,7 +154,7 @@ Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exa
 - `{gid}:EXACT_SCORE:1_1:YES`, `{gid}:EXACT_SCORE:ANY_OTHER:NO`
 - `{gid}:TENNIS_MATCH_TOTAL:OVER:36.5`, `{gid}:TENNIS_FIRST_SET_TOTAL:UNDER:9.5`
 - `{gid}:TENNIS_SET_TOTAL:OVER:3.5`, `{gid}:TENNIS_FIRST_SET_WINNER:HOME`
-- `{gid}:TENNIS_SET_HANDICAP:HOME_COVERS:-2.5`, `{gid}:TENNIS_COMPLETED_MATCH:YES`
+- `{gid}:TENNIS_SET_HANDICAP:HOME_COVERS:-2.5`, `{gid}:TENNIS_SET_HANDICAP:AWAY_NOT_COVERS:-1.5`
 
 The Rust plan loader has `eprintln!` warnings on unhandled semantics — visible at startup. The serializer emits per-target `line` (required for exact scores where `market.line` is NULL).
 
@@ -368,7 +365,7 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 **V1 (`kalstrop_v1`)** — `sportsapi.kalstropservice.com/odds_v1/v1`. HMAC-signed GraphQL WS + REST. Sportradar-backed. This is what the Rust hotpath connects to for live score streaming. Covers baseball and lower-tier soccer.
 - **WS:** `sportsMatchStateUpdatedV2` subscription by `fixtureIds` (UUIDs like `d3f41158-...`). Prematch games produce no WS frames — frames start at kickoff/first pitch.
 - **REST catalog:** `/sports/{sport}/live`, `/sports/{sport}/upcoming`, and `/sports/{sport}/popular`. The `popular` feed provides significant additional coverage for soccer (~60 extra fixtures). Per-feed `first` limits: `live=10`, `upcoming=30`, `popular=10`.
-- **Breaking change (April 2026):** `eventState` field removed from WS `matchSummary` entirely (not renamed — absent). Game completion is now detected from `matchStatusDisplay[0].freeText` containing `"Ended"`. The Rust parser (`baseball/parse.rs`) uses `is_completed_free_text()`.
+- **Breaking change (April 2026):** `eventState` field removed from WS `matchSummary` entirely (not renamed — absent). Game completion is now detected from `matchStatusDisplay[0].freeText` containing `"Ended"`. Each sport's frame pipeline detects completion inline via `free_text.trim().eq_ignore_ascii_case("Ended")`.
 - **Python provider is catalog-only.** `kalstrop_v1.py` contains only `load_game_catalog()` and catalog helpers. All WS streaming code has been removed from the Python side — the Rust hotpath handles live score streaming, and standalone scripts in `scripts/` handle raw frame capture.
 
 **V2 (`kalstrop_v2`)** — `stats.kalstropservice.com/api/v2/genius`. HMAC auth (shared credentials with V1 via `kalstrop_auth.py`). BetGenius-backed. Covers top-tier soccer (EPL, La Liga, Bundesliga, UCL) and tennis (ATP, WTA, ITF). **Does not support baseball.** V2 provider sync uses `catalog_sport_slugs=("football", "tennis")` to pull both soccer and tennis fixtures.
@@ -448,7 +445,7 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 11. **Deferred final-game cleanup — DONE.** `cleanup_completed_game_idx` now preserves resolution tombstones (`totals_final_under_emitted`, `nrfi_resolved_games`) and only clears lightweight row data.
 
-12. **Benchmark harness — pending (Phase 4).** No `criterion` or `iai-callgrind` benchmarks exist. Required to validate Phase 2 didn't regress and to inform any future revisit of pre-serialization.
+12. **Benchmark harness — DONE.** Implemented as in-crate tests behind `bench-support` feature flag (`src/bench_support.rs`). Run via `cargo test --manifest-path native/polybot2_native/Cargo.toml --features bench-support --release -- bench_ --nocapture`.
 
 13. **CLOB V2 SDK migration — DONE.** `polymarket-client-sdk 0.4.4` → `polymarket_client_sdk_v2 0.6.0-canary.1`. Supports deposit wallet accounts via `SignatureType::Poly1271` (ERC-7739 wrapped signatures). V2 order format (removes `nonce`/`taker`/`expiration`/`feeRateBps`; adds `timestamp`/`metadata`/`builder`) is handled by the SDK internally. Collateral changed from USDC.e to pUSD (transparent to order construction). Live execution tests validated against V2 CLOB with both proxy (type 1) and deposit wallet (type 3) accounts.
 
@@ -504,6 +501,7 @@ guardian/
 ### Orchestrator Integration
 
 The `GuardianManager` (in `manager.py`) is created by the hotpath orchestrator after plan compilation for soccer leagues only. It:
+- Requires `POLY_EXEC_*` credentials — raises `RuntimeError` on missing credentials (single log line, hotpath continues without guardian)
 - Builds all dependencies (ClobClient, WS clients, OverturnDetector, OverturnExecutor) from env
 - Computes `token_to_condition` and `game_id_map` from the compiled plan
 - Runs `tracker.run_watch()` in a daemon thread with its own asyncio event loop
@@ -552,11 +550,32 @@ Per-game `sets_to_win` (from `LEAGUES[league]["sets_to_win"]` in config): 2 for 
 
 ### Market Types
 
-7 tennis market types: `tennis_match_totals` (progressive over/under on total games), `tennis_first_set_totals` (progressive during set 1), `tennis_set_totals` (over/under on sets played), `moneyline` (match winner), `tennis_first_set_winner`, `tennis_set_handicap` (like spreads on set margin), `tennis_completed_match` (yes/no, for retirements).
+6 tennis market types: `tennis_match_totals` (progressive over/under on total games), `tennis_first_set_totals` (progressive during set 1), `tennis_set_totals` (over/under on sets played), `moneyline` (match winner), `tennis_first_set_winner`, `tennis_set_handicap` (like spreads on set margin).
+
+### Timeliness Optimizations
+
+- **Match totals OVER**: progressive, fires on each game crossing (same as soccer totals)
+- **First-set totals OVER**: progressive during set 1, fires on set-completion frame (no `!first_set_completed` guard — phases[0] freezes naturally)
+- **Set totals OVER**: fires at guaranteed certainty using `min(sets_home, sets_away) >= N + 1 - sets_to_win`, not when the set actually completes
+- **Set handicap not_covers**: fires mid-match when `max_margin + line <= 0` (favored player can no longer cover even if they win). `covers` waits for match end.
+- **Moneyline, set handicap covers**: fire when `sets_home >= sets_to_win || sets_away >= sets_to_win` (match decided), not waiting for `freeText = "Ended"`. 45-159ms edge in 13% of matches.
+- **All under lines and set handicap at match end**: fire on `freeText = "Ended"` only
+
+### Cold-Start Protection
+
+`prev_total_games`, `prev_first_set_games`, `prev_total_sets` are `Option<i64>` — `None` on first observation (detected via `rows[gi].is_none()`). Progressive evaluators skip entirely when prev is `None`. Event-based evaluators (first-set under/winner) have tombstones set on first observation when the event has already occurred.
+
+### Set Handicap Side Detection
+
+The slug determines the favored side, not `outcome_index`. Slugs contain `-handicap-home-` or `-handicap-away-` (~49% are away-favored). Compiler uses slug to produce `home_covers`/`home_not_covers` or `away_covers`/`away_not_covers`. Each sport's `SpreadSlot` is defined independently (tennis owns its own, no import from soccer).
 
 ### Player Mappings
 
 Tennis uses player names instead of team names. `config/tennis_mappings.py` contains `PLAYER_MAP_*` dicts with Kalstrop V1 aliases (`"Last, First"`), V2 aliases (`"First Last"`), and PM aliases. PM code derivation: last word of PM full name, lowercased, truncated to 7 chars. Same-surname disambiguation uses shorter truncation (e.g., two Cerundolo brothers).
+
+### Sport Isolation
+
+Each sport's frame pipeline owns its own completion detection — inlined `free_text.trim().eq_ignore_ascii_case("Ended")` per pipeline. No shared `parse_common.rs`. No cross-sport type imports. Each sport's engine, types, and frame pipeline are fully self-contained. Adding or modifying one sport cannot silently affect another.
 
 ## Python Cleanup Audit
 
@@ -564,7 +583,7 @@ Systematic removal of dead code from the Python control plane. Guiding principle
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | Sports providers (`sports/`) | Done — deleted all Python streaming code, provider classes are now catalog-only adapters. `boltodds.py` reduced from 1130→390 lines, `kalstrop_v1.py` from 1040→655 lines. Deleted `recorder.py`, dead contract types (`StreamEnvelope`, `ScoreUpdateEvent`, etc.). Removed `sport_key`/`league_key` from `ProviderGameRecord`. |
+| 1 | Sports providers (`sports/`) | Done — deleted all Python streaming code, provider classes are now catalog-only adapters. `boltodds.py` reduced from 1130→328 lines, `kalstrop_v1.py` from 1040→610 lines. Deleted `recorder.py`, dead contract types (`StreamEnvelope`, `ScoreUpdateEvent`, etc.). Removed `sport_key`/`league_key` from `ProviderGameRecord`. |
 | 2 | CLI layer (`_cli/`) | Done — consolidated to 6 commands. Removed `--provider` from link/hotpath commands (derived from league config). Removed `--auto-approve` (review is opt-out). Provider sync defaults to all providers. |
 | 3 | Linking layer (`linking/`) | Done — `build_links_multi` processes all leagues in one `run_id`. Deleted `SnapshotBuilder`, `report()`. Added doubleheader dedup. Review is opt-out: only rejected games excluded from plan. |
 | 4 | Data layer (`data/`) | Done — deleted payload artifacts, dead DB methods, dead tables. Renamed `when_raw_et` → `when_raw`. Added `league` column to `link_runs`. Added `run_id` to `link_event_bindings`. Added `idx_pm_events_league_date` index. |

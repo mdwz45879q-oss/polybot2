@@ -40,6 +40,7 @@ src/polybot2/guardian/cli.py
 src/polybot2/guardian/clob_client.py
 src/polybot2/guardian/executor.py
 src/polybot2/guardian/log_tailer.py
+src/polybot2/guardian/manager.py
 src/polybot2/guardian/market_ws.py
 src/polybot2/guardian/overturn.py
 src/polybot2/guardian/polymarket_ws.py

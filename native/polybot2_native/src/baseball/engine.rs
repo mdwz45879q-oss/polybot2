@@ -268,7 +268,10 @@ impl NativeMlbEngine {
                                     "home_not_covers" => (SpreadSide::Home, false),
                                     "away_covers" | "away" => (SpreadSide::Away, true),
                                     "away_not_covers" => (SpreadSide::Away, false),
-                                    _ => continue,
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled baseball spread semantic '{}' key={}", other, strategy_key);
+                                        continue;
+                                    }
                                 };
                                 if let Some(slot) = game_tgt
                                     .spreads
@@ -296,7 +299,9 @@ impl NativeMlbEngine {
                                 }
                             }
                         }
-                        _ => {}
+                        other => {
+                            eprintln!("[polybot2] WARN: unhandled baseball market type '{}' key={}", other, strategy_key);
+                        }
                     }
                 }
             }
@@ -709,7 +714,10 @@ impl NativeMlbEngine {
                                     "home_not_covers" => (SpreadSide::Home, false),
                                     "away_covers" | "away" => (SpreadSide::Away, true),
                                     "away_not_covers" => (SpreadSide::Away, false),
-                                    _ => continue,
+                                    other => {
+                                        eprintln!("[polybot2] WARN: unhandled baseball spread semantic '{}' key={}", other, strategy_key);
+                                        continue;
+                                    }
                                 };
                                 if let Some(slot) = game_tgt
                                     .spreads
@@ -738,7 +746,9 @@ impl NativeMlbEngine {
                             }
                             self.has_final[gi] = true;
                         }
-                        _ => {}
+                        other => {
+                            eprintln!("[polybot2] WARN: unhandled baseball market type '{}' key={}", other, strategy_key);
+                        }
                     }
 
                     if !self.token_ids_by_game[gi].contains(&token_id) {

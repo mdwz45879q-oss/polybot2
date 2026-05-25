@@ -8,7 +8,6 @@ pub(crate) mod kalstrop_v2_frame_pipeline;
 pub(crate) mod kalstrop_v2_sio;
 pub(crate) mod kalstrop_v2_types;
 mod log_writer;
-mod parse_common;
 mod runtime;
 mod soccer;
 mod tennis;
@@ -20,6 +19,9 @@ pub(crate) mod ws_multiplexed;
 #[cfg(feature = "bench-support")]
 #[doc(hidden)]
 pub mod bench_support;
+
+#[cfg(test)]
+mod pipeline_integration_tests;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};

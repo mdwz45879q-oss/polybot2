@@ -93,13 +93,14 @@ impl NativeHotPathRuntime {
                 e.reset_runtime_state();
                 SportEngine::Tennis(e)
             }
-            _ => {
+            "baseball" => {
                 let mut e = NativeMlbEngine::new();
                 e.load_plan_from_json(compiled_plan_json)
                     .map_err(|err| PyValueError::new_err(format!("baseball_load_plan:{}", err)))?;
                 e.reset_runtime_state();
                 SportEngine::Baseball(e)
             }
+            _ => unreachable!("detect_sport_from_plan already rejects unknown sports"),
         };
         self.engine = Some(engine);
 

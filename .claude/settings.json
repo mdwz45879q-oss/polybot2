@@ -5,6 +5,8 @@
       "Bash(cargo test *)",
       "Bash(cargo info *)",
       "Bash(cargo search *)",
+      "Bash(cargo tree *)",
+      "Bash(cargo update --dry-run *)",
       "Bash(python -m pytest *)",
       "Bash(pytest *)",
       "Bash(python -m polybot2 *)",
@@ -14,7 +16,10 @@
       "Bash(pip install *)",
       "Bash(maturin build *)",
       "Bash(env -u CONDA_PREFIX maturin build *)",
-      "Bash(polybot2 *)"
+      "Bash(polybot2 *)",
+      "Bash(set -a && source .env && set +a && python3 *)",
+      "Bash(set -a && source .env && set +a && python *)",
+      "Bash(set -a && source .env && set +a && POLYBOT2_ENABLE_LIVE_*)"
     ]
   }
 }

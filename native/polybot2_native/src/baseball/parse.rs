@@ -20,7 +20,7 @@ pub(crate) fn parse_tick_from_kalstrop_update(
         match_completed: if free_text.is_empty() {
             None
         } else {
-            Some(is_completed_free_text(free_text))
+            Some(free_text.trim().eq_ignore_ascii_case("Ended"))
         },
         game_state: normalize_game_state_from_free_text(free_text),
     }
@@ -115,15 +115,13 @@ fn contains_ascii_ci(haystack: &str, needle: &str) -> bool {
     false
 }
 
-pub(crate) use crate::parse_common::is_completed_free_text;
-
 #[cfg(test)]
 pub(crate) fn normalize_game_state_from_free_text(free_text: &str) -> &'static str {
     let s = free_text.trim();
     if s.is_empty() {
         return "UNKNOWN";
     }
-    if is_completed_free_text(s) {
+    if s.eq_ignore_ascii_case("Ended") {
         return "FINAL";
     }
     "LIVE"

@@ -443,7 +443,9 @@ impl NativeSoccerEngine {
                                 }
                             }
                         }
-                        _ => {}
+                        other => {
+                            eprintln!("[polybot2] WARN: unhandled soccer market type '{}' for game {}", other, game_id_ref);
+                        }
                     }
                 }
             }
@@ -1010,7 +1012,9 @@ impl NativeSoccerEngine {
                             }
                             self.has_exact_score[gi] = true;
                         }
-                        _ => {}
+                        other => {
+                            eprintln!("[polybot2] WARN: unhandled soccer market type '{}' for game {}", other, uid);
+                        }
                     }
 
                     if !self.token_ids_by_game[gi].contains(&token_id) {

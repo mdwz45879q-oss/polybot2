@@ -11,7 +11,7 @@ CANONICAL_MARKET_TYPES = {
     "soccer_exact_score", "total_corners",
     "tennis_match_totals", "tennis_first_set_totals",
     "tennis_first_set_winner", "tennis_set_totals",
-    "tennis_set_handicap", "tennis_completed_match",
+    "tennis_set_handicap",
     "other",
 }
 

@@ -4,12 +4,17 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    GameIdx, InlineStr, Intent, OverLine, TargetIdx, TargetRegistry, TargetSlot, TokenIdx,
-    TokenSlot,
+    GameIdx, InlineStr, Intent, OverLine, SpreadSide, TargetIdx, TargetRegistry, TargetSlot,
+    TokenIdx, TokenSlot,
 };
 
-// Re-use SpreadSlot from soccer (structurally identical for set handicap).
-use crate::soccer::types::SpreadSlot;
+#[derive(Clone)]
+pub(crate) struct SpreadSlot {
+    pub(crate) side: SpreadSide,
+    pub(crate) line: f64,
+    pub(crate) covers_idx: Option<TargetIdx>,
+    pub(crate) not_covers_idx: Option<TargetIdx>,
+}
 
 // ---------------------------------------------------------------------------
 // Per-game target slots
@@ -40,9 +45,6 @@ pub(crate) struct TennisGameTargets {
     // Set handicap (like spreads, indexed by side + line)
     pub(crate) set_handicaps: Vec<SpreadSlot>,
 
-    // Completed match (yes/no)
-    pub(crate) completed_match_yes: Option<TargetIdx>,
-    pub(crate) completed_match_no: Option<TargetIdx>,
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +112,6 @@ pub(crate) struct NativeTennisEngine {
     pub(crate) has_moneyline: Vec<bool>,
     pub(crate) has_first_set_winner: Vec<bool>,
     pub(crate) has_set_handicap: Vec<bool>,
-    pub(crate) has_completed_match: Vec<bool>,
 
     // Live game state (per-game)
     pub(crate) rows: Vec<Option<TennisStateRow>>,

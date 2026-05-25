@@ -1,6 +1,5 @@
 //! Tennis engine: plan loading, game state management, zero-alloc live tick path.
 
-use crate::soccer::types::SpreadSlot;
 use crate::tennis::types::*;
 use crate::InlineStr;
 use crate::*;
@@ -26,7 +25,6 @@ impl NativeTennisEngine {
             has_moneyline: Vec::new(),
             has_first_set_winner: Vec::new(),
             has_set_handicap: Vec::new(),
-            has_completed_match: Vec::new(),
             sets_to_win: Vec::new(),
             rows: Vec::new(),
             game_states: Vec::new(),
@@ -133,7 +131,6 @@ impl NativeTennisEngine {
         self.has_moneyline.clear();
         self.has_first_set_winner.clear();
         self.has_set_handicap.clear();
-        self.has_completed_match.clear();
 
         let plan_value: serde_json::Value =
             serde_json::from_str(plan_json).map_err(|e| format!("load_plan_json_parse:{}", e))?;
@@ -184,7 +181,6 @@ impl NativeTennisEngine {
                     self.has_moneyline.push(false);
                     self.has_first_set_winner.push(false);
                     self.has_set_handicap.push(false);
-                    self.has_completed_match.push(false);
                     self.token_ids_by_game.push(Vec::new());
                     continue;
                 }
@@ -197,7 +193,6 @@ impl NativeTennisEngine {
             let mut game_has_moneyline = false;
             let mut game_has_first_set_winner = false;
             let mut game_has_set_handicap = false;
-            let mut game_has_completed_match = false;
             let mut token_ids: HashSet<String> = HashSet::new();
             let game_id_ref = self.game_ids[gidx.0 as usize].as_str();
 
@@ -384,16 +379,6 @@ impl NativeTennisEngine {
                                 }
                             }
                         }
-                        "tennis_completed_match" => {
-                            game_has_completed_match = true;
-                            match semantic.as_str() {
-                                "yes" => game_tgt.completed_match_yes = Some(tidx),
-                                "no" => game_tgt.completed_match_no = Some(tidx),
-                                other => {
-                                    eprintln!("[polybot2] WARN: unhandled tennis_completed_match semantic '{}' for game {}", other, game_id_ref);
-                                }
-                            }
-                        }
                         other => {
                             eprintln!("[polybot2] WARN: unhandled tennis market type '{}' for game {}", other, game_id_ref);
                         }
@@ -415,7 +400,6 @@ impl NativeTennisEngine {
             self.has_moneyline.push(game_has_moneyline);
             self.has_first_set_winner.push(game_has_first_set_winner);
             self.has_set_handicap.push(game_has_set_handicap);
-            self.has_completed_match.push(game_has_completed_match);
 
             let mut token_list = token_ids.into_iter().collect::<Vec<_>>();
             token_list.sort();
@@ -559,7 +543,6 @@ impl NativeTennisEngine {
         self.evaluate_first_set_winner_into(gidx, &state, &mut intents);
         self.evaluate_moneyline_into(gidx, &state, &mut intents);
         self.evaluate_set_handicap_into(gidx, &state, &mut intents);
-        self.evaluate_completed_match_into(gidx, &state, &mut intents);
 
         if state.match_completed {
             self.final_resolved_games[gi] = true;
@@ -842,31 +825,6 @@ impl NativeTennisEngine {
         }
     }
 
-    /// Completed match YES: fires when match is decided (sets_to_win reached)
-    /// or at "Ended" — whichever comes first.
-    fn evaluate_completed_match_into(
-        &mut self,
-        gidx: GameIdx,
-        state: &TennisGameState,
-        intents: &mut smallvec::SmallVec<[Intent; 32]>,
-    ) {
-        let gi = gidx.0 as usize;
-        if !self.has_completed_match[gi] {
-            return;
-        }
-        let stw = self.sets_to_win[gi];
-        let match_decided = state.match_completed
-            || state.sets_home >= stw
-            || state.sets_away >= stw;
-        if !match_decided {
-            return;
-        }
-        let tgt = &self.game_targets[gi];
-        if let Some(tidx) = tgt.completed_match_yes {
-            intents.push(Intent { target_idx: tidx });
-        }
-    }
-
     // ---------------------------------------------------------------
     // merge_plan (hot-patch)
     // ---------------------------------------------------------------
@@ -934,7 +892,6 @@ impl NativeTennisEngine {
                     self.has_moneyline.push(false);
                     self.has_first_set_winner.push(false);
                     self.has_set_handicap.push(false);
-                    self.has_completed_match.push(false);
                     self.token_ids_by_game.push(Vec::new());
                     self.rows.push(None);
                     self.game_states.push(TennisGameState::default());
@@ -1146,16 +1103,6 @@ impl NativeTennisEngine {
                             }
                             self.has_set_handicap[gi] = true;
                         }
-                        "tennis_completed_match" => {
-                            match semantic.as_str() {
-                                "yes" => game_tgt.completed_match_yes = Some(tidx),
-                                "no" => game_tgt.completed_match_no = Some(tidx),
-                                other => {
-                                    eprintln!("[polybot2] WARN: unhandled tennis_completed_match semantic '{}' for game {}", other, uid);
-                                }
-                            }
-                            self.has_completed_match[gi] = true;
-                        }
                         other => {
                             eprintln!("[polybot2] WARN: unhandled tennis market type '{}' for game {}", other, uid);
                         }
@@ -1209,7 +1156,6 @@ fn canonical_tennis_market_type(input: &str) -> String {
         "tennis_set_totals" => "tennis_set_totals".to_string(),
         "tennis_first_set_winner" => "tennis_first_set_winner".to_string(),
         "tennis_set_handicap" => "tennis_set_handicap".to_string(),
-        "tennis_completed_match" => "tennis_completed_match".to_string(),
         _ => raw,
     }
 }
@@ -1664,28 +1610,6 @@ mod tests {
         let intents = tick(&mut engine, "game1", 1, 1, 0, 0, 20, Some(10), 2, 3, false, true);
         assert_eq!(intents.len(), 1, "not_covers should fire at 1-1 in BO3");
         assert_eq!(intents[0].target_idx, TargetIdx(1));
-    }
-
-    // =================================================================
-    // Completed match tests
-    // =================================================================
-
-    #[test]
-    fn test_completed_match_yes() {
-        let mut engine = NativeTennisEngine::new();
-        let t_yes = target_json("tok_cm_yes", "yes", "g1:CM:YES");
-        let m = market_json("tennis_completed_match", None, &[t_yes]);
-        let plan = plan_json_one_game("game1", &m);
-        engine.load_plan_from_json(&plan).unwrap();
-
-        // Not completed -> no fire
-        let intents = tick(&mut engine, "game1", 1, 0, 4, 3, 18, None, 1, 2, false, true);
-        assert!(intents.is_empty());
-
-        // Match completed -> fires
-        let intents = tick(&mut engine, "game1", 2, 0, 6, 4, 24, None, 2, 2, true, true);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
     }
 
     // =================================================================
