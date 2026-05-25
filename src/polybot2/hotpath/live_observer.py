@@ -289,7 +289,7 @@ class LiveObserver:
             home=home,
             away=away,
             inning=ev.get("inn"),
-            half=str(ev.get("half", "")),
+            half=str(ev.get("inn_half", ev.get("half", ""))),
             game_state=str(ev.get("gs", "")),
             last_ts=int(ev.get("ts", 0)),
         )
