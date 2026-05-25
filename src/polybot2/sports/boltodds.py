@@ -238,6 +238,30 @@ class BoltOddsProvider(SportsDataProviderBase):
             return rows
         return rows
 
+    @staticmethod
+    def _dedup_key_for_record(record: ProviderGameRecord) -> str | None:
+        """Build a dedup key from normalized team pair + date.
+
+        BoltOdds often publishes multiple entries for the same game with
+        different timestamp suffixes in the game_label (e.g., "..., 04" and
+        "..., 05"). These map to the same real-world game but have different
+        provider_game_id values. Group by (norm_home, norm_away, date) so we
+        can keep only the best entry per real game.
+        """
+        home = " ".join((record.home_team_raw or "").strip().lower().split())
+        away = " ".join((record.away_team_raw or "").strip().lower().split())
+        if not home or not away:
+            return None
+        # Extract date from game_label (pattern: "..., YYYY-MM-DD, NN")
+        label = record.game_label or ""
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", label)
+        date_str = m.group(1) if m else ""
+        if not date_str:
+            return None
+        # Sort teams alphabetically so flipped home/away deduplicates too
+        teams = tuple(sorted([home, away]))
+        return f"{teams[0]}|{teams[1]}|{date_str}"
+
     def load_game_catalog(self) -> list[ProviderGameRecord]:
         payload = self._http_get_json("get_games")
         rows = self._rows_from_games_payload(payload)
@@ -247,6 +271,33 @@ class BoltOddsProvider(SportsDataProviderBase):
             if record is None:
                 continue
             grouped.setdefault(str(record.provider_game_id), []).append(record)
+
+        # --- Dedup: same teams + same date → keep latest start_ts_utc ---
+        # BoltOdds publishes duplicate entries with different timestamp
+        # suffixes (e.g., "04" and "05") for the same game. Keep only the
+        # entry with the latest start time (most accurate kickoff).
+        dedup_groups: dict[str, list[str]] = {}
+        for uid, candidates in grouped.items():
+            best = candidates[0]
+            key = self._dedup_key_for_record(best)
+            if key:
+                dedup_groups.setdefault(key, []).append(uid)
+
+        for key, uids in dedup_groups.items():
+            if len(uids) <= 1:
+                continue
+            # Keep the entry with the latest start_ts_utc (most accurate).
+            # Ties broken by game_label (highest suffix = most recent).
+            best_uid = max(
+                uids,
+                key=lambda u: (
+                    grouped[u][0].start_ts_utc if grouped[u][0].start_ts_utc is not None else 0,
+                    grouped[u][0].game_label or "",
+                ),
+            )
+            for uid in uids:
+                if uid != best_uid:
+                    del grouped[uid]
 
         with self._catalog_lock:
             self._catalog_by_uid.clear()
