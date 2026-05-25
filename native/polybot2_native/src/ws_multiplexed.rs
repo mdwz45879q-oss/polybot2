@@ -271,7 +271,7 @@ pub(crate) async fn run_multiplexed_worker_async(
         {
             let all_subs: Vec<String> = candidate_subs.values().flatten().cloned().collect();
             if let Ok(mut g) = log.lock() {
-                g.log_ws_connect(&all_subs);
+                g.log_ws_connect("multiplexed", &all_subs);
             }
         }
 
@@ -632,12 +632,34 @@ pub(crate) async fn run_multiplexed_worker_async(
                         for tl in &pending_v2_logs {
                             let gid = e.game_ids.get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str()).unwrap_or("_");
-                            g.log_tick(gid, tl.state.home.unwrap_or(0), tl.state.away.unwrap_or(0), tl.game_state, &crate::log_writer::TickExtra::Soccer { half: tl.half, corners: tl.state.total_corners });
+                            let lg = e.game_leagues.get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_ref()).unwrap_or("");
+                            g.log_tick(gid, &crate::log_writer::TickPayload::Soccer {
+                                lg,
+                                goals_home: tl.state.home.unwrap_or(0),
+                                goals_away: tl.state.away.unwrap_or(0),
+                                half: tl.half,
+                                corners_home: tl.state.corners_home,
+                                corners_away: tl.state.corners_away,
+                                gs: tl.game_state,
+                                src: "kalstrop_v2",
+                            });
                         }
                         for tl in &pending_bo_logs {
                             let gid = e.game_ids.get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str()).unwrap_or("_");
-                            g.log_tick(gid, tl.state.home.unwrap_or(0), tl.state.away.unwrap_or(0), tl.game_state, &crate::log_writer::TickExtra::Soccer { half: tl.half, corners: tl.state.total_corners });
+                            let lg = e.game_leagues.get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_ref()).unwrap_or("");
+                            g.log_tick(gid, &crate::log_writer::TickPayload::Soccer {
+                                lg,
+                                goals_home: tl.state.home.unwrap_or(0),
+                                goals_away: tl.state.away.unwrap_or(0),
+                                half: tl.half,
+                                corners_home: tl.state.corners_home,
+                                corners_away: tl.state.corners_away,
+                                gs: tl.game_state,
+                                src: "boltodds",
+                            });
                         }
                     }
                 }
@@ -661,7 +683,7 @@ pub(crate) async fn run_multiplexed_worker_async(
 
         // Disconnect logging
         if let Ok(mut g) = log.lock() {
-            g.log_ws_disconnect("", 0);
+            g.log_ws_disconnect("multiplexed", "", 0);
         }
     }
 

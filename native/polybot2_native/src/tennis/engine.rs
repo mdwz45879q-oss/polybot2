@@ -11,6 +11,7 @@ impl NativeTennisEngine {
         Self {
             game_id_to_idx: FxHashMap::default(),
             game_ids: Vec::new(),
+            game_leagues: Vec::new(),
             game_targets: Vec::new(),
             target_slots: Vec::new(),
             tokens: Vec::new(),
@@ -116,6 +117,7 @@ impl NativeTennisEngine {
     pub(crate) fn load_plan_from_json(&mut self, plan_json: &str) -> Result<(), String> {
         self.game_id_to_idx.clear();
         self.game_ids.clear();
+        self.game_leagues.clear();
         self.game_targets.clear();
         self.target_slots.clear();
         self.tokens.clear();
@@ -155,6 +157,8 @@ impl NativeTennisEngine {
             let gidx = GameIdx(self.game_ids.len() as u16);
             self.game_id_to_idx.insert(uid.clone(), gidx);
             self.game_ids.push(uid);
+            let league_str = game_val.get("canonical_league").and_then(|v| v.as_str()).unwrap_or("");
+            self.game_leagues.push(Arc::from(league_str));
 
             // Insert alternate provider game IDs pointing to the same GameIdx.
             if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
@@ -873,6 +877,8 @@ impl NativeTennisEngine {
                     let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
                     self.game_id_to_idx.insert(uid.to_string(), idx);
                     self.game_ids.push(uid.to_string());
+                    let league_str = game_val.get("canonical_league").and_then(|v| v.as_str()).unwrap_or("");
+                    self.game_leagues.push(Arc::from(league_str));
                     // Insert alternate provider game IDs for the new game.
                     if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
                         for alt in alts {
@@ -1176,7 +1182,7 @@ mod tests {
     /// Helper: build a test plan JSON with specified markets for one game.
     fn plan_json_one_game(game_id: &str, markets_json: &str) -> String {
         format!(
-            r#"{{"games":[{{"provider_game_id":"{}","kickoff_ts_utc":1700000000,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"{}","canonical_league":"test","kickoff_ts_utc":1700000000,"markets":[{}]}}]}}"#,
             game_id, markets_json
         )
     }
@@ -1369,7 +1375,7 @@ mod tests {
         let t1 = target_json("tok_set_over4", "over", "g1:SET_TOTAL:OVER:4.5");
         let m = market_json("tennis_set_totals", Some(4.5), &[t1]);
         let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan_str).unwrap();
@@ -1428,7 +1434,7 @@ mod tests {
         let t_home = target_json("tok_home", "home", "g1:ML:HOME");
         let m = market_json("moneyline", None, &[t_home]);
         let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan_str).unwrap();
@@ -1450,7 +1456,7 @@ mod tests {
         let t_home = target_json("tok_home", "home", "g1:ML:HOME");
         let m = market_json("moneyline", None, &[t_home]);
         let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan_str).unwrap();
@@ -1552,7 +1558,7 @@ mod tests {
         let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
         let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
         let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan_str).unwrap();
@@ -1576,7 +1582,7 @@ mod tests {
         let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
         let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
         let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan_str).unwrap();
@@ -1679,7 +1685,7 @@ mod tests {
         let t1 = target_json("tok_home", "home", "g1:ML:HOME");
         let m = market_json("moneyline", None, &[t1]);
         let plan = format!(
-            r#"{{"games":[{{"provider_game_id":"primary_id","kickoff_ts_utc":1700000000,"alternate_provider_game_ids":[{{"provider":"boltodds","game_id":"boltodds_label"}},{{"provider":"kalstrop_v1","game_id":"v1_uuid"}}],"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"primary_id","canonical_league":"test","kickoff_ts_utc":1700000000,"alternate_provider_game_ids":[{{"provider":"boltodds","game_id":"boltodds_label"}},{{"provider":"kalstrop_v1","game_id":"v1_uuid"}}],"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan).unwrap();

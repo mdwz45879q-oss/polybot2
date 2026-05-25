@@ -92,6 +92,7 @@ pub(crate) struct NativeTennisEngine {
     // Game indexing
     pub(crate) game_id_to_idx: FxHashMap<String, GameIdx>,
     pub(crate) game_ids: Vec<String>,
+    pub(crate) game_leagues: Vec<Arc<str>>,
 
     // Target routing (per-game)
     pub(crate) game_targets: Vec<TennisGameTargets>,

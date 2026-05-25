@@ -11,6 +11,7 @@ impl NativeSoccerEngine {
         Self {
             game_id_to_idx: FxHashMap::default(),
             game_ids: Vec::new(),
+            game_leagues: Vec::new(),
             game_targets: Vec::new(),
             target_slots: Vec::new(),
             tokens: Vec::new(),
@@ -120,6 +121,7 @@ impl NativeSoccerEngine {
     pub(crate) fn load_plan_from_json(&mut self, plan_json: &str) -> Result<(), String> {
         self.game_id_to_idx.clear();
         self.game_ids.clear();
+        self.game_leagues.clear();
         self.game_targets.clear();
         self.target_slots.clear();
         self.tokens.clear();
@@ -158,6 +160,8 @@ impl NativeSoccerEngine {
             let gidx = GameIdx(self.game_ids.len() as u16);
             self.game_id_to_idx.insert(uid.clone(), gidx);
             self.game_ids.push(uid);
+            let league_str = game_val.get("canonical_league").and_then(|v| v.as_str()).unwrap_or("");
+            self.game_leagues.push(Arc::from(league_str));
 
             // Insert alternate provider game IDs pointing to the same GameIdx.
             if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
@@ -626,6 +630,8 @@ impl NativeSoccerEngine {
             game_state: gs,
             total_corners: prev.total_corners,
             prev_total_corners: prev.total_corners,
+            corners_home: prev.corners_home,
+            corners_away: prev.corners_away,
         };
         if home.is_some() && away.is_some() {
             state.home = home;
@@ -637,6 +643,8 @@ impl NativeSoccerEngine {
         if let (Some(ch), Some(ca)) = (corners_home, corners_away) {
             state.prev_total_corners = prev.total_corners;
             state.total_corners = Some(ch + ca);
+            state.corners_home = Some(ch);
+            state.corners_away = Some(ca);
         }
         self.game_states[gi] = state;
 
@@ -722,6 +730,8 @@ impl NativeSoccerEngine {
                     let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
                     self.game_id_to_idx.insert(uid.to_string(), idx);
                     self.game_ids.push(uid.to_string());
+                    let league_str = game_val.get("canonical_league").and_then(|v| v.as_str()).unwrap_or("");
+                    self.game_leagues.push(Arc::from(league_str));
                     // Insert alternate provider game IDs for the new game.
                     if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
                         for alt in alts {
@@ -1082,7 +1092,7 @@ mod tests {
     /// Helper: build a test plan JSON with specified markets for one game.
     fn plan_json_one_game(game_id: &str, markets_json: &str) -> String {
         format!(
-            r#"{{"games":[{{"provider_game_id":"{}","kickoff_ts_utc":1700000000,"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"{}","canonical_league":"test","kickoff_ts_utc":1700000000,"markets":[{}]}}]}}"#,
             game_id, markets_json
         )
     }
@@ -1660,7 +1670,7 @@ mod tests {
         engine.load_plan_from_json(&initial).unwrap();
 
         let patch = format!(
-            r#"{{"games":[{{"provider_game_id":"game_1","kickoff_ts_utc":null,"markets":[{{"sports_market_type":"totals","line":5.5,"targets":[{},{}]}}]}},{{"provider_game_id":"game_new","kickoff_ts_utc":1700000000,"markets":[{{"sports_market_type":"moneyline","line":null,"targets":[{},{},{}]}}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"game_1","canonical_league":"test","kickoff_ts_utc":null,"markets":[{{"sports_market_type":"totals","line":5.5,"targets":[{},{}]}}]}},{{"provider_game_id":"game_new","canonical_league":"test","kickoff_ts_utc":1700000000,"markets":[{{"sports_market_type":"moneyline","line":null,"targets":[{},{},{}]}}]}}]}}"#,
             target_json("t5", "over", "g1:TOTAL:OVER:5.5"),
             target_json("t6", "under", "g1:TOTAL:UNDER:5.5"),
             target_json("t7", "home_yes", "gn:MONEYLINE:HOME_YES"),
@@ -1682,7 +1692,7 @@ mod tests {
         let m = market_json("totals", Some(2.5), &[t1]);
         // Plan with alternate provider game IDs
         let plan = format!(
-            r#"{{"games":[{{"provider_game_id":"primary_id","kickoff_ts_utc":1700000000,"alternate_provider_game_ids":[{{"provider":"boltodds","game_id":"boltodds_label"}},{{"provider":"kalstrop_v1","game_id":"v1_uuid"}}],"markets":[{}]}}]}}"#,
+            r#"{{"games":[{{"provider_game_id":"primary_id","canonical_league":"test","kickoff_ts_utc":1700000000,"alternate_provider_game_ids":[{{"provider":"boltodds","game_id":"boltodds_label"}},{{"provider":"kalstrop_v1","game_id":"v1_uuid"}}],"markets":[{}]}}]}}"#,
             m
         );
         engine.load_plan_from_json(&plan).unwrap();

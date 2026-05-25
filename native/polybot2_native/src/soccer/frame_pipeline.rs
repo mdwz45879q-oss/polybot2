@@ -2,7 +2,7 @@
 
 use crate::dispatch::{dispatch_intents, DispatchHandle};
 use crate::fast_extract;
-use crate::log_writer::LogWriter;
+use crate::log_writer::{LogWriter, TickPayload};
 use crate::soccer::parse::parse_half;
 use crate::soccer::types::*;
 use crate::*;
@@ -51,14 +51,22 @@ fn flush_tick_logs(
                 .get(tl.game_idx.0 as usize)
                 .map(|s| s.as_str())
                 .unwrap_or("_");
+            let lg = engine
+                .game_leagues
+                .get(tl.game_idx.0 as usize)
+                .map(|s| s.as_ref())
+                .unwrap_or("");
             g.log_tick(
                 game_id,
-                tl.state.home.unwrap_or(0),
-                tl.state.away.unwrap_or(0),
-                tl.state.game_state,
-                &crate::log_writer::TickExtra::Soccer {
+                &TickPayload::Soccer {
+                    lg,
+                    goals_home: tl.state.home.unwrap_or(0),
+                    goals_away: tl.state.away.unwrap_or(0),
                     half: tl.state.half,
-                    corners: tl.state.total_corners,
+                    corners_home: tl.state.corners_home,
+                    corners_away: tl.state.corners_away,
+                    gs: tl.state.game_state,
+                    src: "kalstrop_v1",
                 },
             );
         }

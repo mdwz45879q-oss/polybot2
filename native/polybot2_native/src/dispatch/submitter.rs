@@ -1,6 +1,6 @@
 use super::sdk_exec::map_post_response;
 use super::*;
-use crate::log_writer::LogWriter;
+use crate::log_writer::{gid_from_sk, LogWriter};
 use futures_util::future::join_all;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -51,7 +51,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
         if let Err(err) = sub.ensure_sdk_runtime_async().await {
             set_init_error(&sub.health, &err);
             if let Ok(mut g) = sub.log.lock() {
-                g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err), "");
+                g.log_order_err("", "_init_", "_", &format!("submitter_init_failed:{}", err), "");
             }
             drain_channel_with_error(&mut sub, &err).await;
             return;
@@ -61,7 +61,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             Err(err) => {
                 set_init_error(&sub.health, &err);
                 if let Ok(mut g) = sub.log.lock() {
-                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err), "");
+                    g.log_order_err("", "_init_", "_", &format!("submitter_init_failed:{}", err), "");
                 }
                 drain_channel_with_error(&mut sub, &err).await;
                 return;
@@ -78,7 +78,7 @@ pub(crate) async fn run_submitter_async(mut sub: OrderSubmitter) {
             Err(err) => {
                 set_init_error(&sub.health, &err);
                 if let Ok(mut g) = sub.log.lock() {
-                    g.log_order_err("_init_", "_", &format!("submitter_init_failed:{}", err), "");
+                    g.log_order_err("", "_init_", "_", &format!("submitter_init_failed:{}", err), "");
                 }
                 drain_channel_with_error(&mut sub, &err).await;
                 return;
@@ -453,8 +453,8 @@ fn log_outcome_idx(
     let tif_s = tif_str(tif);
     if let Ok(mut g) = log.lock() {
         match outcome {
-            Ok(eid) => g.log_order_ok(sk, tok, eid, tif_s),
-            Err(err) => g.log_order_err(sk, tok, err, tif_s),
+            Ok(eid) => g.log_order_ok(gid_from_sk(sk), sk, tok, eid, tif_s),
+            Err(err) => g.log_order_err(gid_from_sk(sk), sk, tok, err, tif_s),
         }
     }
 }

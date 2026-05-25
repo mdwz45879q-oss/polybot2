@@ -163,7 +163,25 @@ def _now_ms() -> int:
 
 
 def find_latest_log(log_dir: str, run_id: int | None = None) -> str | None:
-    """Find the most recent hotpath_*.jsonl in the directory."""
+    """Find the most recent hotpath_*.jsonl in the directory.
+
+    Searches new directory layout first (``{dir}/{run_id}/hotpath_*.jsonl``),
+    then falls back to legacy flat layout (``{dir}/hotpath_{run_id}_*.jsonl``).
+    """
+    # V2 layout: logs/{run_id}/hotpath_{sport}_{ts}.jsonl
+    if run_id is not None:
+        v2_dir = os.path.join(log_dir, str(run_id))
+        if os.path.isdir(v2_dir):
+            v2_files = sorted(glob.glob(os.path.join(v2_dir, "hotpath_*.jsonl")), reverse=True)
+            if v2_files:
+                return v2_files[0]
+    else:
+        # No run_id: search all subdirectories
+        v2_files = sorted(glob.glob(os.path.join(log_dir, "*", "hotpath_*.jsonl")), reverse=True)
+        if v2_files:
+            return v2_files[0]
+
+    # V1 fallback: hotpath_{run_id}_{ts}.jsonl in flat directory
     if run_id is not None:
         pattern = f"hotpath_{run_id}_*.jsonl"
     else:
@@ -192,7 +210,14 @@ class LiveObserver:
         self.startup_ts: int | None = None
         self.run_id: int = 0
         self.mode: str = ""
+        self.sport: str = ""       # populated from startup event (v2) or plan fallback
+        self.leagues: list[str] = []
         self.matchup_by_gid, self.is_baseball = _build_matchup_map(compiled_plan)
+        # If plan provides sport, use it as initial value
+        if compiled_plan is not None:
+            sport_val = getattr(compiled_plan, "sport", "")
+            if sport_val:
+                self.sport = sport_val
 
     def run(self) -> None:
         """Tail the log file and redraw on each new line. Blocks forever."""
@@ -244,10 +269,25 @@ class LiveObserver:
         gid = str(ev.get("gid", ""))
         if not gid:
             return
+        # V2: sport-specific score field names; V1 fallback: h/a
+        sport = ev.get("sport", self.sport)
+        if sport == "baseball":
+            home = ev.get("runs_home", ev.get("h"))
+            away = ev.get("runs_away", ev.get("a"))
+        elif sport == "soccer":
+            home = ev.get("goals_home", ev.get("h"))
+            away = ev.get("goals_away", ev.get("a"))
+        elif sport == "tennis":
+            home = ev.get("sets_home", ev.get("h"))
+            away = ev.get("sets_away", ev.get("a"))
+        else:
+            # V1 fallback
+            home = ev.get("h")
+            away = ev.get("a")
         self.games[gid] = GameRow(
             gid=gid,
-            home=ev.get("h"),
-            away=ev.get("a"),
+            home=home,
+            away=away,
             inning=ev.get("inn"),
             half=str(ev.get("half", "")),
             game_state=str(ev.get("gs", "")),
@@ -268,6 +308,11 @@ class LiveObserver:
         self.startup_ts = int(ev.get("ts", 0))
         self.run_id = int(ev.get("run_id", 0))
         self.mode = str(ev.get("mode", ""))
+        # V2 fields
+        if ev.get("sport"):
+            self.sport = str(ev["sport"])
+        if ev.get("leagues"):
+            self.leagues = list(ev["leagues"])
 
     # -----------------------------------------------------------------------
     # Rendering
@@ -276,9 +321,9 @@ class LiveObserver:
     def _format_score(self, g: GameRow) -> str:
         if g.home is None and g.away is None:
             return "--"
-        if self.is_baseball:
+        if self.sport == "baseball" or (not self.sport and self.is_baseball):
             return f"{g.away or 0}-{g.home or 0}"   # baseball: away-home
-        return f"{g.home or 0}-{g.away or 0}"       # soccer: home-away
+        return f"{g.home or 0}-{g.away or 0}"       # soccer/tennis: home-away
 
     def _redraw(self) -> None:
         print("\x1b[2J\x1b[H", end="")
@@ -307,7 +352,14 @@ class LiveObserver:
         print()
 
     def _print_games(self) -> None:
-        period_col = "INN" if self.is_baseball else "HALF"
+        if self.sport == "baseball":
+            period_col = "INN"
+        elif self.sport == "tennis":
+            period_col = "SET"
+        elif self.sport:
+            period_col = "HALF"
+        else:
+            period_col = "INN" if self.is_baseball else "HALF"
         print(f" {'GAME':<15} {period_col:<7} {'SCORE':<8} BETS")
         # Sort: LIVE first (by most recent update), then FINAL, then NOT STARTED
         def sort_key(item: tuple[str, GameRow]) -> tuple[int, int]:

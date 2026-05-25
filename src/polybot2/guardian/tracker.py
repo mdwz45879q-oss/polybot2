@@ -113,8 +113,9 @@ class OrderStateTracker:
             return
         # Normalize alternate provider ID → canonical game ID (strategy key prefix)
         gid = self._game_id_map.get(gid, gid)
-        home = ev.get("h")
-        away = ev.get("a")
+        # V2: sport-specific score fields; V1 fallback: h/a
+        home = ev.get("goals_home", ev.get("h"))
+        away = ev.get("goals_away", ev.get("a"))
         half = str(ev.get("half", ""))
         gs = str(ev.get("gs", ""))
         ts = int(ev.get("ts", 0))
@@ -159,7 +160,8 @@ class OrderStateTracker:
         if not sk:
             return
 
-        gid = self._extract_game_id_from_sk(sk)
+        # V2 logs include gid directly; fall back to extracting from sk
+        gid = str(ev.get("gid", "")) or self._extract_game_id_from_sk(sk)
         tif = str(ev.get("tif", "")).upper() or self._determine_tif(sk)
         cid = self._resolve_condition_id(tok)
 

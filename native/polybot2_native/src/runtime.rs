@@ -156,8 +156,10 @@ impl NativeHotPathRuntime {
             let run_id = cfg.run_id.unwrap_or(0);
             let log_dir = cfg.log_dir.clone().unwrap_or_else(|| ".".to_string());
             let log_ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-            let log_path = format!("{}/hotpath_{}_{}.jsonl", log_dir, run_id, log_ts);
-            let log_writer = LogWriter::open(&log_path)
+            let log_subdir = format!("{}/{}", log_dir, run_id);
+            std::fs::create_dir_all(&log_subdir).ok();
+            let log_path = format!("{}/hotpath_{}_{}.jsonl", log_subdir, sport, log_ts);
+            let log_writer = LogWriter::open(&log_path, sport)
                 .map_err(|e| PyValueError::new_err(format!("log_writer_open_failed:{}", e)))?;
             let log_arc = Arc::new(Mutex::new(log_writer));
             let dispatch_mode_label = dispatch_handle.mode_label();
@@ -166,12 +168,34 @@ impl NativeHotPathRuntime {
                 .as_ref()
                 .map(|e| e.token_ids_by_game_len())
                 .unwrap_or(0);
+            let leagues: Vec<&str> = match self.engine.as_ref() {
+                Some(SportEngine::Baseball(e)) => {
+                    let mut v: Vec<&str> = e.game_leagues.iter().map(|s| s.as_ref()).collect();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                }
+                Some(SportEngine::Soccer(e)) => {
+                    let mut v: Vec<&str> = e.game_leagues.iter().map(|s| s.as_ref()).collect();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                }
+                Some(SportEngine::Tennis(e)) => {
+                    let mut v: Vec<&str> = e.game_leagues.iter().map(|s| s.as_ref()).collect();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                }
+                None => Vec::new(),
+            };
             if let Ok(mut g) = log_arc.lock() {
                 g.log_startup(
                     run_id,
                     games_count,
                     all_plan_tokens.len(),
                     dispatch_mode_label,
+                    &leagues,
                 );
             }
 
@@ -234,6 +258,7 @@ impl NativeHotPathRuntime {
                         {
                             if let Ok(mut g) = submitter_log_for_pin.lock() {
                                 g.log_order_err(
+                                    "",
                                     "_init_",
                                     "_",
                                     "submitter_thread_pin_skipped_or_failed",

@@ -2,7 +2,7 @@ use super::*;
 use super::fast_submit_client::{build_orders_body_from_slices, FastClobSubmitClient};
 use super::presign_pool::prepare_payload_from_signed;
 use super::sdk_exec::{map_post_response, sign_order_batch};
-use crate::log_writer::LogWriter;
+use crate::log_writer::{gid_from_sk, LogWriter};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,7 +19,7 @@ fn temp_log_with_path() -> (Arc<Mutex<LogWriter>>, PathBuf) {
     let path =
         std::env::temp_dir().join(format!("polybot2_test_{}_{}.jsonl", std::process::id(), n));
     let log = Arc::new(Mutex::new(
-        LogWriter::open(path.to_str().expect("utf8 path")).expect("temp log"),
+        LogWriter::open(path.to_str().expect("utf8 path"), "test").expect("temp log"),
     ));
     (log, path)
 }
@@ -97,7 +97,7 @@ fn dispatch_target_inline(
     if matches!(handle.cfg.mode, DispatchMode::Noop) {
         let (sk, tok) = handle.resolve_strings(target_idx);
         if let Ok(mut g) = log.lock() {
-            g.log_order_ok(sk, tok, "noop", "");
+            g.log_order_ok(gid_from_sk(sk), sk, tok, "noop", "");
         }
         return;
     }
@@ -112,7 +112,7 @@ fn dispatch_target_inline(
         Err(err) => {
             let (sk, tok) = handle.resolve_strings(target_idx);
             if let Ok(mut g) = log.lock() {
-                g.log_order_err(sk, tok, &err, "");
+                g.log_order_err(gid_from_sk(sk), sk, tok, &err, "");
             }
         }
     }

@@ -94,17 +94,19 @@ pub(crate) fn process_decoded_frame_sync(
             .get(tick_result.game_idx.0 as usize)
             .map(|s| s.as_str())
             .unwrap_or("_");
+        let lg = engine.game_leagues.get(tick_result.game_idx.0 as usize).map(|s| s.as_ref()).unwrap_or("");
         if let Ok(mut g) = log.lock() {
             g.log_tick(
                 game_id,
-                tick_result.state.sets_home,
-                tick_result.state.sets_away,
-                game_state,
-                &crate::log_writer::TickExtra::Tennis {
+                &crate::log_writer::TickPayload::Tennis {
+                    lg,
+                    sets_home: tick_result.state.sets_home,
+                    sets_away: tick_result.state.sets_away,
+                    games_home: tick_result.state.games_home,
+                    games_away: tick_result.state.games_away,
+                    total_games: tick_result.state.total_games,
                     half: extract.free_text,
-                    games_h: tick_result.state.games_home,
-                    games_a: tick_result.state.games_away,
-                    tg: tick_result.state.total_games,
+                    gs: game_state,
                 },
             );
         }

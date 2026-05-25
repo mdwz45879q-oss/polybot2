@@ -363,7 +363,7 @@ pub(crate) async fn run_live_worker_async(
             h.last_error.clear();
         });
         if let Ok(mut g) = log.lock() {
-            g.log_ws_connect(&active_subs);
+            g.log_ws_connect("kalstrop_v1", &active_subs);
         }
 
         let mut reconn_reason = String::new();
@@ -518,7 +518,7 @@ pub(crate) async fn run_live_worker_async(
             0
         };
         if let Ok(mut g) = log.lock() {
-            g.log_ws_disconnect(&reconn_reason, reconnects);
+            g.log_ws_disconnect("kalstrop_v1", &reconn_reason, reconnects);
         }
     }
 }

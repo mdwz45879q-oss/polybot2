@@ -55,6 +55,7 @@ def serialize_compiled_plan(plan: CompiledPlan | None) -> dict[str, Any]:
                 )
             game_entry: dict[str, Any] = {
                 "provider_game_id": uid,
+                "canonical_league": str(game.canonical_league or ""),
                 "kickoff_ts_utc": (
                     None if game.kickoff_ts_utc is None else int(game.kickoff_ts_utc)
                 ),

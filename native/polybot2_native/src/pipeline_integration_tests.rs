@@ -45,14 +45,14 @@ fn market_json(market_type: &str, line: Option<f64>, targets: &[String]) -> Stri
 
 fn plan_json_one_game(game_id: &str, markets_json: &str) -> String {
     format!(
-        r#"{{"games":[{{"provider_game_id":"{}","kickoff_ts_utc":1700000000,"markets":[{}]}}]}}"#,
+        r#"{{"games":[{{"provider_game_id":"{}","canonical_league":"test","kickoff_ts_utc":1700000000,"markets":[{}]}}]}}"#,
         game_id, markets_json
     )
 }
 
 fn plan_json_one_game_tennis(game_id: &str, markets_json: &str, sets_to_win: i64) -> String {
     format!(
-        r#"{{"games":[{{"provider_game_id":"{}","kickoff_ts_utc":1700000000,"sets_to_win":{},"markets":[{}]}}]}}"#,
+        r#"{{"games":[{{"provider_game_id":"{}","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":{},"markets":[{}]}}]}}"#,
         game_id, sets_to_win, markets_json
     )
 }
@@ -169,12 +169,12 @@ fn soccer_boltodds_tick(
         "IN_FIRST_HALF" => "1st half",
         "AT_HALF_TIME" => "Halftime",
         "IN_SECOND_HALF" => "2nd half",
-        "AT_FULL_TIME" | "MATCH_COMPLETED" => "Ended",
+        "AT_FULL_TIME" => "Ended",
         _ => "",
     };
     let match_completed = matches!(
         extract.match_period_detail,
-        "AT_FULL_TIME" | "MATCH_COMPLETED"
+        "AT_FULL_TIME"
     );
     let game_state: &'static str = if match_completed {
         "FINAL"
@@ -297,7 +297,7 @@ const SOCCER_V1_BASELINE_ENDED: &str = r#"{"id":"v1_sub","type":"next","payload"
 // BoltOdds — game label "Valencia vs Rayo Vallecano, 2026-05-14, 01"
 const BOLTODDS_GOAL: &str = r#"{"action":"match_update","game":"Valencia vs Rayo Vallecano, 2026-05-14, 01","universal_id":"432278261fd9","home":"Valencia","away":"Rayo Vallecano","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":false,"clockRunningNow":true,"matchPeriod":["FootballMatchPeriod","IN_FIRST_HALF"],"elapsedTimeSeconds":1212,"goalsA":0,"goalsB":1,"cornersA":0,"cornersB":1,"yellowCardsA":1,"yellowCardsB":0,"redCardsA":0,"redCardsB":0,"firstHalfGoalsA":0,"firstHalfGoalsB":1,"secondHalfGoalsA":0,"secondHalfGoalsB":0,"varReferralInProgress":false,"matchTime":"20:12","clockStatus":"SET_PERIOD_START","clockRunning":true}}"#;
 
-const BOLTODDS_COMPLETED: &str = r#"{"action":"match_update","game":"Valencia vs Rayo Vallecano, 2026-05-14, 01","universal_id":"432278261fd9","home":"Valencia","away":"Rayo Vallecano","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":true,"clockRunningNow":false,"matchPeriod":["FootballMatchPeriod","MATCH_COMPLETED"],"elapsedTimeSeconds":5400,"goalsA":1,"goalsB":1,"cornersA":5,"cornersB":1,"yellowCardsA":1,"yellowCardsB":1,"redCardsA":0,"redCardsB":0,"firstHalfGoalsA":1,"firstHalfGoalsB":1,"secondHalfGoalsA":0,"secondHalfGoalsB":0,"varReferralInProgress":false,"matchTime":"90:00","addedPeriodTime":"0:34","clockStatus":"SET_PERIOD_START","clockRunning":false}}"#;
+const BOLTODDS_COMPLETED: &str = r#"{"action":"match_update","game":"Valencia vs Rayo Vallecano, 2026-05-14, 01","universal_id":"432278261fd9","home":"Valencia","away":"Rayo Vallecano","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":true,"clockRunningNow":false,"matchPeriod":["FootballMatchPeriod","AT_FULL_TIME"],"elapsedTimeSeconds":5400,"goalsA":1,"goalsB":1,"cornersA":5,"cornersB":1,"yellowCardsA":1,"yellowCardsB":1,"redCardsA":0,"redCardsB":0,"firstHalfGoalsA":1,"firstHalfGoalsB":1,"secondHalfGoalsA":0,"secondHalfGoalsB":0,"varReferralInProgress":false,"matchTime":"90:00","addedPeriodTime":"0:34","clockStatus":"SET_PERIOD_START","clockRunning":false}}"#;
 
 const BOLTODDS_BASELINE: &str = r#"{"action":"match_update","game":"Valencia vs Rayo Vallecano, 2026-05-14, 01","universal_id":"432278261fd9","home":"Valencia","away":"Rayo Vallecano","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":false,"clockRunningNow":true,"matchPeriod":["FootballMatchPeriod","IN_FIRST_HALF"],"elapsedTimeSeconds":60,"goalsA":0,"goalsB":0,"cornersA":0,"cornersB":0,"yellowCardsA":0,"yellowCardsB":0,"redCardsA":0,"redCardsB":0,"firstHalfGoalsA":0,"firstHalfGoalsB":0,"secondHalfGoalsA":0,"secondHalfGoalsB":0,"varReferralInProgress":false,"matchTime":"1:00","clockStatus":"SET_PERIOD_START","clockRunning":true}}"#;
 
@@ -434,7 +434,7 @@ fn integration_soccer_boltodds_completion() {
 
     // Baseline: goal frame (0-1)
     let _ = soccer_boltodds_tick(&mut engine, BOLTODDS_GOAL, 1000);
-    // MATCH_COMPLETED: 1-1 (total=2, draw, corners 5+1=6)
+    // AT_FULL_TIME: 1-1 (total=2, draw, corners 5+1=6)
     let intents = soccer_boltodds_tick(&mut engine, BOLTODDS_COMPLETED, 2000)
         .expect("should produce intents");
     assert_eq!(intents.len(), 3, "under 2.5 + draw_yes + corner under 8.5 should fire");

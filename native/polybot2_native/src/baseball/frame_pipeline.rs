@@ -3,7 +3,7 @@ use crate::baseball::types::*;
 use crate::dispatch::{DispatchHandle, SubmitBatch};
 use crate::fast_extract;
 use crate::kalstrop_types::KalstropFrame;
-use crate::log_writer::LogWriter;
+use crate::log_writer::{LogWriter, TickPayload, gid_from_sk};
 use crate::*;
 use std::sync::{Arc, Mutex};
 
@@ -104,14 +104,20 @@ fn flush_tick_logs(
                 .get(tl.game_idx.0 as usize)
                 .map(|s| s.as_str())
                 .unwrap_or("_");
+            let lg = engine
+                .game_leagues
+                .get(tl.game_idx.0 as usize)
+                .map(|s| s.as_ref())
+                .unwrap_or("");
             g.log_tick(
                 game_id,
-                tl.state.home.unwrap_or(0),
-                tl.state.away.unwrap_or(0),
-                tl.state.game_state,
-                &crate::log_writer::TickExtra::Baseball {
+                &TickPayload::Baseball {
+                    lg,
+                    runs_home: tl.state.home.unwrap_or(0),
+                    runs_away: tl.state.away.unwrap_or(0),
                     inn: tl.state.inning_number,
-                    half: tl.state.inning_half,
+                    inn_half: tl.state.inning_half,
+                    gs: tl.state.game_state,
                 },
             );
         }
@@ -184,7 +190,7 @@ fn process_extracted_fields(
         for intent in &result.intents {
             let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
             if let Ok(mut g) = log.lock() {
-                g.log_order_ok(sk, tok, "noop", "");
+                g.log_order_ok(gid_from_sk(sk), sk, tok, "noop", "");
             }
         }
     } else {
@@ -198,7 +204,7 @@ fn process_extracted_fields(
                 Err(err) => {
                     let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
                     if let Ok(mut g) = log.lock() {
-                        g.log_order_err(sk, tok, &err, "");
+                        g.log_order_err(gid_from_sk(sk), sk, tok, &err, "");
                     }
                 }
             }

@@ -50,7 +50,7 @@ pub fn build_bench_engine_noop(plan_json: &str) -> Result<BenchEngine, String> {
     let cfg = DispatchConfig::default(); // Noop mode
     let shared_registry = shared_registry_for(Arc::clone(&registry));
     let dispatch = DispatchHandle::new(cfg, registry, shared_registry);
-    let log = LogWriter::open("/dev/null").map_err(|e| format!("log_open:{}", e))?;
+    let log = LogWriter::open("/dev/null", "baseball").map_err(|e| format!("log_open:{}", e))?;
     Ok(BenchEngine {
         engine,
         dispatch,
@@ -74,7 +74,7 @@ pub fn build_bench_engine_with_channel(plan_json: &str) -> Result<BenchEngine, S
     let mut dispatch = DispatchHandle::new(cfg, registry, shared_registry);
     let (tx, rx) = rtrb::RingBuffer::<SubmitWork>::new(64);
     dispatch.install_submit_tx(tx);
-    let log = LogWriter::open("/dev/null").map_err(|e| format!("log_open:{}", e))?;
+    let log = LogWriter::open("/dev/null", "baseball").map_err(|e| format!("log_open:{}", e))?;
     Ok(BenchEngine {
         engine,
         dispatch,
@@ -156,6 +156,7 @@ mod tests {
         "run_id": 1,
         "games": [{
             "provider_game_id": "9e32357e-1005-4b1f-bad2-71cc8422091b",
+            "canonical_league": "mlb",
             "kickoff_ts_utc": null,
             "canonical_home_team": "LAA",
             "canonical_away_team": "CWS",

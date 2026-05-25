@@ -2,15 +2,41 @@ use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-pub(crate) enum TickExtra<'a> {
-    Baseball { inn: Option<i64>, half: &'a str },
-    Soccer { half: &'a str, corners: Option<i64> },
-    Tennis { half: &'a str, games_h: i64, games_a: i64, tg: i64 },
+pub(crate) enum TickPayload<'a> {
+    Baseball {
+        lg: &'a str,
+        runs_home: i64,
+        runs_away: i64,
+        inn: Option<i64>,
+        inn_half: &'a str,
+        gs: &'a str,
+    },
+    Soccer {
+        lg: &'a str,
+        goals_home: i64,
+        goals_away: i64,
+        half: &'a str,
+        corners_home: Option<i64>,
+        corners_away: Option<i64>,
+        gs: &'a str,
+        src: &'static str,
+    },
+    Tennis {
+        lg: &'a str,
+        sets_home: i64,
+        sets_away: i64,
+        games_home: i64,
+        games_away: i64,
+        total_games: i64,
+        half: &'a str,
+        gs: &'a str,
+    },
 }
 
 pub(crate) struct LogWriter {
     writer: BufWriter<File>,
     buf: String,
+    sport: &'static str,
 }
 
 fn write_opt_i64(buf: &mut String, v: Option<i64>) {
@@ -43,12 +69,18 @@ fn write_json_escape(buf: &mut String, s: &str) {
     }
 }
 
+/// Extract the game ID prefix from a strategy key (everything before first ':').
+pub(crate) fn gid_from_sk(sk: &str) -> &str {
+    sk.split_once(':').map_or(sk, |(g, _)| g)
+}
+
 impl LogWriter {
-    pub fn open(path: &str) -> Result<Self, String> {
+    pub fn open(path: &str, sport: &'static str) -> Result<Self, String> {
         let file = File::create(path).map_err(|e| format!("log_open_failed:{}", e))?;
         Ok(Self {
             writer: BufWriter::new(file),
             buf: String::with_capacity(256),
+            sport,
         })
     }
 
@@ -61,53 +93,114 @@ impl LogWriter {
         let _ = self.writer.flush();
     }
 
-    pub fn log_tick(&mut self, gid: &str, home: i64, away: i64, gs: &str, extra: &TickExtra<'_>) {
+    pub fn log_tick(&mut self, gid: &str, payload: &TickPayload<'_>) {
         self.buf.clear();
-        let _ = write!(self.buf, r#"{{"ts":{},"ev":"tick","gid":""#, now_unix_ms());
+        let _ = write!(
+            self.buf,
+            r#"{{"ts":{},"ev":"tick","sport":"{}","lg":""#,
+            now_unix_ms(),
+            self.sport,
+        );
+        match payload {
+            TickPayload::Baseball { lg, .. } => write_json_escape(&mut self.buf, lg),
+            TickPayload::Soccer { lg, .. } => write_json_escape(&mut self.buf, lg),
+            TickPayload::Tennis { lg, .. } => write_json_escape(&mut self.buf, lg),
+        }
+        self.buf.push_str(r#"","gid":""#);
         write_json_escape(&mut self.buf, gid);
-        self.buf.push_str(r#"","h":"#);
-        let _ = write!(self.buf, "{}", home);
-        self.buf.push_str(r#","a":"#);
-        let _ = write!(self.buf, "{}", away);
-        self.buf.push_str(r#","gs":""#);
-        write_json_escape(&mut self.buf, gs);
         self.buf.push('"');
-        match extra {
-            TickExtra::Baseball { inn, half } => {
+
+        match payload {
+            TickPayload::Baseball {
+                runs_home,
+                runs_away,
+                inn,
+                inn_half,
+                gs,
+                ..
+            } => {
+                self.buf.push_str(r#","runs_home":"#);
+                let _ = write!(self.buf, "{}", runs_home);
+                self.buf.push_str(r#","runs_away":"#);
+                let _ = write!(self.buf, "{}", runs_away);
                 self.buf.push_str(r#","inn":"#);
                 write_opt_i64(&mut self.buf, *inn);
-                self.buf.push_str(r#","half":""#);
-                write_json_escape(&mut self.buf, half);
+                self.buf.push_str(r#","inn_half":""#);
+                write_json_escape(&mut self.buf, inn_half);
+                self.buf.push('"');
+                self.buf.push_str(r#","gs":""#);
+                write_json_escape(&mut self.buf, gs);
                 self.buf.push('"');
             }
-            TickExtra::Soccer { half, corners } => {
+            TickPayload::Soccer {
+                goals_home,
+                goals_away,
+                half,
+                corners_home,
+                corners_away,
+                gs,
+                src,
+                ..
+            } => {
+                self.buf.push_str(r#","goals_home":"#);
+                let _ = write!(self.buf, "{}", goals_home);
+                self.buf.push_str(r#","goals_away":"#);
+                let _ = write!(self.buf, "{}", goals_away);
                 self.buf.push_str(r#","half":""#);
                 write_json_escape(&mut self.buf, half);
                 self.buf.push('"');
-                if let Some(c) = corners {
-                    self.buf.push_str(r#","corners":"#);
-                    let _ = write!(self.buf, "{}", c);
+                if corners_home.is_some() || corners_away.is_some() {
+                    self.buf.push_str(r#","corners_home":"#);
+                    write_opt_i64(&mut self.buf, *corners_home);
+                    self.buf.push_str(r#","corners_away":"#);
+                    write_opt_i64(&mut self.buf, *corners_away);
+                }
+                self.buf.push_str(r#","gs":""#);
+                write_json_escape(&mut self.buf, gs);
+                self.buf.push('"');
+                if !src.is_empty() {
+                    self.buf.push_str(r#","src":""#);
+                    self.buf.push_str(src);
+                    self.buf.push('"');
                 }
             }
-            TickExtra::Tennis { half, games_h, games_a, tg } => {
+            TickPayload::Tennis {
+                sets_home,
+                sets_away,
+                games_home,
+                games_away,
+                total_games,
+                half,
+                gs,
+                ..
+            } => {
+                self.buf.push_str(r#","sets_home":"#);
+                let _ = write!(self.buf, "{}", sets_home);
+                self.buf.push_str(r#","sets_away":"#);
+                let _ = write!(self.buf, "{}", sets_away);
+                self.buf.push_str(r#","games_home":"#);
+                let _ = write!(self.buf, "{}", games_home);
+                self.buf.push_str(r#","games_away":"#);
+                let _ = write!(self.buf, "{}", games_away);
+                self.buf.push_str(r#","total_games":"#);
+                let _ = write!(self.buf, "{}", total_games);
                 self.buf.push_str(r#","half":""#);
                 write_json_escape(&mut self.buf, half);
                 self.buf.push('"');
-                self.buf.push_str(r#","games_h":"#);
-                let _ = write!(self.buf, "{}", games_h);
-                self.buf.push_str(r#","games_a":"#);
-                let _ = write!(self.buf, "{}", games_a);
-                self.buf.push_str(r#","tg":"#);
-                let _ = write!(self.buf, "{}", tg);
+                self.buf.push_str(r#","gs":""#);
+                write_json_escape(&mut self.buf, gs);
+                self.buf.push('"');
             }
         }
         self.buf.push('}');
         self.flush_buf();
     }
 
-    pub fn log_order_ok(&mut self, sk: &str, tok: &str, eid: &str, tif: &str) {
+    pub fn log_order_ok(&mut self, gid: &str, sk: &str, tok: &str, eid: &str, tif: &str) {
         self.buf.clear();
-        let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","sk":""#, now_unix_ms());
+        let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","gid":""#, now_unix_ms());
+        write_json_escape(&mut self.buf, gid);
+        self.buf.push_str(r#"","sk":""#);
         write_json_escape(&mut self.buf, sk);
         self.buf.push_str(r#"","tok":""#);
         write_json_escape(&mut self.buf, tok);
@@ -119,9 +212,11 @@ impl LogWriter {
         self.flush_buf();
     }
 
-    pub fn log_order_err(&mut self, sk: &str, tok: &str, err: &str, tif: &str) {
+    pub fn log_order_err(&mut self, gid: &str, sk: &str, tok: &str, err: &str, tif: &str) {
         self.buf.clear();
-        let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","sk":""#, now_unix_ms());
+        let _ = write!(self.buf, r#"{{"ts":{},"ev":"order","gid":""#, now_unix_ms());
+        write_json_escape(&mut self.buf, gid);
+        self.buf.push_str(r#"","sk":""#);
         write_json_escape(&mut self.buf, sk);
         self.buf.push_str(r#"","tok":""#);
         write_json_escape(&mut self.buf, tok);
@@ -145,28 +240,48 @@ impl LogWriter {
         self.flush_buf();
     }
 
-    pub fn log_startup(&mut self, run_id: i64, games: usize, tokens: usize, mode: &str) {
+    pub fn log_startup(
+        &mut self,
+        run_id: i64,
+        games: usize,
+        tokens: usize,
+        mode: &str,
+        leagues: &[&str],
+    ) {
         self.buf.clear();
         let _ = write!(
             self.buf,
-            r#"{{"ts":{},"ev":"startup","run_id":{},"games":{},"tokens":{},"mode":""#,
+            r#"{{"ts":{},"ev":"startup","v":2,"sport":"{}","leagues":["#,
             now_unix_ms(),
-            run_id,
-            games,
-            tokens
+            self.sport,
+        );
+        for (i, lg) in leagues.iter().enumerate() {
+            if i > 0 {
+                self.buf.push(',');
+            }
+            self.buf.push('"');
+            write_json_escape(&mut self.buf, lg);
+            self.buf.push('"');
+        }
+        let _ = write!(
+            self.buf,
+            r#"],"run_id":{},"games":{},"tokens":{},"mode":""#,
+            run_id, games, tokens,
         );
         write_json_escape(&mut self.buf, mode);
         self.buf.push_str(r#""}"#);
         self.flush_buf();
     }
 
-    pub fn log_ws_connect(&mut self, subs: &[String]) {
+    pub fn log_ws_connect(&mut self, src: &str, subs: &[String]) {
         self.buf.clear();
         let _ = write!(
             self.buf,
-            r#"{{"ts":{},"ev":"ws_connect","subs":["#,
+            r#"{{"ts":{},"ev":"ws_connect","src":""#,
             now_unix_ms()
         );
+        write_json_escape(&mut self.buf, src);
+        self.buf.push_str(r#"","subs":["#);
         for (i, s) in subs.iter().enumerate() {
             if i > 0 {
                 self.buf.push(',');
@@ -179,13 +294,15 @@ impl LogWriter {
         self.flush_buf();
     }
 
-    pub fn log_ws_disconnect(&mut self, reason: &str, reconnects: i64) {
+    pub fn log_ws_disconnect(&mut self, src: &str, reason: &str, reconnects: i64) {
         self.buf.clear();
         let _ = write!(
             self.buf,
-            r#"{{"ts":{},"ev":"ws_disconnect","reason":""#,
+            r#"{{"ts":{},"ev":"ws_disconnect","src":""#,
             now_unix_ms()
         );
+        write_json_escape(&mut self.buf, src);
+        self.buf.push_str(r#"","reason":""#);
         write_json_escape(&mut self.buf, reason);
         let _ = write!(self.buf, r#"","reconnects":{}}}"#, reconnects);
         self.flush_buf();

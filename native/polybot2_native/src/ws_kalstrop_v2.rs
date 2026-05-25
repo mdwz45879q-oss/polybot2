@@ -113,7 +113,7 @@ pub(crate) async fn run_kalstrop_v2_worker_async(
             h.last_error.clear();
         });
         if let Ok(mut g) = log.lock() {
-            g.log_ws_connect(&fixture_ids);
+            g.log_ws_connect("kalstrop_v2", &fixture_ids);
         }
 
         // --- Event loop ---
@@ -234,14 +234,22 @@ pub(crate) async fn run_kalstrop_v2_worker_async(
                                 .get(tl.game_idx.0 as usize)
                                 .map(|s| s.as_str())
                                 .unwrap_or("_");
+                            let lg = e
+                                .game_leagues
+                                .get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_ref())
+                                .unwrap_or("");
                             g.log_tick(
                                 gid,
-                                tl.state.home.unwrap_or(0),
-                                tl.state.away.unwrap_or(0),
-                                tl.game_state,
-                                &crate::log_writer::TickExtra::Soccer {
+                                &crate::log_writer::TickPayload::Soccer {
+                                    lg,
+                                    goals_home: tl.state.home.unwrap_or(0),
+                                    goals_away: tl.state.away.unwrap_or(0),
                                     half: tl.half,
-                                    corners: tl.state.total_corners,
+                                    corners_home: tl.state.corners_home,
+                                    corners_away: tl.state.corners_away,
+                                    gs: tl.game_state,
+                                    src: "kalstrop_v2",
                                 },
                             );
                         }
@@ -258,7 +266,7 @@ pub(crate) async fn run_kalstrop_v2_worker_async(
         // Disconnected — log and reconnect
         let reconnects = if let Ok(h) = health.lock() { h.reconnects } else { 0 };
         if let Ok(mut g) = log.lock() {
-            g.log_ws_disconnect(&reconn_reason, reconnects);
+            g.log_ws_disconnect("kalstrop_v2", &reconn_reason, reconnects);
         }
 
         if running {

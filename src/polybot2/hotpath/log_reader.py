@@ -37,21 +37,47 @@ def read_all_fired_strategy_keys(log_dir: str | Path, run_id: int) -> set[str]:
 
     Each hotpath start() creates a new log file. This function reads all of
     them to recover the full set of fired keys across restart cycles.
+
+    Searches V2 layout (``{dir}/{run_id}/hotpath_*.jsonl``) first,
+    then V1 layout (``{dir}/hotpath_{run_id}_*.jsonl``).
     """
     fired: set[str] = set()
     log_dir_path = Path(log_dir)
     if not log_dir_path.is_dir():
         return fired
+    # V2 layout: {dir}/{run_id}/hotpath_{sport}_{ts}.jsonl
+    v2_subdir = log_dir_path / str(run_id)
+    if v2_subdir.is_dir():
+        for log_file in v2_subdir.glob("hotpath_*.jsonl"):
+            fired |= read_fired_strategy_keys(log_file)
+    # V1 layout: {dir}/hotpath_{run_id}_{ts}.jsonl
     for log_file in log_dir_path.glob(f"hotpath_{run_id}_*.jsonl"):
         fired |= read_fired_strategy_keys(log_file)
     return fired
 
 
 def find_latest_hotpath_log(log_dir: str | Path, run_id: int | None = None) -> Path | None:
-    """Find the most recent hotpath JSONL log in the directory."""
+    """Find the most recent hotpath JSONL log in the directory.
+
+    Searches V2 layout (``{dir}/{run_id}/hotpath_*.jsonl``) first,
+    then V1 layout (``{dir}/hotpath_{run_id}_*.jsonl``).
+    """
     log_dir_path = Path(log_dir)
     if not log_dir_path.is_dir():
         return None
+    # V2 layout
+    if run_id is not None:
+        v2_subdir = log_dir_path / str(run_id)
+        if v2_subdir.is_dir():
+            v2_files = sorted(v2_subdir.glob("hotpath_*.jsonl"), reverse=True)
+            if v2_files:
+                return v2_files[0]
+    else:
+        # No run_id: search all numeric subdirectories
+        v2_files = sorted(log_dir_path.glob("*/hotpath_*.jsonl"), reverse=True)
+        if v2_files:
+            return v2_files[0]
+    # V1 fallback
     pattern = f"hotpath_{run_id}_*.jsonl" if run_id is not None else "hotpath_*.jsonl"
     files = sorted(log_dir_path.glob(pattern), reverse=True)
     return files[0] if files else None

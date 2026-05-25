@@ -11,6 +11,7 @@ impl NativeMlbEngine {
         Self {
             game_id_to_idx: FxHashMap::default(),
             game_ids: Vec::new(),
+            game_leagues: Vec::new(),
             game_targets: Vec::new(),
             target_slots: Vec::new(),
             tokens: Vec::new(),
@@ -49,6 +50,7 @@ impl NativeMlbEngine {
         Self {
             game_id_to_idx: FxHashMap::default(),
             game_ids: Vec::new(),
+            game_leagues: Vec::new(),
             game_targets: Vec::new(),
             target_slots: Vec::new(),
             tokens: Vec::new(),
@@ -95,6 +97,7 @@ impl NativeMlbEngine {
         self.kickoff_ts.clear();
         self.token_ids_by_game.clear();
         self.has_totals.clear();
+        self.game_leagues.clear();
         self.has_nrfi.clear();
         self.has_final.clear();
 
@@ -121,6 +124,8 @@ impl NativeMlbEngine {
             let gidx = GameIdx(self.game_ids.len() as u16);
             self.game_id_to_idx.insert(uid.clone(), gidx);
             self.game_ids.push(uid);
+            let league_str = game_val.get("canonical_league").and_then(|v| v.as_str()).unwrap_or("");
+            self.game_leagues.push(Arc::from(league_str));
 
             // Insert alternate provider game IDs pointing to the same GameIdx.
             if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {

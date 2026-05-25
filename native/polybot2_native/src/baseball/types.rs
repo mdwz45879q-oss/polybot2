@@ -92,6 +92,7 @@ pub(crate) struct LiveTickResult {
 pub(crate) struct NativeMlbEngine {
     pub(crate) game_id_to_idx: FxHashMap<String, GameIdx>,
     pub(crate) game_ids: Vec<String>,
+    pub(crate) game_leagues: Vec<Arc<str>>,
     pub(crate) game_targets: Vec<GameTargets>,
     pub(crate) target_slots: Vec<TargetSlot>,
     pub(crate) tokens: Vec<TokenSlot>,

@@ -84,6 +84,8 @@ pub(crate) struct SoccerGameState {
     pub(crate) game_state: &'static str,
     pub(crate) total_corners: Option<i64>,
     pub(crate) prev_total_corners: Option<i64>,
+    pub(crate) corners_home: Option<i64>,
+    pub(crate) corners_away: Option<i64>,
 }
 
 /// Stack-only result from the live WS tick path.
@@ -110,6 +112,7 @@ pub(crate) struct BoltOddsSoccerStateRow {
 pub(crate) struct NativeSoccerEngine {
     pub(crate) game_id_to_idx: FxHashMap<String, GameIdx>,
     pub(crate) game_ids: Vec<String>,
+    pub(crate) game_leagues: Vec<Arc<str>>,
     pub(crate) game_targets: Vec<SoccerGameTargets>,
     pub(crate) target_slots: Vec<TargetSlot>,
     pub(crate) tokens: Vec<TokenSlot>,

@@ -149,7 +149,7 @@ pub(crate) fn map_v2_phase(phase: &str) -> (&'static str, bool) {
         "FirstHalf" => ("1st half", false),
         "HalfTime" => ("Halftime", false),
         "SecondHalf" => ("2nd half", false),
-        "FullTimeNormalTime" | "PostMatch" => ("Ended", true),
+        "FullTimeNormalTime" => ("Ended", true),
         _ => ("", false),
     }
 }
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(map_v2_phase("HalfTime"), ("Halftime", false));
         assert_eq!(map_v2_phase("SecondHalf"), ("2nd half", false));
         assert_eq!(map_v2_phase("FullTimeNormalTime"), ("Ended", true));
-        assert_eq!(map_v2_phase("PostMatch"), ("Ended", true));
+        assert_eq!(map_v2_phase("PostMatch"), ("", false));
         assert_eq!(map_v2_phase("Unknown"), ("", false));
     }
 }

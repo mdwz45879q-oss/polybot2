@@ -52,12 +52,12 @@ pub(crate) fn process_boltodds_frame_sync(
         "IN_FIRST_HALF" => "1st half",
         "AT_HALF_TIME" => "Halftime",
         "IN_SECOND_HALF" => "2nd half",
-        "AT_FULL_TIME" | "MATCH_COMPLETED" => "Ended",
+        "AT_FULL_TIME" => "Ended",
         _ => "",
     };
     let match_completed = matches!(
         extract.match_period_detail,
-        "AT_FULL_TIME" | "MATCH_COMPLETED"
+        "AT_FULL_TIME"
     );
     let game_state: &'static str = if match_completed {
         "FINAL"
