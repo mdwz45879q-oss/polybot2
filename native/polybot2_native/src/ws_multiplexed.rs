@@ -740,6 +740,9 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 inn: tl.state.inning_number,
                                 inn_half: tl.state.inning_half,
                                 gs: tl.state.game_state,
+                                src: "boltodds",
+                                outs: tl.state.outs,
+                                strikes: tl.state.strikes,
                             });
                         }
                     }

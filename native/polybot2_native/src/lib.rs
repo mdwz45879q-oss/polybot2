@@ -418,6 +418,9 @@ struct NativeHotPathRuntime {
     submitter: Option<SubmitterHandle>,
     cached_sdk_client: Option<SdkClient<SdkAuthenticatedState<SdkAuthNormal>>>,
     cached_signer: Option<CachedSigner>,
+    /// BoltOdds game labels extracted from alternate_provider_game_ids at plan load.
+    /// Used for multiplexed configs where BoltOdds is a secondary provider.
+    boltodds_labels: Vec<String>,
 }
 
 pub(crate) struct MergePlanResult {

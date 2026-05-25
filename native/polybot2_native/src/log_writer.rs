@@ -10,6 +10,9 @@ pub(crate) enum TickPayload<'a> {
         inn: Option<i64>,
         inn_half: &'a str,
         gs: &'a str,
+        src: &'static str,
+        outs: Option<u8>,
+        strikes: Option<u8>,
     },
     Soccer {
         lg: &'a str,
@@ -117,6 +120,9 @@ impl LogWriter {
                 inn,
                 inn_half,
                 gs,
+                src,
+                outs,
+                strikes,
                 ..
             } => {
                 self.buf.push_str(r#","runs_home":"#);
@@ -131,6 +137,19 @@ impl LogWriter {
                 self.buf.push_str(r#","gs":""#);
                 write_json_escape(&mut self.buf, gs);
                 self.buf.push('"');
+                if !src.is_empty() {
+                    self.buf.push_str(r#","src":""#);
+                    self.buf.push_str(src);
+                    self.buf.push('"');
+                }
+                if let Some(o) = outs {
+                    self.buf.push_str(r#","outs":"#);
+                    self.buf.push_str(itoa::Buffer::new().format(*o));
+                }
+                if let Some(s) = strikes {
+                    self.buf.push_str(r#","strikes":"#);
+                    self.buf.push_str(itoa::Buffer::new().format(*s));
+                }
             }
             TickPayload::Soccer {
                 goals_home,

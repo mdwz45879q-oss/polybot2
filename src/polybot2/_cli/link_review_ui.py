@@ -59,7 +59,7 @@ def _render_provider_panels_text(all_pgs: list[dict[str, Any]], primary_pg: dict
         if _is_primary:
             title.append("* ", style="bold bright_magenta")
         if _is_rejected:
-            title.append("✗ ", style="bold red")
+            title.append("✗ rejected ", style="bold red")
         if _prov == "kalstrop_v2":
             title.append("! ", style="bold red")
 
@@ -529,7 +529,7 @@ def _build_game_card_renderable(
         if _is_primary:
             _prov_display = f"[bold green]{_prov}[/bold green]"
         elif str(_pg.get("binding_status") or "") == "unresolved":
-            _prov_display = f"❌ {_prov}"
+            _prov_display = f"[red]✗[/red] {_prov}"
         else:
             _prov_display = _prov
         _col_rows = [

@@ -118,6 +118,9 @@ fn flush_tick_logs(
                     inn: tl.state.inning_number,
                     inn_half: tl.state.inning_half,
                     gs: tl.state.game_state,
+                    src: "kalstrop_v1",
+                    outs: tl.state.outs,
+                    strikes: tl.state.strikes,
                 },
             );
         }

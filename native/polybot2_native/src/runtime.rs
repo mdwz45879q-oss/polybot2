@@ -21,6 +21,30 @@ fn pin_current_thread(core_idx: Option<usize>) -> Option<CoreId> {
     }
 }
 
+/// Extract BoltOdds game labels from the compiled plan's alternate_provider_game_ids.
+/// Used for multiplexed configs where BoltOdds is a secondary provider.
+fn extract_boltodds_labels_from_plan(plan_json: &str) -> Vec<String> {
+    let mut labels = Vec::new();
+    let Ok(plan) = serde_json::from_str::<serde_json::Value>(plan_json) else {
+        return labels;
+    };
+    let Some(games) = plan.get("games").and_then(|v| v.as_array()) else {
+        return labels;
+    };
+    for game in games {
+        if let Some(alts) = game.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+            for alt in alts {
+                let provider = alt.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+                let game_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                if provider == "boltodds" && !game_id.is_empty() {
+                    labels.push(game_id.to_string());
+                }
+            }
+        }
+    }
+    labels
+}
+
 /// Determine the sport league from the compiled plan JSON.
 fn detect_sport_from_plan(plan_json: &str) -> Result<&'static str, String> {
     let val = serde_json::from_str::<serde_json::Value>(plan_json)
@@ -50,6 +74,7 @@ impl NativeHotPathRuntime {
             submitter: None,
             cached_sdk_client: None,
             cached_signer: None,
+            boltodds_labels: Vec::new(),
         }
     }
 
@@ -103,6 +128,16 @@ impl NativeHotPathRuntime {
             _ => unreachable!("detect_sport_from_plan already rejects unknown sports"),
         };
         self.engine = Some(engine);
+
+        // Extract BoltOdds game labels from alternate_provider_game_ids for
+        // multiplexed configs where BoltOdds is a secondary provider.
+        self.boltodds_labels = extract_boltodds_labels_from_plan(compiled_plan_json);
+        if !self.boltodds_labels.is_empty() {
+            eprintln!(
+                "[polybot2] BoltOdds labels extracted from plan: {}",
+                self.boltodds_labels.len()
+            );
+        }
 
         if cfg.live_enabled.unwrap_or(false) {
             let submitter_core_idx = cfg.submitter_core_idx;
@@ -333,7 +368,15 @@ impl NativeHotPathRuntime {
                             let api_key = pc.api_key.clone().unwrap_or_default();
                             let ws_url = pc.boltodds_ws_url.clone()
                                 .unwrap_or_else(|| "wss://spro.agency/api/livescores".to_string());
-                            let game_labels: Vec<String> = worker_engine.game_ids().to_vec();
+                            // Use BoltOdds-specific labels from alternate_provider_game_ids.
+                            // game_ids() returns primary provider IDs (e.g. V1 UUIDs) which
+                            // are wrong for BoltOdds subscription when it's a secondary provider.
+                            let game_labels: Vec<String> = if self.boltodds_labels.is_empty() {
+                                // Fallback: BoltOdds is primary in this multiplexed setup
+                                worker_engine.game_ids().to_vec()
+                            } else {
+                                self.boltodds_labels.clone()
+                            };
                             mux_providers.push(crate::ws_multiplexed::ProviderConfig::BoltOdds {
                                 cfg: crate::ws_boltodds::BoltOddsWorkerConfig { ws_url, api_key },
                                 game_labels,
@@ -666,5 +709,121 @@ impl NativeHotPathRuntime {
             },
         });
         crate::baseball::engine::serde_value_to_py(py, &payload)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_boltodds_labels_v1_primary_with_bo_alternates() {
+        let plan = serde_json::json!({
+            "sport": "baseball",
+            "provider": "kalstrop_v1",
+            "league": "mlb",
+            "run_id": 1,
+            "games": [
+                {
+                    "provider_game_id": "d3f41158-aaaa-bbbb-cccc-111111111111",
+                    "canonical_league": "mlb",
+                    "kickoff_ts_utc": 1700000000,
+                    "alternate_provider_game_ids": [
+                        {"provider": "boltodds", "game_id": "Team A vs Team B, 2026-05-25, 05"}
+                    ],
+                    "markets": []
+                },
+                {
+                    "provider_game_id": "d3f41158-aaaa-bbbb-cccc-222222222222",
+                    "canonical_league": "mlb",
+                    "kickoff_ts_utc": 1700010000,
+                    "alternate_provider_game_ids": [
+                        {"provider": "boltodds", "game_id": "Team C vs Team D, 2026-05-25, 04"},
+                        {"provider": "kalstrop_opta", "game_id": "2:12345"}
+                    ],
+                    "markets": []
+                }
+            ]
+        });
+        let labels = extract_boltodds_labels_from_plan(&plan.to_string());
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0], "Team A vs Team B, 2026-05-25, 05");
+        assert_eq!(labels[1], "Team C vs Team D, 2026-05-25, 04");
+    }
+
+    #[test]
+    fn extract_boltodds_labels_no_alternates() {
+        let plan = serde_json::json!({
+            "sport": "baseball",
+            "provider": "boltodds",
+            "league": "mlb",
+            "run_id": 1,
+            "games": [
+                {
+                    "provider_game_id": "Team A vs Team B, 2026-05-25, 05",
+                    "canonical_league": "mlb",
+                    "kickoff_ts_utc": 1700000000,
+                    "markets": []
+                }
+            ]
+        });
+        let labels = extract_boltodds_labels_from_plan(&plan.to_string());
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn extract_boltodds_labels_filters_non_boltodds_providers() {
+        let plan = serde_json::json!({
+            "sport": "soccer",
+            "provider": "kalstrop_v2",
+            "league": "epl",
+            "run_id": 1,
+            "games": [
+                {
+                    "provider_game_id": "7490587",
+                    "canonical_league": "epl",
+                    "kickoff_ts_utc": 1700000000,
+                    "alternate_provider_game_ids": [
+                        {"provider": "kalstrop_v1", "game_id": "d3f41158-uuid"},
+                        {"provider": "kalstrop_opta", "game_id": "2:999"}
+                    ],
+                    "markets": []
+                }
+            ]
+        });
+        let labels = extract_boltodds_labels_from_plan(&plan.to_string());
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn extract_boltodds_labels_invalid_json() {
+        let labels = extract_boltodds_labels_from_plan("not valid json");
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn extract_boltodds_labels_empty_game_id_skipped() {
+        let plan = serde_json::json!({
+            "sport": "baseball",
+            "provider": "kalstrop_v1",
+            "league": "mlb",
+            "run_id": 1,
+            "games": [
+                {
+                    "provider_game_id": "uuid-1",
+                    "canonical_league": "mlb",
+                    "kickoff_ts_utc": 1700000000,
+                    "alternate_provider_game_ids": [
+                        {"provider": "boltodds", "game_id": ""},
+                        {"provider": "boltodds", "game_id": "  "},
+                        {"provider": "boltodds", "game_id": "Valid Label"}
+                    ],
+                    "markets": []
+                }
+            ]
+        });
+        let labels = extract_boltodds_labels_from_plan(&plan.to_string());
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0], "Valid Label");
     }
 }
