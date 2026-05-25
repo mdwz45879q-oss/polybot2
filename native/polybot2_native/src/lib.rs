@@ -1,4 +1,6 @@
 mod baseball;
+pub(crate) mod boltodds_baseball_types;
+pub(crate) mod boltodds_baseball_frame_pipeline;
 pub(crate) mod boltodds_frame_pipeline;
 pub(crate) mod boltodds_types;
 mod dispatch;

@@ -68,6 +68,23 @@ pub(crate) struct GameState {
     pub(crate) inning_half: &'static str,
     pub(crate) match_completed: Option<bool>,
     pub(crate) game_state: &'static str,
+    /// BoltOdds outs count (0-3). `None` when last tick was V1.
+    pub(crate) outs: Option<u8>,
+    /// BoltOdds strikes count (0-3). `None` when last tick was V1.
+    pub(crate) strikes: Option<u8>,
+}
+
+/// BoltOdds-specific dedup row. Integer-based: ball-count-only changes
+/// are filtered out (ball not in struct), but strike changes pass through
+/// (needed for strikeout pre-fire logic).
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct BoltOddsBaseballRow {
+    pub(crate) outs: u8,
+    pub(crate) strikes: u8,
+    pub(crate) inning: i64,
+    pub(crate) top_of_inning: bool,
+    pub(crate) home_score: i64,
+    pub(crate) away_score: i64,
 }
 
 #[cfg(test)]
@@ -107,6 +124,7 @@ pub(crate) struct NativeMlbEngine {
     pub(crate) has_final: Vec<bool>,
 
     pub(crate) rows: Vec<Option<StateRow>>,
+    pub(crate) bo_rows: Vec<Option<BoltOddsBaseballRow>>,
     pub(crate) game_states: Vec<GameState>,
 
     pub(crate) totals_final_under_emitted: Vec<bool>,

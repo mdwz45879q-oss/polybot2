@@ -213,6 +213,161 @@ impl NativeMlbEngine {
 
         self.final_resolved_games[gi] = true;
     }
+
+    // ---------------------------------------------------------------
+    // BoltOdds-specific evaluators (outs-based, zero-alloc _into)
+    // ---------------------------------------------------------------
+
+    /// NRFI resolution via BoltOdds outs signal. Fires earlier than V1's
+    /// freeText-based inning transition (~5s). Strikeout pre-fire:
+    /// `out=2 && strike=3` fires before `out=3` arrives (+4-6s in ~2%).
+    pub(crate) fn evaluate_nrfi_from_outs_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if !self.has_nrfi[gi] {
+            return;
+        }
+        if self.nrfi_resolved_games[gi] {
+            return;
+        }
+
+        // First-inning observation gate (same logic as V1 evaluator):
+        // late subscriptions with inning > 1 are permanently skipped.
+        if !self.nrfi_first_inning_observed[gi] {
+            match state.inning_number {
+                Some(1) => {
+                    self.nrfi_first_inning_observed[gi] = true;
+                }
+                Some(_) => {
+                    self.nrfi_resolved_games[gi] = true;
+                    return;
+                }
+                None => {
+                    return;
+                }
+            }
+        }
+
+        // Only fire when bottom of 1st is ending — outs signal means
+        // the half-inning's last out is being recorded.
+        if state.inning_number != Some(1) || state.inning_half != "bottom" {
+            return;
+        }
+
+        // Outs signal: out=3 (half-inning over) or strikeout pre-fire
+        // (out=2, strike=3 → strikeout imminent, 3rd out guaranteed).
+        let outs_signal = state.outs == Some(3)
+            || (state.outs == Some(2) && state.strikes == Some(3));
+        if !outs_signal {
+            return;
+        }
+
+        let total = state.total.unwrap_or(0);
+        let targets = &self.game_targets[gi];
+        if total > 0 {
+            // Runs scored in 1st inning → NRFI yes (runs in first inning).
+            push_if_some(targets.nrfi_yes, out);
+        } else {
+            // Clean 1st inning → NRFI no (no runs in first inning).
+            push_if_some(targets.nrfi_no, out);
+        }
+        self.nrfi_resolved_games[gi] = true;
+    }
+
+    /// Game-end resolution via BoltOdds outs signal. Fires moneyline +
+    /// spreads + unders when the final out is detected (~9s before V1's
+    /// "Ended" frame). Only fires when the game is definitively over:
+    /// the trailing team's at-bat has ended with the leading team ahead.
+    /// Walkoffs are NOT covered (V1 is faster for run events).
+    pub(crate) fn evaluate_game_end_from_outs_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if !self.has_final[gi] {
+            return;
+        }
+        if self.final_resolved_games[gi] {
+            return;
+        }
+
+        let inning = state.inning_number.unwrap_or(0);
+        if inning < 9 {
+            return;
+        }
+
+        // Outs signal: out=3 or strikeout pre-fire.
+        let outs_signal = state.outs == Some(3)
+            || (state.outs == Some(2) && state.strikes == Some(3));
+        if !outs_signal {
+            return;
+        }
+
+        let home = state.home.unwrap_or(0);
+        let away = state.away.unwrap_or(0);
+
+        // Determine if the game is definitively over:
+        // - Top of inning (away batting) + home leads → away can't catch up,
+        //   bottom is skipped. Home wins.
+        // - Bottom of inning (home batting) + away leads → home's at-bat
+        //   over, away still leads. Away wins.
+        // All other cases (tied, or wrong half for the leader) → game
+        // continues, do not fire.
+        let home_wins;
+        if state.inning_half == "top" && home > away {
+            home_wins = true;
+        } else if state.inning_half == "bottom" && away > home {
+            home_wins = false;
+        } else {
+            return; // tied or game continues
+        }
+
+        let targets = &self.game_targets[gi];
+
+        // Fire moneyline winner.
+        let winner_slot = if home_wins {
+            targets.moneyline_home
+        } else {
+            targets.moneyline_away
+        };
+        push_if_some(winner_slot, out);
+
+        // Fire spreads — same margin logic as evaluate_final_into.
+        let margin_home = home - away;
+        for slot in &targets.spreads {
+            let margin = if slot.side == SpreadSide::Home {
+                margin_home
+            } else {
+                -margin_home
+            };
+            if (margin as f64) + slot.line > 0.0 {
+                push_if_some(slot.covers_idx, out);
+            } else {
+                push_if_some(slot.not_covers_idx, out);
+            }
+        }
+
+        // Fire under lines — game total is final.
+        if self.has_totals[gi] && !self.totals_final_under_emitted[gi] {
+            let total = state.total.unwrap_or(0) as u16;
+            for ol in &targets.under_lines {
+                if ol.half_int >= total {
+                    out.push(Intent {
+                        target_idx: ol.target_idx,
+                    });
+                }
+            }
+            self.totals_final_under_emitted[gi] = true;
+        }
+
+        self.final_resolved_games[gi] = true;
+    }
 }
 
 #[cfg(test)]
@@ -243,6 +398,26 @@ impl NativeMlbEngine {
     pub(crate) fn evaluate_final(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_final_into(gidx, state, &mut out);
+        out.into_vec()
+    }
+
+    pub(crate) fn evaluate_nrfi_from_outs(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        self.evaluate_nrfi_from_outs_into(gidx, state, &mut out);
+        out.into_vec()
+    }
+
+    pub(crate) fn evaluate_game_end_from_outs(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        self.evaluate_game_end_from_outs_into(gidx, state, &mut out);
         out.into_vec()
     }
 }

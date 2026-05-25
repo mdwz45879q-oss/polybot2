@@ -17,7 +17,7 @@ LEAGUES = {
     "mlb":{
         "polymarket_league_code": "mlb", 
         "sport_family": "baseball", 
-        "provider": "kalstrop_v1",
+        "provider": ["kalstrop_v1", "boltodds"]
     },
     # Soccer
     ## UEFA Champions League

@@ -2,6 +2,9 @@
 //! Mirrors the structure of `ws.rs` (V1 Kalstrop) but with BoltOdds-specific
 //! connection handshake, subscribe protocol, and frame dispatch.
 
+use crate::boltodds_baseball_frame_pipeline::{
+    process_boltodds_baseball_frame_sync, BoltOddsBaseballPendingLog,
+};
 use crate::boltodds_frame_pipeline::{process_boltodds_frame_sync, BoltOddsPendingLog};
 use crate::dispatch::DispatchHandle;
 use crate::log_writer::LogWriter;
@@ -181,7 +184,9 @@ pub(crate) async fn run_boltodds_worker_async(
             let _ = apply_pending_patches(engine, &mut dispatch_handle, &patch_rx, &health, &log);
 
             // Frame drain loop — collect pending logs, flush after drain.
-            let mut pending_logs = smallvec::SmallVec::<[BoltOddsPendingLog; 4]>::new();
+            let mut pending_soccer_logs = smallvec::SmallVec::<[BoltOddsPendingLog; 4]>::new();
+            let mut pending_baseball_logs =
+                smallvec::SmallVec::<[BoltOddsBaseballPendingLog; 4]>::new();
             let mut first_read = true;
             loop {
                 let next = if first_read {
@@ -218,8 +223,8 @@ pub(crate) async fn run_boltodds_worker_async(
 
                 let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                 match &msg {
-                    Message::Text(text) => {
-                        if let SportEngine::Soccer(ref mut e) = engine {
+                    Message::Text(text) => match engine {
+                        SportEngine::Soccer(ref mut e) => {
                             if let Some(tl) = process_boltodds_frame_sync(
                                 e,
                                 text.as_ref(),
@@ -227,22 +232,48 @@ pub(crate) async fn run_boltodds_worker_async(
                                 &mut dispatch_handle,
                                 &log,
                             ) {
-                                pending_logs.push(tl);
+                                pending_soccer_logs.push(tl);
                             }
                         }
-                    }
+                        SportEngine::Baseball(ref mut e) => {
+                            if let Some(tl) = process_boltodds_baseball_frame_sync(
+                                e,
+                                text.as_ref(),
+                                source_recv_ns,
+                                &mut dispatch_handle,
+                                &log,
+                            ) {
+                                pending_baseball_logs.push(tl);
+                            }
+                        }
+                        _ => {}
+                    },
                     Message::Binary(bytes) => {
                         if let Ok(text) = std::str::from_utf8(bytes.as_ref()) {
-                            if let SportEngine::Soccer(ref mut e) = engine {
-                                if let Some(tl) = process_boltodds_frame_sync(
-                                    e,
-                                    text,
-                                    source_recv_ns,
-                                    &mut dispatch_handle,
-                                    &log,
-                                ) {
-                                    pending_logs.push(tl);
+                            match engine {
+                                SportEngine::Soccer(ref mut e) => {
+                                    if let Some(tl) = process_boltodds_frame_sync(
+                                        e,
+                                        text,
+                                        source_recv_ns,
+                                        &mut dispatch_handle,
+                                        &log,
+                                    ) {
+                                        pending_soccer_logs.push(tl);
+                                    }
                                 }
+                                SportEngine::Baseball(ref mut e) => {
+                                    if let Some(tl) = process_boltodds_baseball_frame_sync(
+                                        e,
+                                        text,
+                                        source_recv_ns,
+                                        &mut dispatch_handle,
+                                        &log,
+                                    ) {
+                                        pending_baseball_logs.push(tl);
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -258,10 +289,10 @@ pub(crate) async fn run_boltodds_worker_async(
             }
 
             // Flush deferred tick logs after drain (off the hot path).
-            if !pending_logs.is_empty() {
+            if !pending_soccer_logs.is_empty() {
                 if let SportEngine::Soccer(ref e) = engine {
                     if let Ok(mut g) = log.lock() {
-                        for tl in &pending_logs {
+                        for tl in &pending_soccer_logs {
                             let gid = e
                                 .game_ids
                                 .get(tl.game_idx.0 as usize)
@@ -288,7 +319,37 @@ pub(crate) async fn run_boltodds_worker_async(
                         }
                     }
                 }
-                pending_logs.clear();
+                pending_soccer_logs.clear();
+            }
+            if !pending_baseball_logs.is_empty() {
+                if let SportEngine::Baseball(ref e) = engine {
+                    if let Ok(mut g) = log.lock() {
+                        for tl in &pending_baseball_logs {
+                            let gid = e
+                                .game_ids
+                                .get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_str())
+                                .unwrap_or("_");
+                            let lg = e
+                                .game_leagues
+                                .get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_ref())
+                                .unwrap_or("");
+                            g.log_tick(
+                                gid,
+                                &crate::log_writer::TickPayload::Baseball {
+                                    lg,
+                                    runs_home: tl.state.home.unwrap_or(0),
+                                    runs_away: tl.state.away.unwrap_or(0),
+                                    inn: tl.state.inning_number,
+                                    inn_half: tl.state.inning_half,
+                                    gs: tl.state.game_state,
+                                },
+                            );
+                        }
+                    }
+                }
+                pending_baseball_logs.clear();
             }
 
             // Flush log buffer
