@@ -161,6 +161,12 @@ class OverturnDetector:
             return
 
         bid_val = self._best_bids.get(token_id, 1.0)
+        if token_id in alert.affected_token_ids:
+            logger.warning(
+                "📊 bid update for %s: token %s… bid=%.4f (threshold: %.4f, signal1=%s, signal2=%s)",
+                game_id, token_id[:16], bid_val, self._bid_threshold,
+                alert.signal1_confirmed, alert.signal2_confirmed,
+            )
         if bid_val < self._bid_threshold and token_id in alert.affected_token_ids:
             if not alert.signal2_confirmed:
                 alert.signal2_confirmed = True

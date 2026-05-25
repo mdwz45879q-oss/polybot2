@@ -384,16 +384,20 @@ class OrderStateTracker:
                 task.cancel()
                 try:
                     await task
-                except asyncio.CancelledError:
+                except (asyncio.CancelledError, Exception):
                     pass
 
     async def _confirmation_check_loop(self) -> None:
         """Periodically check overturn alert confirmations (Signal 1 timer)."""
+        logger.info("confirmation check loop started")
         try:
             while True:
                 await asyncio.sleep(1.0)
                 if self.detector:
-                    self.detector.check_confirmations()
+                    try:
+                        self.detector.check_confirmations()
+                    except Exception:
+                        logger.exception("check_confirmations crashed")
         except asyncio.CancelledError:
             pass
 
