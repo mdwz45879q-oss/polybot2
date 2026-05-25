@@ -141,11 +141,22 @@ def _bet_label(sk: str) -> str:
 
 
 def _format_inning(inn: int | None, half: str) -> str:
-    """Format period display. Baseball uses inning numbers; soccer uses half names."""
+    """Format period display. Baseball uses inning numbers; soccer uses half names.
+
+    Baseball half values: "top", "bottom", "break_mid" (between top/bottom of
+    same inning), "break_end" (between innings).  Falls back to "break" if the
+    type couldn't be inferred.
+    """
     if inn is not None:
-        prefix = {"top": "T", "bottom": "B", "break": "Brk"}.get(half, "")
+        prefix = {
+            "top": "T",
+            "bottom": "B",
+            "break_mid": "Mid",
+            "break_end": "End",
+            "break": "Brk",
+        }.get(half, "")
         return f"{prefix}{inn}"
-    # Soccer: no inning number, use half directly
+    # Soccer/tennis: no inning number, use half directly
     h = half.strip()
     if not h:
         return "--"
@@ -284,12 +295,23 @@ class LiveObserver:
             # V1 fallback
             home = ev.get("h")
             away = ev.get("a")
+        raw_half = str(ev.get("inn_half", ev.get("half", "")))
+        # Resolve ambiguous "break" into "break_mid" or "break_end" using
+        # the previous half for this game.  Mid-inning break follows "top"
+        # (top done, bottom coming); end-of-inning break follows "bottom"
+        # (bottom done, next inning coming).
+        if raw_half == "break":
+            prev = self.games.get(gid)
+            if prev and prev.half in ("top", "break_mid"):
+                raw_half = "break_mid"
+            elif prev and prev.half in ("bottom", "break_end"):
+                raw_half = "break_end"
         self.games[gid] = GameRow(
             gid=gid,
             home=home,
             away=away,
             inning=ev.get("inn"),
-            half=str(ev.get("inn_half", ev.get("half", ""))),
+            half=raw_half,
             game_state=str(ev.get("gs", "")),
             last_ts=int(ev.get("ts", 0)),
         )
