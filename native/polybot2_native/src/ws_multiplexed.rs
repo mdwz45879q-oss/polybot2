@@ -192,6 +192,10 @@ pub(crate) async fn run_multiplexed_worker_async(
         // --- Extract per-provider subscriptions ---
         let v1_subs = candidate_subs.get("kalstrop_v1").or_else(|| candidate_subs.get("kalstrop")).cloned().unwrap_or_default();
         let v2_subs = candidate_subs.get("kalstrop_v2").cloned().unwrap_or_default();
+        let bo_subs = candidate_subs.get("boltodds").cloned().unwrap_or_default();
+        if !bo_subs.is_empty() {
+            bo_game_labels = bo_subs;
+        }
 
         // --- Connect/reconnect dead connections ---
         if v1_ws.is_none() {
