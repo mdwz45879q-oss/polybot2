@@ -11,6 +11,9 @@ pub(crate) struct BoltOddsBaseballExtract<'a> {
     pub home_score: i64,
     pub away_score: i64,
     pub period_detail: &'a str,
+    pub base1: bool,
+    pub base2: bool,
+    pub base3: bool,
 }
 
 use memchr::memmem::Finder;
@@ -22,6 +25,9 @@ static FINDER_GAME: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\
 static FINDER_OUT: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"out\""));
 static FINDER_INNING: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"inning\""));
 static FINDER_STRIKE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"strike\""));
+static FINDER_BASE1: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"base1\""));
+static FINDER_BASE2: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"base2\""));
+static FINDER_BASE3: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"\"base3\""));
 static FINDER_TOP_OF_INNING: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"topOfInning\""));
 static FINDER_MATCH_PERIOD: LazyLock<Finder<'static>> =
@@ -234,6 +240,14 @@ pub(crate) fn fast_extract_boltodds_baseball(json: &str) -> Option<BoltOddsBaseb
     let (strikes_i64, end) = find_key_integer(&FINDER_STRIKE, 8, bytes, pos)?;
     pos = end;
 
+    // base1/base2/base3 appear between ball and topOfInning in the JSON.
+    let (base1, end) = find_key_bool(&FINDER_BASE1, 7, bytes, pos)?;
+    pos = end;
+    let (base2, end) = find_key_bool(&FINDER_BASE2, 7, bytes, pos)?;
+    pos = end;
+    let (base3, end) = find_key_bool(&FINDER_BASE3, 7, bytes, pos)?;
+    pos = end;
+
     let (top_of_inning, end) = find_key_bool(&FINDER_TOP_OF_INNING, 13, bytes, pos)?;
     pos = end;
 
@@ -255,6 +269,9 @@ pub(crate) fn fast_extract_boltodds_baseball(json: &str) -> Option<BoltOddsBaseb
         home_score,
         away_score,
         period_detail,
+        base1,
+        base2,
+        base3,
     })
 }
 
@@ -277,6 +294,9 @@ mod tests {
         assert_eq!(r.home_score, 0);
         assert_eq!(r.away_score, 0);
         assert_eq!(r.period_detail, "AT_TOP_1ST_INNING");
+        assert!(!r.base1);
+        assert!(!r.base2);
+        assert!(!r.base3);
     }
 
     #[test]
@@ -316,6 +336,9 @@ mod tests {
         assert_eq!(r.home_score, 0);
         assert_eq!(r.away_score, 1);
         assert_eq!(r.period_detail, "AT_TOP_3RD_INNING");
+        assert!(!r.base1);
+        assert!(r.base2);
+        assert!(!r.base3);
     }
 
     #[test]

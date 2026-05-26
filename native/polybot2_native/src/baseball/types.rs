@@ -72,6 +72,10 @@ pub(crate) struct GameState {
     pub(crate) outs: Option<u8>,
     /// BoltOdds strikes count (0-3). `None` when last tick was V1.
     pub(crate) strikes: Option<u8>,
+    /// BoltOdds base runner state. `None` when last tick was V1.
+    pub(crate) base1: Option<bool>,
+    pub(crate) base2: Option<bool>,
+    pub(crate) base3: Option<bool>,
 }
 
 /// BoltOdds-specific dedup row. Integer-based: ball-count-only changes

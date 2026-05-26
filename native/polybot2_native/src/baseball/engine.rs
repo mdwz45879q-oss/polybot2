@@ -537,6 +537,9 @@ impl NativeMlbEngine {
             game_state: gs,
             outs: None,
             strikes: None,
+            base1: None,
+            base2: None,
+            base3: None,
         };
         if home.is_some() && away.is_some() {
             state.home = home;
@@ -571,8 +574,9 @@ impl NativeMlbEngine {
 
     /// Process a BoltOdds baseball tick. Dedup is integer-based (outs,
     /// strikes, inning, top_of_inning, score). Evaluates: totals (shared),
-    /// NRFI-from-outs (new), game-end-from-outs (new). Does NOT run V1-
-    /// specific evaluators (walkoff, final, V1 NRFI via DeltaEvent).
+    /// NRFI-from-outs (with early YES on run delta), walkoff, and
+    /// game-end-from-outs. Does NOT run V1-specific evaluators (final,
+    /// V1 NRFI via DeltaEvent).
     pub(crate) fn process_boltodds_tick_live(
         &mut self,
         gidx: GameIdx,
@@ -582,13 +586,18 @@ impl NativeMlbEngine {
         top_of_inning: bool,
         home_score: i64,
         away_score: i64,
+        base1: bool,
+        base2: bool,
+        base3: bool,
+        period_detail: &str,
         _recv_monotonic_ns: i64,
     ) -> Option<LiveTickResult> {
         let gi = gidx.0 as usize;
 
         // Integer-based dedup: ball-count-only changes are filtered out
-        // (ball not in struct), but strike changes pass through (needed
-        // for strikeout pre-fire logic).
+        // (ball not in struct), but strike changes pass through (they
+        // change the dedup row and thus allow the next outs change to
+        // be detected even if score/inning are unchanged).
         let new_row = BoltOddsBaseballRow {
             outs,
             strikes,
@@ -617,14 +626,30 @@ impl NativeMlbEngine {
             game_state: prev.game_state,
             outs: Some(outs),
             strikes: Some(strikes),
+            base1: Some(base1),
+            base2: Some(base2),
+            base3: Some(base3),
         };
         self.game_states[gi] = state;
 
+        // Defensive guard: skip evaluators for break frames.
+        // AT_MID_ = break between top and bottom of same inning.
+        // AT_END_ = break between bottom of inning N and top of N+1.
+        // Break frames currently always have outs=0/strikes=0, so
+        // evaluators would be harmless, but explicitly skipping prevents
+        // any future BoltOdds data quality regression from causing
+        // mis-fires (e.g. walkoff evaluator doesn't check outs).
+        let is_break = period_detail.starts_with("AT_MID_")
+            || period_detail.starts_with("AT_END_");
+
         // Evaluate into stack-allocated SmallVec.
         let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
-        self.evaluate_totals_into(gidx, &state, &mut intents);
-        self.evaluate_nrfi_from_outs_into(gidx, &state, &mut intents);
-        self.evaluate_game_end_from_outs_into(gidx, &state, &mut intents);
+        if !is_break {
+            self.evaluate_totals_into(gidx, &state, &mut intents);
+            self.evaluate_nrfi_from_outs_into(gidx, &state, &mut intents);
+            self.evaluate_walkoff_into(gidx, &state, &mut intents);
+            self.evaluate_game_end_from_outs_into(gidx, &state, &mut intents);
+        }
 
         Some(LiveTickResult {
             game_idx: gidx,
@@ -1033,6 +1058,9 @@ mod tests {
                 game_state: resolved_game_state,
                 outs: None,
                 strikes: None,
+                base1: None,
+                base2: None,
+                base3: None,
             };
             if home.is_some() && away.is_some() {
                 state.home = home;
@@ -1851,16 +1879,16 @@ mod tests {
     }
 
     #[test]
-    fn nrfi_from_outs_strikeout_prefire_bottom1_total0_fires_no() {
+    fn nrfi_from_outs_strikeout_prefire_does_not_fire() {
+        // o=2,s=3 should NOT fire — BoltOdds data shows 68% false positive
+        // rate for this signal (strikes flash to 3 then revert).
         let mut engine = NativeMlbEngine::new();
         add_game(&mut engine, "g1", |b| {
             b.nrfi_no("tok_nrfi_no");
         });
         sync_target_vecs(&mut engine);
 
-        let nrfi_no_idx = engine.game_targets[0].nrfi_no.unwrap();
         let gidx = GameIdx(0);
-
         engine.nrfi_first_inning_observed[0] = true;
         let state = GameState {
             home: Some(0),
@@ -1873,9 +1901,8 @@ mod tests {
             ..Default::default()
         };
         let intents = engine.evaluate_nrfi_from_outs(gidx, &state);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].target_idx, nrfi_no_idx);
-        assert!(engine.nrfi_resolved_games[0]);
+        assert!(intents.is_empty(), "o=2,s=3 should not fire — unreliable signal");
+        assert!(!engine.nrfi_resolved_games[0], "should not resolve on false K signal");
     }
 
     #[test]
@@ -2133,7 +2160,7 @@ mod tests {
     }
 
     #[test]
-    fn game_end_from_outs_strikeout_prefire() {
+    fn game_end_from_outs_top9_out3_home_ahead_fires() {
         let mut engine = NativeMlbEngine::new();
         add_game(&mut engine, "g1", |b| {
             b.moneyline_home("tok_ml_h");
@@ -2143,7 +2170,35 @@ mod tests {
         let ml_h_idx = engine.game_targets[0].moneyline_home.unwrap();
         let gidx = GameIdx(0);
 
-        // Top 9th, out=2, strike=3 → strikeout pre-fire.
+        // Top 9th, out=3 → half-inning over, home leads → game over.
+        let state = GameState {
+            home: Some(6),
+            away: Some(3),
+            total: Some(9),
+            inning_number: Some(9),
+            inning_half: "top",
+            outs: Some(3),
+            strikes: Some(0),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_game_end_from_outs(gidx, &state);
+        assert!(intents.iter().any(|i| i.target_idx == ml_h_idx), "moneyline_home");
+        assert!(engine.final_resolved_games[0]);
+    }
+
+    #[test]
+    fn game_end_from_outs_strikeout_prefire_does_not_fire() {
+        // o=2,s=3 should NOT fire — BoltOdds data shows 68% false positive
+        // rate for this signal (strikes flash to 3 then revert on dropped
+        // 3rd strikes, scorer corrections, data wobbles).
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+        });
+        sync_target_vecs(&mut engine);
+        let gidx = GameIdx(0);
+
+        // Top 9th, home leads, o=2 s=3 — looks like a strikeout but unreliable.
         let state = GameState {
             home: Some(6),
             away: Some(3),
@@ -2155,8 +2210,8 @@ mod tests {
             ..Default::default()
         };
         let intents = engine.evaluate_game_end_from_outs(gidx, &state);
-        assert!(intents.iter().any(|i| i.target_idx == ml_h_idx), "strikeout pre-fire");
-        assert!(engine.final_resolved_games[0]);
+        assert!(intents.is_empty(), "o=2,s=3 should not fire — unreliable signal");
+        assert!(!engine.final_resolved_games[0], "should not resolve on false K signal");
     }
 
     #[test]
@@ -2337,10 +2392,10 @@ mod tests {
         sync_target_vecs(&mut engine);
 
         let gidx = GameIdx(0);
-        let result1 = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, 1000);
+        let result1 = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000);
         assert!(result1.is_some(), "first tick should produce result");
 
-        let result2 = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, 2000);
+        let result2 = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 2000);
         assert!(result2.is_none(), "identical tick should be deduped");
     }
 
@@ -2351,8 +2406,8 @@ mod tests {
         sync_target_vecs(&mut engine);
 
         let gidx = GameIdx(0);
-        let _ = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, 1000);
-        let result = engine.process_boltodds_tick_live(gidx, 2, 0, 1, true, 0, 0, 2000);
+        let _ = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000);
+        let result = engine.process_boltodds_tick_live(gidx, 2, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 2000);
         assert!(result.is_some(), "outs change should pass dedup");
     }
 
@@ -2368,9 +2423,9 @@ mod tests {
         let gidx = GameIdx(0);
 
         // First tick: 0-0
-        let _ = engine.process_boltodds_tick_live(gidx, 0, 0, 1, true, 0, 0, 1000);
+        let _ = engine.process_boltodds_tick_live(gidx, 0, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000);
         // Second tick: 1-0 → over 0.5 should fire
-        let result = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 1, 0, 2000);
+        let result = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 1, 0, false, false, false, "AT_TOP_1ST_INNING", 2000);
         let r = result.expect("score change should produce result");
         assert!(
             r.intents.iter().any(|i| i.target_idx == over_idx),
@@ -2391,7 +2446,7 @@ mod tests {
         sync_target_vecs(&mut engine);
 
         let gidx = GameIdx(0);
-        let result = engine.process_boltodds_tick_live(gidx, 2, 1, 3, false, 1, 0, 1000);
+        let result = engine.process_boltodds_tick_live(gidx, 2, 1, 3, false, 1, 0, false, false, false, "AT_BOT_3RD_INNING", 1000);
         let r = result.unwrap();
         assert_eq!(r.state.outs, Some(2));
         assert_eq!(r.state.strikes, Some(1));
@@ -2409,7 +2464,7 @@ mod tests {
 
         // First: BoltOdds tick sets outs/strikes.
         let gidx = GameIdx(0);
-        let _ = engine.process_boltodds_tick_live(gidx, 2, 1, 3, true, 0, 0, 1000);
+        let _ = engine.process_boltodds_tick_live(gidx, 2, 1, 3, true, 0, 0, false, false, false, "AT_TOP_3RD_INNING", 1000);
         assert_eq!(engine.game_states[0].outs, Some(2));
         assert_eq!(engine.game_states[0].strikes, Some(1));
 
@@ -2519,7 +2574,7 @@ mod tests {
         // Manually set match_completed (as V1 would).
         engine.game_states[0].match_completed = Some(true);
 
-        let result = engine.process_boltodds_tick_live(gidx, 0, 0, 9, true, 5, 2, 1000);
+        let result = engine.process_boltodds_tick_live(gidx, 0, 0, 9, true, 5, 2, false, false, false, "AT_TOP_9TH_INNING", 1000);
         let r = result.unwrap();
         assert_eq!(
             r.state.match_completed,
@@ -2538,8 +2593,873 @@ mod tests {
         // Simulate V1 setting game_state.
         engine.game_states[0].game_state = "LIVE";
 
-        let result = engine.process_boltodds_tick_live(gidx, 0, 0, 3, true, 0, 0, 1000);
+        let result = engine.process_boltodds_tick_live(gidx, 0, 0, 3, true, 0, 0, false, false, false, "AT_TOP_3RD_INNING", 1000);
         let r = result.unwrap();
         assert_eq!(r.state.game_state, "LIVE", "BoltOdds should preserve V1's game_state");
+    }
+
+    // ----- BoltOdds break frame guard tests -----
+
+    #[test]
+    fn boltodds_break_frame_mid_inning_skips_evaluators() {
+        // AT_MID_ period (break between top and bottom of same inning).
+        // With NRFI target and outs=0 in 1st inning bottom — would normally
+        // fire NRFI NO via outs if evaluators ran. Guard should prevent it.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+            b.nrfi_no("tok_nrfi_no");
+            b.over(0.5, "tok_over_0.5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+
+        // Tick 1: active play, top 1st — establishes state.
+        let r1 = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000,
+        );
+        assert!(r1.is_some());
+
+        // Tick 2: break frame (AT_MID_1ST_INNING), bottom 1st, outs=0.
+        // Score changed to 1-0 — would fire over 0.5 if evaluators ran.
+        let r2 = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 1, false, 1, 0, false, false, false, "AT_MID_1ST_INNING", 2000,
+        );
+        let r2 = r2.unwrap();
+        assert!(
+            r2.intents.is_empty(),
+            "Break frame should skip all evaluators, got {} intents",
+            r2.intents.len()
+        );
+        // State should still be updated (for correct dedup on next frame).
+        assert_eq!(r2.state.home, Some(1));
+        assert_eq!(r2.state.inning_half, "bottom");
+    }
+
+    #[test]
+    fn boltodds_break_frame_end_inning_skips_evaluators() {
+        // AT_END_ period (break between bottom of N and top of N+1).
+        // With totals target — score change during break should not fire.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.over(0.5, "tok_over_0.5");
+            b.moneyline_home("tok_ml_h");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+
+        // Tick 1: active play, establishes state.
+        let _ = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000,
+        );
+
+        // Tick 2: end-of-inning break. Score went to 1-0.
+        let r2 = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 1, false, 1, 0, false, false, false, "AT_END_1ST_INNING", 2000,
+        );
+        let r2 = r2.unwrap();
+        assert!(
+            r2.intents.is_empty(),
+            "End-of-inning break should skip evaluators, got {} intents",
+            r2.intents.len()
+        );
+    }
+
+    #[test]
+    fn boltodds_active_play_frame_still_evaluates() {
+        // Non-break period (AT_BOT_) — evaluators should run normally.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.over(0.5, "tok_over_0.5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let over_idx = engine.game_targets[0].over_lines[0].target_idx;
+        let gidx = GameIdx(0);
+
+        // Tick 1: top 1st, 0-0.
+        let _ = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000,
+        );
+
+        // Tick 2: active play in bottom 1st, score change → over 0.5 fires.
+        let r2 = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 1, false, 1, 0, false, false, false, "AT_BOT_1ST_INNING", 2000,
+        );
+        let r2 = r2.unwrap();
+        assert!(
+            r2.intents.iter().any(|i| i.target_idx == over_idx),
+            "Active play frame should fire evaluators"
+        );
+    }
+
+    // ----- BoltOdds walkoff tests -----
+
+    #[test]
+    fn boltodds_walkoff_fires_moneyline_home() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.moneyline_away("tok_ml_a");
+        });
+        sync_target_vecs(&mut engine);
+
+        let ml_home_idx = engine.game_targets[0].moneyline_home.unwrap();
+        let gidx = GameIdx(0);
+
+        // Bottom 9th, home leading → walkoff.
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            outs: Some(1),
+            strikes: Some(0),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(intents.iter().any(|i| i.target_idx == ml_home_idx));
+        // V1 path (base fields None) → Tier 1 only, no full resolution.
+        assert!(!engine.final_resolved_games[0]);
+    }
+
+    #[test]
+    fn boltodds_walkoff_not_leading_no_fire() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+
+        // Bottom 9th, away leading → no walkoff.
+        let state = GameState {
+            home: Some(2),
+            away: Some(3),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            outs: Some(1),
+            strikes: Some(0),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(intents.is_empty());
+    }
+
+    #[test]
+    fn boltodds_walkoff_blocked_by_final_resolved() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+        engine.final_resolved_games[0] = true;
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            outs: Some(1),
+            strikes: Some(0),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(intents.is_empty(), "Walkoff should be blocked when final_resolved");
+    }
+
+    // ----- Walkoff spread tests (Tier 1: partial resolution) -----
+
+    #[test]
+    fn walkoff_fires_away_not_covers_negative_line() {
+        // Away -1.5 spread: away lost → away_not_covers fires.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_away( -1.5, "tok_a_cov", "tok_a_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let a_nc_idx = engine.game_targets[0].spreads[0].not_covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            intents.iter().any(|i| i.target_idx == a_nc_idx),
+            "away_not_covers should fire for negative away line"
+        );
+    }
+
+    #[test]
+    fn walkoff_fires_home_covers_when_margin_sufficient() {
+        // Home -1.5 spread, margin=2 → home_covers fires.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_home( -1.5, "tok_h_cov", "tok_h_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let h_cov_idx = engine.game_targets[0].spreads[0].covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(4),
+            away: Some(2),
+            total: Some(6),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            intents.iter().any(|i| i.target_idx == h_cov_idx),
+            "home_covers should fire when margin exceeds line"
+        );
+    }
+
+    #[test]
+    fn walkoff_does_not_fire_home_not_covers() {
+        // Home -2.5 spread, margin=1. Margin could grow (home run with
+        // runners), so home_not_covers is NOT resolvable yet.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_home( -2.5, "tok_h_cov", "tok_h_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let h_nc_idx = engine.game_targets[0].spreads[0].not_covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            !intents.iter().any(|i| i.target_idx == h_nc_idx),
+            "home_not_covers should NOT fire — margin could grow"
+        );
+    }
+
+    #[test]
+    fn walkoff_does_not_fire_away_covers_positive_line() {
+        // Away +1.5 spread, margin_home=1. Away_margin=-1, -1+1.5=0.5 > 0
+        // → currently covers. But margin_home could grow (runners on base),
+        // making away_margin more negative → could stop covering. NOT safe.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_away( 1.5, "tok_a_cov", "tok_a_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let a_cov_idx = engine.game_targets[0].spreads[0].covers_idx.unwrap();
+        let a_nc_idx = engine.game_targets[0].spreads[0].not_covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            !intents.iter().any(|i| i.target_idx == a_cov_idx),
+            "away_covers should NOT fire -- margin could grow"
+        );
+        // away_margin=-1, -1+1.5=0.5 > 0 -- currently covers, not_covers doesn't fire.
+        assert!(
+            !intents.iter().any(|i| i.target_idx == a_nc_idx),
+            "away_not_covers should NOT fire -- currently covers"
+        );
+    }
+
+    #[test]
+    fn walkoff_fires_away_not_covers_positive_line() {
+        // Away +0.5 spread, margin_home=2. Away_margin=-2, -2+0.5=-1.5 <= 0
+        // -> not covering. Away margin only gets worse -> safe to fire not_covers.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_away( 0.5, "tok_a_cov", "tok_a_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let a_nc_idx = engine.game_targets[0].spreads[0].not_covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(4),
+            away: Some(2),
+            total: Some(6),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            intents.iter().any(|i| i.target_idx == a_nc_idx),
+            "away_not_covers should fire for positive line when not covering"
+        );
+    }
+
+    // ----- Walkoff spread tests (Tier 2: empty bases, full resolution) -----
+
+    #[test]
+    fn walkoff_empty_bases_fires_all_spreads() {
+        // All bases empty: score is final, full margin eval resolves both sides.
+        // Score 3-2 (margin=1). Home -0.5: 1+(-0.5)=0.5>0 covers.
+        // Away +1.5: away_margin=-1, -1+1.5=0.5>0 covers.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_home(-0.5, "tok_h_cov", "tok_h_nc");
+            b.spread_away(1.5, "tok_a_cov", "tok_a_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let h_cov_idx = engine.game_targets[0].spreads[0].covers_idx.unwrap();
+        let a_cov_idx = engine.game_targets[0].spreads[1].covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            base1: Some(false),
+            base2: Some(false),
+            base3: Some(false),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(intents.iter().any(|i| i.target_idx == h_cov_idx), "home_covers");
+        assert!(intents.iter().any(|i| i.target_idx == a_cov_idx), "away_covers (full eval)");
+        assert!(engine.final_resolved_games[0], "empty bases: full resolution");
+    }
+
+    #[test]
+    fn walkoff_empty_bases_fires_unders() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.under(8.5, "tok_under_8_5");
+            b.under(6.5, "tok_under_6_5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let under_8_5_idx = engine.game_targets[0].under_lines[0].target_idx;
+        let under_6_5_idx = engine.game_targets[0].under_lines[1].target_idx;
+        let gidx = GameIdx(0);
+
+        // Score: 3-2 = total 5. Under 8.5 (half_int=8) fires, under 6.5 (half_int=6) fires.
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            base1: Some(false),
+            base2: Some(false),
+            base3: Some(false),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(intents.iter().any(|i| i.target_idx == under_8_5_idx), "under 8.5");
+        assert!(intents.iter().any(|i| i.target_idx == under_6_5_idx), "under 6.5");
+        assert!(engine.totals_final_under_emitted[0]);
+    }
+
+    #[test]
+    fn walkoff_empty_bases_sets_final_resolved() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            base1: Some(false),
+            base2: Some(false),
+            base3: Some(false),
+            ..Default::default()
+        };
+        let _ = engine.evaluate_walkoff(gidx, &state);
+        assert!(engine.final_resolved_games[0], "empty bases sets final_resolved");
+
+        // Subsequent evaluate_game_end_from_outs should be blocked.
+        let state2 = GameState {
+            outs: Some(3),
+            ..state
+        };
+        let intents2 = engine.evaluate_game_end_from_outs(gidx, &state2);
+        assert!(intents2.is_empty(), "game_end_from_outs blocked after walkoff resolution");
+    }
+
+    #[test]
+    fn walkoff_occupied_bases_no_full_resolution() {
+        // base2=true → NOT empty → only Tier 1 fires.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_home( -2.5, "tok_h_cov", "tok_h_nc");
+            b.under(8.5, "tok_under_8_5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let h_nc_idx = engine.game_targets[0].spreads[0].not_covers_idx.unwrap();
+        let under_idx = engine.game_targets[0].under_lines[0].target_idx;
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            base1: Some(false),
+            base2: Some(true),
+            base3: Some(false),
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        // home -2.5, margin=1: margin + line = 1 + (-2.5) = -1.5 ≤ 0 → does not cover.
+        // But margin could grow (runner on 2nd) → home_not_covers NOT fired.
+        assert!(
+            !intents.iter().any(|i| i.target_idx == h_nc_idx),
+            "home_not_covers should NOT fire with occupied bases"
+        );
+        // Unders should NOT fire (bases not empty → not full resolution).
+        assert!(
+            !intents.iter().any(|i| i.target_idx == under_idx),
+            "under should NOT fire with occupied bases"
+        );
+        assert!(!engine.final_resolved_games[0], "should NOT set final_resolved");
+        assert!(!engine.totals_final_under_emitted[0], "should NOT set totals_final_under_emitted");
+    }
+
+    #[test]
+    fn walkoff_v1_no_base_data_no_full_resolution() {
+        // V1 path: base fields are None → only Tier 1.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.under(8.5, "tok_under_8_5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let under_idx = engine.game_targets[0].under_lines[0].target_idx;
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            // base1/base2/base3 default to None (V1 path).
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            !intents.iter().any(|i| i.target_idx == under_idx),
+            "under should NOT fire on V1 path (no base data)"
+        );
+        assert!(!engine.final_resolved_games[0], "V1 path should NOT set final_resolved");
+    }
+
+    #[test]
+    fn walkoff_partial_then_game_end_fires_remaining() {
+        // Walkoff with occupied bases fires partial spreads (Tier 1).
+        // Then evaluate_final (V1 "Ended") fires remaining spreads + unders.
+        // Presign pool prevents double-fire (simulated by checking intent lists).
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_home(-0.5, "tok_h_cov", "tok_h_nc");
+            b.spread_away(-1.5, "tok_a_cov", "tok_a_nc");
+            b.under(8.5, "tok_under_8_5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let ml_h_idx = engine.game_targets[0].moneyline_home.unwrap();
+        let h_cov_idx = engine.game_targets[0].spreads[0].covers_idx.unwrap();
+        let a_nc_idx = engine.game_targets[0].spreads[1].not_covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        // Step 1: Walkoff with runner on base (Tier 1 only).
+        let state1 = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            base1: Some(true),
+            base2: Some(false),
+            base3: Some(false),
+            ..Default::default()
+        };
+        let intents1 = engine.evaluate_walkoff(gidx, &state1);
+        assert!(intents1.iter().any(|i| i.target_idx == ml_h_idx), "moneyline_home");
+        assert!(intents1.iter().any(|i| i.target_idx == h_cov_idx), "home -0.5 covers (margin=1 > 0.5)");
+        assert!(intents1.iter().any(|i| i.target_idx == a_nc_idx), "away -1.5 not_covers (away lost)");
+        assert!(!engine.final_resolved_games[0]);
+
+        // Step 2: Game officially ends via V1 "Ended" signal.
+        // evaluate_final fires ALL spreads + unders at actual final score.
+        // Score may have increased due to base runner scoring.
+        let state2 = GameState {
+            home: Some(4),
+            away: Some(2),
+            total: Some(6),
+            match_completed: Some(true),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents2 = engine.evaluate_final(gidx, &state2);
+        // Presign pool (not tested here) prevents double-fire on targets
+        // already popped by walkoff.
+        assert!(!intents2.is_empty(), "final should fire remaining targets");
+        assert!(engine.final_resolved_games[0], "final sets final_resolved");
+    }
+
+    #[test]
+    fn boltodds_tick_walkoff_empty_bases_full_resolution() {
+        // Integration: process_boltodds_tick_live with walkoff + empty bases.
+        // Score 4-2 (margin=2), home -1.5 → covers (2+(-1.5)=0.5 > 0).
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_home( -1.5, "tok_h_cov", "tok_h_nc");
+            b.under(8.5, "tok_under_8_5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let ml_h_idx = engine.game_targets[0].moneyline_home.unwrap();
+        let h_cov_idx = engine.game_targets[0].spreads[0].covers_idx.unwrap();
+        let under_idx = engine.game_targets[0].under_lines[0].target_idx;
+        let gidx = GameIdx(0);
+
+        // Tick 1: establish prev state (bottom 9th, tied 2-2 — not a walkoff).
+        let _ = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 9, false, 2, 2, false, false, false, "AT_BOT_9TH_INNING", 1000,
+        );
+
+        // Tick 2: walkoff! Home scores again (4-2), bases empty.
+        let r = engine
+            .process_boltodds_tick_live(
+                gidx, 0, 0, 9, false, 4, 2, false, false, false, "AT_BOT_9TH_INNING", 2000,
+            )
+            .unwrap();
+        assert!(r.intents.iter().any(|i| i.target_idx == ml_h_idx), "moneyline_home");
+        // margin=2, line=-1.5: 2+(-1.5)=0.5 > 0 -> covers.
+        assert!(r.intents.iter().any(|i| i.target_idx == h_cov_idx), "home -1.5 covers");
+        // Empty bases -> Tier 2: under 8.5, total=6, half_int=8 >= 6 -> fires.
+        assert!(r.intents.iter().any(|i| i.target_idx == under_idx), "under 8.5");
+        assert!(engine.final_resolved_games[0], "empty bases sets final_resolved");
+        assert!(engine.totals_final_under_emitted[0], "under emitted flag set");
+    }
+
+    // ----- NRFI early YES tests -----
+
+    #[test]
+    fn nrfi_from_outs_early_yes_on_run_delta() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+            b.nrfi_no("tok_nrfi_no");
+        });
+        sync_target_vecs(&mut engine);
+
+        let nrfi_yes_idx = engine.game_targets[0].nrfi_yes.unwrap();
+        let gidx = GameIdx(0);
+        engine.nrfi_first_inning_observed[0] = true;
+
+        // Top of 1st, run scored (total went 0→1).
+        let state = GameState {
+            home: Some(0),
+            away: Some(1),
+            total: Some(1),
+            prev_total: Some(0),
+            inning_number: Some(1),
+            inning_half: "top",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_nrfi_from_outs(gidx, &state);
+        assert_eq!(intents.len(), 1);
+        assert_eq!(intents[0].target_idx, nrfi_yes_idx);
+        assert!(engine.nrfi_resolved_games[0]);
+    }
+
+    #[test]
+    fn nrfi_from_outs_early_yes_bottom_first() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+        });
+        sync_target_vecs(&mut engine);
+
+        let nrfi_yes_idx = engine.game_targets[0].nrfi_yes.unwrap();
+        let gidx = GameIdx(0);
+        engine.nrfi_first_inning_observed[0] = true;
+
+        // Bottom of 1st, 2 runs scored (total went 0→2).
+        let state = GameState {
+            home: Some(2),
+            away: Some(0),
+            total: Some(2),
+            prev_total: Some(0),
+            inning_number: Some(1),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_nrfi_from_outs(gidx, &state);
+        assert_eq!(intents.len(), 1);
+        assert_eq!(intents[0].target_idx, nrfi_yes_idx);
+        assert!(engine.nrfi_resolved_games[0]);
+    }
+
+    #[test]
+    fn nrfi_from_outs_early_yes_cold_start_skips() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+        engine.nrfi_first_inning_observed[0] = true;
+
+        // Cold start: prev_total is None → early check skipped.
+        let state = GameState {
+            home: Some(1),
+            away: Some(0),
+            total: Some(1),
+            prev_total: None,
+            inning_number: Some(1),
+            inning_half: "top",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_nrfi_from_outs(gidx, &state);
+        assert!(intents.is_empty(), "Cold start should not fire early YES");
+        assert!(!engine.nrfi_resolved_games[0]);
+    }
+
+    #[test]
+    fn nrfi_from_outs_early_yes_no_delta_no_fire() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+        });
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+        engine.nrfi_first_inning_observed[0] = true;
+
+        // No run scored: total unchanged at 0.
+        let state = GameState {
+            home: Some(0),
+            away: Some(0),
+            total: Some(0),
+            prev_total: Some(0),
+            inning_number: Some(1),
+            inning_half: "top",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_nrfi_from_outs(gidx, &state);
+        assert!(intents.is_empty(), "No delta should not fire early YES");
+        assert!(!engine.nrfi_resolved_games[0]);
+    }
+
+    #[test]
+    fn nrfi_from_outs_early_yes_blocks_later_outs_no() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+            b.nrfi_no("tok_nrfi_no");
+        });
+        sync_target_vecs(&mut engine);
+
+        let nrfi_yes_idx = engine.game_targets[0].nrfi_yes.unwrap();
+        let gidx = GameIdx(0);
+        engine.nrfi_first_inning_observed[0] = true;
+
+        // First: early YES fires on run delta in top of 1st.
+        let state1 = GameState {
+            home: Some(0),
+            away: Some(1),
+            total: Some(1),
+            prev_total: Some(0),
+            inning_number: Some(1),
+            inning_half: "top",
+            ..Default::default()
+        };
+        let intents1 = engine.evaluate_nrfi_from_outs(gidx, &state1);
+        assert_eq!(intents1.len(), 1);
+        assert_eq!(intents1[0].target_idx, nrfi_yes_idx);
+        assert!(engine.nrfi_resolved_games[0]);
+
+        // Second: bottom of 1st ends with outs=3 — should be blocked.
+        let state2 = GameState {
+            home: Some(0),
+            away: Some(1),
+            total: Some(1),
+            prev_total: Some(1),
+            inning_number: Some(1),
+            inning_half: "bottom",
+            outs: Some(3),
+            strikes: Some(0),
+            ..Default::default()
+        };
+        let intents2 = engine.evaluate_nrfi_from_outs(gidx, &state2);
+        assert!(intents2.is_empty(), "Already resolved — should not fire again");
+    }
+
+    #[test]
+    fn boltodds_tick_nrfi_early_yes_integration() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.nrfi_yes("tok_nrfi_yes");
+            b.nrfi_no("tok_nrfi_no");
+        });
+        sync_target_vecs(&mut engine);
+
+        let nrfi_yes_idx = engine.game_targets[0].nrfi_yes.unwrap();
+        let gidx = GameIdx(0);
+
+        // Tick 1: top of 1st, no runs — establishes prev_total = 0.
+        let r1 = engine.process_boltodds_tick_live(gidx, 0, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000);
+        let r1 = r1.unwrap();
+        assert!(r1.intents.is_empty(), "Tick 1: no intents expected");
+
+        // Tick 2: top of 1st, away scores (0→1) — early YES should fire.
+        let r2 = engine.process_boltodds_tick_live(gidx, 0, 0, 1, true, 0, 1, false, false, false, "AT_TOP_1ST_INNING", 2000);
+        let r2 = r2.unwrap();
+        assert_eq!(r2.intents.len(), 1, "Tick 2: NRFI YES should fire on run delta");
+        assert_eq!(r2.intents[0].target_idx, nrfi_yes_idx);
+        assert!(engine.nrfi_resolved_games[0]);
+    }
+
+    #[test]
+    fn walkoff_away_not_covers_boundary_line_equals_margin() {
+        // Away +1.0 spread, margin_home=1. away_margin=-1,
+        // (-1)+1.0 = 0.0 which is NOT > 0 → not_covers fires.
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.spread_away(1.0, "tok_a_cov", "tok_a_nc");
+        });
+        sync_target_vecs(&mut engine);
+
+        let a_cov_idx = engine.game_targets[0].spreads[0].covers_idx.unwrap();
+        let a_nc_idx = engine.game_targets[0].spreads[0].not_covers_idx.unwrap();
+        let gidx = GameIdx(0);
+
+        let state = GameState {
+            home: Some(3),
+            away: Some(2),
+            total: Some(5),
+            inning_number: Some(9),
+            inning_half: "bottom",
+            ..Default::default()
+        };
+        let intents = engine.evaluate_walkoff(gidx, &state);
+        assert!(
+            intents.iter().any(|i| i.target_idx == a_nc_idx),
+            "away_not_covers should fire when margin+line == 0 (boundary)"
+        );
+        assert!(
+            !intents.iter().any(|i| i.target_idx == a_cov_idx),
+            "away_covers should NOT fire — margin could worsen"
+        );
+    }
+
+    #[test]
+    fn boltodds_match_completed_period_not_treated_as_break() {
+        // MATCH_COMPLETED period does NOT start with AT_MID_ or AT_END_,
+        // so evaluators should run (not be skipped by the break guard).
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |b| {
+            b.moneyline_home("tok_ml_h");
+            b.moneyline_away("tok_ml_a");
+            b.under(8.5, "tok_under_8_5");
+        });
+        sync_target_vecs(&mut engine);
+
+        let ml_a_idx = engine.game_targets[0].moneyline_away.unwrap();
+        let under_idx = engine.game_targets[0].under_lines[0].target_idx;
+        let gidx = GameIdx(0);
+
+        // Tick 1: establish state in bottom 9th, away leading.
+        let _ = engine.process_boltodds_tick_live(
+            gidx, 2, 1, 9, false, 1, 3, false, false, false, "AT_BOT_9TH_INNING", 1000,
+        );
+
+        // Tick 2: MATCH_COMPLETED period with outs=0 — should NOT be
+        // skipped as a break frame. Game-end evaluator won't fire (outs=0),
+        // but walkoff check runs and detects away > home → no walkoff.
+        // No intents expected from this specific frame (outs=0 blocks
+        // game-end, away leads blocks walkoff), but the key assertion is
+        // that the break guard did not suppress evaluation.
+        let r2 = engine.process_boltodds_tick_live(
+            gidx, 0, 0, 9, false, 1, 3, false, false, false, "MATCH_COMPLETED", 2000,
+        );
+        let r2 = r2.unwrap();
+        // Evaluators ran but none fired (outs=0, away leads).
+        assert!(r2.intents.is_empty());
+        // State was updated — verify score is tracked.
+        assert_eq!(r2.state.home, Some(1));
+        assert_eq!(r2.state.away, Some(3));
+        // final_resolved not set (outs=0, no game-end signal).
+        assert!(!engine.final_resolved_games[0]);
+
+        // Tick 3: now send outs=3 with MATCH_COMPLETED — game-end fires.
+        let r3 = engine.process_boltodds_tick_live(
+            gidx, 3, 0, 9, false, 1, 3, false, false, false, "MATCH_COMPLETED", 3000,
+        );
+        let r3 = r3.unwrap();
+        assert!(
+            r3.intents.iter().any(|i| i.target_idx == ml_a_idx),
+            "MATCH_COMPLETED with outs=3 should fire moneyline_away"
+        );
+        assert!(
+            r3.intents.iter().any(|i| i.target_idx == under_idx),
+            "MATCH_COMPLETED with outs=3 should fire under"
+        );
+        assert!(engine.final_resolved_games[0]);
     }
 }

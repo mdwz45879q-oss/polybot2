@@ -8,11 +8,12 @@ use crate::*;
 use std::sync::{Arc, Mutex};
 
 /// Compact tick-log record collected during frame processing and flushed
-/// after dispatch. All fields are Copy — no heap allocation.
-#[derive(Clone, Copy)]
+/// after dispatch. All fields are stack-allocated — no heap allocation.
+#[derive(Clone)]
 struct PendingTickLog {
     game_idx: GameIdx,
     state: GameState,
+    period_raw: InlineStr<32>,
 }
 
 /// Process a decoded WS frame through the zero-allocation live path:
@@ -121,6 +122,10 @@ fn flush_tick_logs(
                     src: "kalstrop_v1",
                     outs: tl.state.outs,
                     strikes: tl.state.strikes,
+                    base1: tl.state.base1,
+                    base2: tl.state.base2,
+                    base3: tl.state.base3,
+                    period_raw: tl.period_raw.as_str(),
                 },
             );
         }
@@ -218,5 +223,6 @@ fn process_extracted_fields(
     Some(PendingTickLog {
         game_idx: result.game_idx,
         state: result.state,
+        period_raw: InlineStr::from_str(free_text),
     })
 }

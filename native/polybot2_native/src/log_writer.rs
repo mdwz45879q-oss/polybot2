@@ -13,6 +13,10 @@ pub(crate) enum TickPayload<'a> {
         src: &'static str,
         outs: Option<u8>,
         strikes: Option<u8>,
+        base1: Option<bool>,
+        base2: Option<bool>,
+        base3: Option<bool>,
+        period_raw: &'a str,
     },
     Soccer {
         lg: &'a str,
@@ -123,6 +127,10 @@ impl LogWriter {
                 src,
                 outs,
                 strikes,
+                base1,
+                base2,
+                base3,
+                period_raw,
                 ..
             } => {
                 self.buf.push_str(r#","runs_home":"#);
@@ -149,6 +157,20 @@ impl LogWriter {
                 if let Some(s) = strikes {
                     self.buf.push_str(r#","strikes":"#);
                     self.buf.push_str(itoa::Buffer::new().format(*s));
+                }
+                if let Some(b) = base1 {
+                    self.buf.push_str(if *b { r#","base1":true"# } else { r#","base1":false"# });
+                }
+                if let Some(b) = base2 {
+                    self.buf.push_str(if *b { r#","base2":true"# } else { r#","base2":false"# });
+                }
+                if let Some(b) = base3 {
+                    self.buf.push_str(if *b { r#","base3":true"# } else { r#","base3":false"# });
+                }
+                if !period_raw.is_empty() {
+                    self.buf.push_str(r#","period_raw":""#);
+                    write_json_escape(&mut self.buf, period_raw);
+                    self.buf.push('"');
                 }
             }
             TickPayload::Soccer {

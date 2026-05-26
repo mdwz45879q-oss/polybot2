@@ -347,6 +347,10 @@ pub(crate) async fn run_boltodds_worker_async(
                                     src: "boltodds",
                                     outs: tl.state.outs,
                                     strikes: tl.state.strikes,
+                                    base1: tl.state.base1,
+                                    base2: tl.state.base2,
+                                    base3: tl.state.base3,
+                                    period_raw: tl.period_raw.as_str(),
                                 },
                             );
                         }

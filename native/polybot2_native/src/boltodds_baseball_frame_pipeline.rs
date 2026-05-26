@@ -6,13 +6,14 @@ use crate::baseball::types::{GameState, NativeMlbEngine};
 use crate::boltodds_baseball_types::fast_extract_boltodds_baseball;
 use crate::dispatch::{dispatch_intents, DispatchHandle};
 use crate::log_writer::LogWriter;
-use crate::GameIdx;
+use crate::{GameIdx, InlineStr};
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct BoltOddsBaseballPendingLog {
     pub(crate) game_idx: GameIdx,
     pub(crate) state: GameState,
+    pub(crate) period_raw: InlineStr<32>,
 }
 
 /// Process a single BoltOdds baseball frame. Returns a pending log entry
@@ -35,6 +36,10 @@ pub(crate) fn process_boltodds_baseball_frame_sync(
         extract.top_of_inning,
         extract.home_score,
         extract.away_score,
+        extract.base1,
+        extract.base2,
+        extract.base3,
+        extract.period_detail,
         recv_monotonic_ns,
     )?;
 
@@ -45,5 +50,6 @@ pub(crate) fn process_boltodds_baseball_frame_sync(
     Some(BoltOddsBaseballPendingLog {
         game_idx: result.game_idx,
         state: result.state,
+        period_raw: InlineStr::from_str(extract.period_detail),
     })
 }

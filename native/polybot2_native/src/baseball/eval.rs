@@ -133,11 +133,25 @@ impl NativeMlbEngine {
         }
     }
 
-    /// Walkoff detection: in the bottom of the 9th inning or later,
-    /// if the home team is leading, they are guaranteed to win.
-    /// Fire moneyline_home immediately — don't wait for "Ended".
-    /// The presign pool's one-shot gate prevents double-firing if
-    /// evaluate_final_into later tries the same target at game end.
+    /// Walkoff detection with three-tier resolution:
+    ///
+    /// **Tier 1 (always, both V1 and BoltOdds):**
+    /// - Moneyline: home wins.
+    /// - Partial spreads: fire sides that are mathematically locked.
+    ///   `home_covers` when current margin satisfies the line (margin
+    ///   can only stay same or grow → still covers).
+    ///   `away_not_covers` always (away margin only gets worse → stays
+    ///   not covering, regardless of line sign).
+    ///
+    /// **Tier 2 (BoltOdds only, bases empty):**
+    /// When `base1=false, base2=false, base3=false`, the walkoff hit
+    /// scores exactly +1 run — no additional runners can score. The
+    /// current score IS the final score. Fire all remaining spreads
+    /// + all under lines. Set `final_resolved_games` to block
+    /// `evaluate_final_into` / `evaluate_game_end_from_outs_into`.
+    ///
+    /// The presign pool's one-shot gate prevents double-firing when
+    /// Tier 2 re-iterates spreads already fired by Tier 1.
     pub(crate) fn evaluate_walkoff_into(
         &mut self,
         gidx: GameIdx,
@@ -152,14 +166,88 @@ impl NativeMlbEngine {
             return;
         }
         let inning = state.inning_number.unwrap_or(0);
-        if inning >= 9
-            && state.inning_half == "bottom"
-            && state.home.unwrap_or(0) > state.away.unwrap_or(0)
-        {
-            if let Some(tidx) = self.game_targets[gi].moneyline_home {
-                out.push(Intent { target_idx: tidx });
+        if inning < 9 || state.inning_half != "bottom" {
+            return;
+        }
+        let home = state.home.unwrap_or(0);
+        let away = state.away.unwrap_or(0);
+        if home <= away {
+            return;
+        }
+
+        // --- Tier 1: Always fire (both V1 and BoltOdds) ---
+
+        // Moneyline: home wins.
+        push_if_some(self.game_targets[gi].moneyline_home, out);
+
+        // Partial spreads: fire the sides that are mathematically locked.
+        // On a walkoff, margin_home is ≥1 and can only stay same or grow
+        // (base runners scoring). Home margin grows; away margin (= -home)
+        // gets more negative.
+        let margin_home = home - away;
+        let targets = &self.game_targets[gi];
+        for slot in &targets.spreads {
+            if slot.side == SpreadSide::Home {
+                if (margin_home as f64) + slot.line > 0.0 {
+                    // Home covers at current margin. Margin can only grow
+                    // → still covers. Safe to fire.
+                    push_if_some(slot.covers_idx, out);
+                }
+                // Home not covering: margin could grow to cover → not safe.
+            } else {
+                let away_margin = -margin_home;
+                if (away_margin as f64) + slot.line <= 0.0 {
+                    // Away does not cover at current margin. Away margin
+                    // only gets worse → stays not covering. Safe to fire.
+                    push_if_some(slot.not_covers_idx, out);
+                }
+                // Away covering: margin gets worse → could stop covering → not safe.
             }
         }
+
+        // --- Tier 2: Full final resolution when bases are empty (BoltOdds only) ---
+
+        let bases_empty = state.base1 == Some(false)
+            && state.base2 == Some(false)
+            && state.base3 == Some(false);
+
+        if bases_empty {
+            // Current score is the final score. No additional runners can score.
+            // Fire the remaining spread sides that Tier 1 left unresolved.
+            // Presign pool prevents double-fire on targets already popped.
+            for slot in &targets.spreads {
+                let margin = if slot.side == SpreadSide::Home {
+                    margin_home
+                } else {
+                    -margin_home
+                };
+                if (margin as f64) + slot.line > 0.0 {
+                    push_if_some(slot.covers_idx, out);
+                } else {
+                    push_if_some(slot.not_covers_idx, out);
+                }
+            }
+
+            // Fire under lines (same logic as evaluate_final_into / game_end_from_outs).
+            if self.has_totals[gi] && !self.totals_final_under_emitted[gi] {
+                let total = state.total.unwrap_or(0) as u16;
+                for ol in &targets.under_lines {
+                    if ol.half_int >= total {
+                        out.push(Intent {
+                            target_idx: ol.target_idx,
+                        });
+                    }
+                }
+                self.totals_final_under_emitted[gi] = true;
+            }
+
+            // Mark fully resolved — block evaluate_final_into / game_end_from_outs.
+            self.final_resolved_games[gi] = true;
+        }
+        // When bases are NOT empty (or unknown/None from V1): Tier 1 partial
+        // spreads already fired. Leave final_resolved_games unset — game-end
+        // evaluators fire the remaining spreads + unders when the game officially ends.
+        // Presign pool prevents double-fire on targets already popped by Tier 1.
     }
 
     pub(crate) fn evaluate_final_into(
@@ -218,9 +306,12 @@ impl NativeMlbEngine {
     // BoltOdds-specific evaluators (outs-based, zero-alloc _into)
     // ---------------------------------------------------------------
 
-    /// NRFI resolution via BoltOdds outs signal. Fires earlier than V1's
-    /// freeText-based inning transition (~5s). Strikeout pre-fire:
-    /// `out=2 && strike=3` fires before `out=3` arrives (+4-6s in ~2%).
+    /// NRFI resolution via BoltOdds. Two resolution paths:
+    /// 1. Early YES: fires immediately when total increases in the first
+    ///    inning (run delta via prev_total, same timing as V1).
+    /// 2. Outs-based NO: fires when bottom-of-1st completes with total=0
+    ///    (~5s faster than V1's freeText-based inning transition).
+    ///    Only fires on `outs == 3` (confirmed half-inning end).
     pub(crate) fn evaluate_nrfi_from_outs_into(
         &mut self,
         gidx: GameIdx,
@@ -252,17 +343,31 @@ impl NativeMlbEngine {
             }
         }
 
-        // Only fire when bottom of 1st is ending — outs signal means
+        // Early NRFI YES: fire immediately on run delta in the first
+        // inning, before waiting for outs. Matches V1 evaluate_nrfi_into
+        // behavior. prev_total is None on cold start (guard skips safely).
+        if is_first_inning(state) {
+            if let (Some(total), Some(prev)) = (state.total, state.prev_total) {
+                if total > prev {
+                    self.nrfi_resolved_games[gi] = true;
+                    push_if_some(self.game_targets[gi].nrfi_yes, out);
+                    return;
+                }
+            }
+        }
+
+        // Only fire NO when bottom of 1st is ending — outs signal means
         // the half-inning's last out is being recorded.
         if state.inning_number != Some(1) || state.inning_half != "bottom" {
             return;
         }
 
-        // Outs signal: out=3 (half-inning over) or strikeout pre-fire
-        // (out=2, strike=3 → strikeout imminent, 3rd out guaranteed).
-        let outs_signal = state.outs == Some(3)
-            || (state.outs == Some(2) && state.strikes == Some(3));
-        if !outs_signal {
+        // Outs signal: only out=3 (confirmed half-inning end).
+        // Note: `out=2, strike=3` was previously used as a strikeout
+        // pre-fire, but BoltOdds data analysis showed a 68% false positive
+        // rate — strikes frequently flash to 3 then revert (dropped 3rd
+        // strike, scorer corrections). Only `outs == 3` is reliable.
+        if state.outs != Some(3) {
             return;
         }
 
@@ -282,7 +387,7 @@ impl NativeMlbEngine {
     /// spreads + unders when the final out is detected (~9s before V1's
     /// "Ended" frame). Only fires when the game is definitively over:
     /// the trailing team's at-bat has ended with the leading team ahead.
-    /// Walkoffs are NOT covered (V1 is faster for run events).
+    /// Walkoffs are handled by `evaluate_walkoff_into` (called before this).
     pub(crate) fn evaluate_game_end_from_outs_into(
         &mut self,
         gidx: GameIdx,
@@ -302,10 +407,8 @@ impl NativeMlbEngine {
             return;
         }
 
-        // Outs signal: out=3 or strikeout pre-fire.
-        let outs_signal = state.outs == Some(3)
-            || (state.outs == Some(2) && state.strikes == Some(3));
-        if !outs_signal {
+        // Outs signal: only out=3 (confirmed half-inning end).
+        if state.outs != Some(3) {
             return;
         }
 
