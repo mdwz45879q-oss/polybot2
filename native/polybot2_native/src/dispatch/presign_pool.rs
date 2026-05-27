@@ -195,10 +195,14 @@ pub(crate) async fn warm_presign_startup_into(
             }
         }
 
-        // Fetch tick-size for all unique tokens concurrently (semaphore-gated).
-        // The first .tick_size() call also triggers resolve_version() internally,
-        // which is cached globally after the first call.
-        const CACHE_CONCURRENT: usize = 50;
+        // Fetch tick-size for all unique tokens with rate-limit-aware
+        // concurrency. Cloudflare returns 429 (code 1015) above ~20
+        // concurrent requests from the same IP. Use a semaphore of 10
+        // with retry for 429s.
+        const CACHE_CONCURRENT: usize = 10;
+        const MAX_RETRIES: usize = 3;
+        const RETRY_DELAY_MS: u64 = 1000;
+
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(CACHE_CONCURRENT));
         let cache_handles: Vec<_> = unique_tokens
             .into_iter()
@@ -207,12 +211,34 @@ pub(crate) async fn warm_presign_startup_into(
                 let s = sem.clone();
                 tokio::spawn(async move {
                     let _permit = s.acquire().await.expect("semaphore closed");
-                    c.tick_size(tid).await
+                    let mut last_err = None;
+                    for attempt in 0..=MAX_RETRIES {
+                        if attempt > 0 {
+                            tokio::time::sleep(Duration::from_millis(
+                                RETRY_DELAY_MS * attempt as u64,
+                            ))
+                            .await;
+                        }
+                        match c.tick_size(tid).await {
+                            Ok(v) => return Ok(v),
+                            Err(e) => {
+                                let msg = format!("{}", e);
+                                if msg.contains("429") {
+                                    last_err = Some(msg);
+                                    continue; // retry on rate limit
+                                }
+                                return Err(e); // non-429 → fail immediately
+                            }
+                        }
+                    }
+                    Err(polymarket_client_sdk_v2::error::Error::validation(
+                        last_err.unwrap_or_else(|| "tick_size_retries_exhausted".into()),
+                    ))
                 })
             })
             .collect();
         let cache_results = tokio::time::timeout(
-            Duration::from_secs(60),
+            Duration::from_secs(90),
             futures_util::future::join_all(cache_handles),
         )
         .await
@@ -239,6 +265,13 @@ pub(crate) async fn warm_presign_startup_into(
             cache_ms,
             cache_errs,
         );
+        if cache_errs > 0 {
+            return Err(format!(
+                "presign_cache_warm_failed:{}_of_{}_tokens_failed",
+                cache_errs,
+                seen.len(),
+            ));
+        }
     }
 
     // ── Phase 2: Sign all orders (pure CPU, caches already warm) ──
