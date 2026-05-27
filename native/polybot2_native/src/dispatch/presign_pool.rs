@@ -170,8 +170,11 @@ pub(crate) async fn warm_presign_startup_into(
         return Ok(());
     }
 
+    // Timeout: generous fixed budget. 308 orders at 50-concurrent finishes
+    // in ~5-10s on a healthy network; 120s gives ample margin for slow CLOB
+    // responses without the old per-key scaling that allowed 5+ minute hangs.
     let base_s = cfg.presign_startup_warm_timeout_seconds.max(0.1);
-    let total_timeout_s = base_s + 30.0_f64;
+    let total_timeout_s = base_s.max(120.0);
     let timeout = Duration::from_secs_f64(total_timeout_s);
 
     // All tasks are spawned immediately but a semaphore caps concurrent
@@ -183,6 +186,9 @@ pub(crate) async fn warm_presign_startup_into(
     const MAX_CONCURRENT: usize = 50;
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT));
 
+    let warmup_start = std::time::Instant::now();
+    let n_orders = key_work.len();
+
     let handles: Vec<_> = key_work
         .iter()
         .map(|(idx, template)| {
@@ -192,10 +198,13 @@ pub(crate) async fn warm_presign_startup_into(
             let i = *idx;
             let tif = tpl.time_in_force;
             let sem = semaphore.clone();
+            let t0 = warmup_start;
             tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore closed");
+                let task_start = t0.elapsed();
                 let result = super::sdk_exec::sign_order_batch(&c, &s, &tpl, 1).await;
-                (i, tpl.token_id, tif, result)
+                let task_dur = t0.elapsed() - task_start;
+                (i, tpl.token_id, tif, result, task_dur)
             })
         })
         .collect();
@@ -204,21 +213,54 @@ pub(crate) async fn warm_presign_startup_into(
         .await
         .map_err(|_| {
             format!(
-                "presign_startup_warm_timeout:timeout_s={:.3},n_orders={}",
+                "presign_startup_warm_timeout:timeout_s={:.3},n_orders={},elapsed_s={:.3}",
                 total_timeout_s,
-                key_work.len(),
+                n_orders,
+                warmup_start.elapsed().as_secs_f64(),
             )
         })?;
 
+    let mut max_task_ms = 0u128;
+    let mut sum_task_ms = 0u128;
+    let mut n_ok = 0usize;
+    let mut first_err: Option<String> = None;
+
     for result in results {
-        let (idx, token_id, tif, batch_result) =
+        let (idx, token_id, tif, batch_result, task_dur) =
             result.map_err(|e| format!("presign_task_panicked:{}", e))?;
-        let signed_orders = batch_result.map_err(|e| {
-            format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
-        })?;
-        if let Some(signed) = signed_orders.into_iter().next() {
-            pool[idx].push(Box::new(prepare_payload_from_signed(signed, tif)?));
+        let task_ms = task_dur.as_millis();
+        sum_task_ms += task_ms;
+        if task_ms > max_task_ms {
+            max_task_ms = task_ms;
         }
+        match batch_result {
+            Ok(signed_orders) => {
+                if let Some(signed) = signed_orders.into_iter().next() {
+                    pool[idx].push(Box::new(prepare_payload_from_signed(signed, tif)?));
+                }
+                n_ok += 1;
+            }
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(format!("{}:{}", redact_token_id(&token_id), e));
+                }
+            }
+        }
+    }
+
+    let wall_ms = warmup_start.elapsed().as_millis();
+    let avg_ms = if n_ok + first_err.iter().count() > 0 {
+        sum_task_ms / (n_ok + first_err.iter().count()) as u128
+    } else {
+        0
+    };
+    eprintln!(
+        "[presign] warmup: {} orders, {} ok, wall={:.1}s, avg_task={}ms, max_task={}ms",
+        n_orders, n_ok, wall_ms as f64 / 1000.0, avg_ms, max_task_ms,
+    );
+
+    if let Some(err) = first_err {
+        return Err(format!("presign_warmup_failed:{}", err));
     }
 
     // Verify all tokens with templates have at least one signed order
