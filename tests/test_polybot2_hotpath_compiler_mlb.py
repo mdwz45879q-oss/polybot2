@@ -251,4 +251,78 @@ def test_compile_hotpath_plan_stays_pinned_to_selected_run_id(tmp_path: Path) ->
         )
         assert int(approved_plan.run_id) == int(approved_run_id)
 
-sport="baseball",
+
+def test_compile_alternate_ids_with_mismatched_timestamps(tmp_path: Path) -> None:
+    """BoltOdds and V1 report different start_ts_utc for the same game.
+
+    The compiler must still include BoltOdds in alternate_provider_game_ids
+    by joining through link_event_bindings (same event_id) rather than
+    matching on (home, away, start_ts_utc).
+    """
+    runtime = DataRuntimeConfig(db_path=str(tmp_path / "db.sqlite"))
+    now_ts = 1_777_000_100
+    v1_ts = 1_776_553_200
+    bo_ts = 1_776_553_320  # 120 seconds later — providers disagree
+    bo_label = "Atlanta Braves vs Philadelphia Phillies, 2026-04-18, 07"
+
+    # Seed V1 game via the standard helper (creates run_id, links, approves).
+    run_id = _seed_run(runtime=runtime)
+
+    with open_database(runtime) as db:
+        # Manually insert the BoltOdds provider game into link_run_provider_games
+        # with a DIFFERENT start_ts_utc (120s offset from V1).
+        db.linking.upsert_run_provider_games(
+            [
+                (
+                    run_id, "boltodds", bo_label,
+                    "ok", "",  # parse_status, parse_reason
+                    bo_label, "baseball", "Major League Baseball",
+                    "2026-04-18, 07:02 PM", bo_ts, "2026-04-18",
+                    "Atlanta Braves", "Philadelphia Phillies",
+                    "mlb",  # canonical_league
+                    "Atlanta Braves", "Philadelphia Phillies",  # canonical teams
+                    "mlb-phi-atl-2026-04-18",  # event_slug_prefix
+                    "linked", "",  # binding_status, reason_code
+                    1,  # is_tradeable
+                    now_ts,  # updated_at
+                ),
+            ],
+        )
+
+        # Insert event binding for BoltOdds game → same PM event as V1.
+        db.linking.upsert_event_bindings(
+            [(
+                "boltodds", bo_label, "evt_mlb",
+                "mlb-phi-atl-2026-04-18", now_ts,
+            )],
+        )
+        # Stamp run_id on the BoltOdds event binding (same as linker does).
+        db.execute(
+            "UPDATE link_event_bindings SET run_id = ? WHERE provider = ?",
+            (run_id, "boltodds"),
+        )
+
+        plan = compile_hotpath_plan(
+            db=db,
+            provider="kalstrop_v1",
+            league="mlb",
+            sport="baseball",
+            run_id=run_id,
+            include_inactive=True,
+        )
+
+        games = tuple(plan.games)
+        assert len(games) == 1
+        game = games[0]
+        assert game.provider_game_id == "gid_mlb"
+
+        # The BoltOdds game label must appear despite the 120s timestamp
+        # mismatch — the event binding (both bound to evt_mlb) is the
+        # authoritative match, not the raw timestamp.
+        alt_providers = {p for p, _ in game.alternate_provider_game_ids}
+        alt_ids = {gid for _, gid in game.alternate_provider_game_ids}
+        assert "boltodds" in alt_providers, (
+            f"BoltOdds should be in alternate providers despite timestamp mismatch, "
+            f"got: {game.alternate_provider_game_ids}"
+        )
+        assert bo_label in alt_ids

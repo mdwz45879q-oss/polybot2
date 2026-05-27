@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import time
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 from polybot2.hotpath.contracts import CompiledGamePlan, CompiledMarket, CompiledPlan, CompiledTarget
 from polybot2.linking.actionable import actionable_game_ids
@@ -743,33 +746,42 @@ def compile_hotpath_plan(
             )
 
     # Build cross-provider alternate game IDs lookup.
-    # For each game in the plan, find provider_game_ids from other providers
-    # that map to the same canonical game (same teams + date).
-    _alt_ids_by_key: dict[tuple[str, str, int | None], list[tuple[str, str]]] = {}
+    # Join through link_event_bindings: if a V1 game and a BoltOdds game are
+    # both bound to the same Polymarket event_id, they are the same game.
+    # This replaces the old (home, away, start_ts_utc) exact-match which
+    # silently dropped alternates when providers disagreed on kickoff time.
+    _alt_ids_by_game: dict[str, list[tuple[str, str]]] = {}
     try:
         _alt_rows = db.execute(
             """
-            SELECT provider, provider_game_id, canonical_home_team, canonical_away_team, start_ts_utc
-            FROM link_run_provider_games
-            WHERE run_id = ?
-              AND provider != ?
-              AND canonical_league = ?
-              AND parse_status = 'ok'
-              AND binding_status != ''
+            SELECT
+                primary_eb.provider_game_id AS primary_game_id,
+                alt_pg.provider             AS alt_provider,
+                alt_pg.provider_game_id     AS alt_game_id
+            FROM link_event_bindings primary_eb
+            JOIN link_event_bindings alt_eb
+                ON  alt_eb.event_id = primary_eb.event_id
+                AND alt_eb.provider != primary_eb.provider
+            JOIN link_run_provider_games alt_pg
+                ON  alt_pg.run_id           = ?
+                AND alt_pg.provider         = alt_eb.provider
+                AND alt_pg.provider_game_id = alt_eb.provider_game_id
+                AND alt_pg.parse_status     = 'ok'
+                AND alt_pg.binding_status   != ''
+                AND alt_pg.canonical_league = ?
+            WHERE primary_eb.provider = ?
+              AND primary_eb.run_id   = ?
             """,
-            (scope.run_id, scope.provider, scope.league),
+            (scope.run_id, scope.league, scope.provider, scope.run_id),
         ).fetchall()
         for r in _alt_rows:
-            _key = (
-                str(r["canonical_home_team"] or "").strip().lower(),
-                str(r["canonical_away_team"] or "").strip().lower(),
-                r["start_ts_utc"],
-            )
-            _alt_ids_by_key.setdefault(_key, []).append(
-                (str(r["provider"] or ""), str(r["provider_game_id"] or ""))
+            _alt_ids_by_game.setdefault(
+                str(r["primary_game_id"] or ""), [],
+            ).append(
+                (str(r["alt_provider"] or ""), str(r["alt_game_id"] or ""))
             )
     except Exception:
-        pass  # Non-critical: plan works without alternates
+        log.warning("failed to build alternate provider game IDs", exc_info=True)
 
     compiled_games: list[CompiledGamePlan] = []
     for gid in sorted(by_game.keys()):
@@ -802,13 +814,8 @@ def compile_hotpath_plan(
             continue
 
         # Look up alternate provider game IDs for this game.
-        _game_key = (
-            str(meta.canonical_home_team or "").strip().lower(),
-            str(meta.canonical_away_team or "").strip().lower(),
-            meta.kickoff_ts_utc,
-        )
         _alternates = tuple(
-            (p, pid) for p, pid in _alt_ids_by_key.get(_game_key, [])
+            (p, pid) for p, pid in _alt_ids_by_game.get(str(meta.provider_game_id), [])
             if pid and pid != str(meta.provider_game_id)
         )
 
