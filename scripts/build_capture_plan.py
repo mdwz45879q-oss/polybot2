@@ -14,6 +14,7 @@ Prerequisites:
 import argparse
 import importlib.util
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -315,7 +316,91 @@ def ts_to_date(ts: int | None) -> str:
     return dt.strftime("%Y-%m-%d")
 
 
-def emit_json(matched: list[dict], league: str, sport: str) -> list[dict]:
+def resolve_livestats_ids(sport_codes: list[str]) -> dict[str, str]:
+    """Call V1 listing API to build uuid → numeric Sportradar match ID map.
+
+    The fixture slug from the listing response has the format
+    ``"63370017-arsenal-fc-vs-fc-kairat-almaty"`` — the numeric prefix
+    is the Sportradar match ID used by LiveStats WebSocket endpoints.
+    """
+    client_id = os.environ.get("KALSTROP_CLIENT_ID") or os.environ.get("CLIENT_ID", "")
+    secret_raw = os.environ.get("KALSTROP_SHARED_SECRET_RAW") or os.environ.get("SHARED_SECRET_RAW", "")
+    if not client_id or not secret_raw:
+        print("WARNING: KALSTROP_CLIENT_ID / KALSTROP_SHARED_SECRET_RAW not set, skipping LiveStats ID resolution")
+        return {}
+
+    import hashlib as _hashlib
+    import hmac as _hmac
+    import time as _time
+    import urllib.request
+    import urllib.error
+
+    base = "https://sportsapi.kalstropservice.com/odds_v1/v1"
+    uuid_to_match_id: dict[str, str] = {}
+
+    # Per-feed pagination params matching the V1 catalog code.
+    # The API rejects fixtureFirst on some feeds — try without it on 400.
+    feed_params: dict[str, list[dict[str, int]]] = {
+        "live":     [{"first": 10, "fixtureFirst": 50}, {"first": 10}],
+        "upcoming": [{"first": 30}, {"first": 30, "fixtureFirst": 50}],
+        "popular":  [{"first": 10, "fixtureFirst": 50}, {"first": 10}],
+    }
+
+    for sport_code in sport_codes:
+        for feed_type in ("live", "upcoming", "popular"):
+            data = None
+            for params in feed_params.get(feed_type, [{"first": 10}]):
+                ts = str(int(_time.time()))
+                hashed = _hashlib.sha256(secret_raw.encode()).hexdigest()
+                sig = _hmac.new(hashed.encode(), f"{client_id}:{ts}".encode(), _hashlib.sha256).hexdigest()
+                qs = "&".join(f"{k}={v}" for k, v in params.items())
+                url = f"{base}/sports/{sport_code}/{feed_type}?{qs}"
+                req = urllib.request.Request(url, headers={
+                    "X-Client-ID": client_id,
+                    "X-Timestamp": ts,
+                    "Authorization": f"Bearer {sig}",
+                })
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read())
+                    break  # success
+                except urllib.error.HTTPError as e:
+                    if e.code == 400:
+                        continue  # try next param variant
+                    print(f"  [livestats] {sport_code}/{feed_type}: {e}")
+                    break
+                except Exception as e:
+                    print(f"  [livestats] {sport_code}/{feed_type}: {e}")
+                    break
+            if data is None:
+                continue
+
+            # Extract (fixture.id, fixture.slug) from both response shapes
+            fixtures: list[dict] = []
+            sc = data.get("sportsCompetitions") if isinstance(data.get("sportsCompetitions"), dict) else None
+            sf = data.get("sportsFixtures") if isinstance(data.get("sportsFixtures"), dict) else None
+            if sc:
+                for comp in (sc.get("nodes") or []):
+                    fo = comp.get("fixtures") if isinstance(comp.get("fixtures"), dict) else {}
+                    fixtures.extend(fo.get("nodes") or [])
+            if sf:
+                fixtures.extend(sf.get("nodes") or [])
+
+            for fix in fixtures:
+                uid = str(fix.get("id") or "").strip()
+                slug = str(fix.get("slug") or "").strip()
+                if uid and slug:
+                    # Extract numeric prefix: "63370017-arsenal-fc-vs-..." → "63370017"
+                    parts = slug.split("-", 1)
+                    if parts[0].isdigit():
+                        uuid_to_match_id[uid] = parts[0]
+
+    if uuid_to_match_id:
+        print(f"  [livestats] resolved {len(uuid_to_match_id)} fixture UUIDs → Sportradar match IDs")
+    return uuid_to_match_id
+
+
+def emit_json(matched: list[dict], league: str, sport: str, livestats_ids: dict[str, str] | None = None) -> list[dict]:
     result: list[dict] = []
     for m in matched:
         entry: dict = {
@@ -328,7 +413,13 @@ def emit_json(matched: list[dict], league: str, sport: str) -> list[dict]:
         providers = m["providers"]
 
         if "kalstrop_v1" in providers:
-            entry["v1_fixture_id"] = providers["kalstrop_v1"]["provider_game_id"]
+            v1_id = providers["kalstrop_v1"]["provider_game_id"]
+            entry["v1_fixture_id"] = v1_id
+            if livestats_ids is not None:
+                if v1_id in livestats_ids:
+                    entry["livestats_match_id"] = livestats_ids[v1_id]
+                else:
+                    print(f"  [livestats] no match ID for V1 fixture {v1_id}")
 
         if "kalstrop_v2" in providers:
             v2 = providers["kalstrop_v2"]
@@ -404,6 +495,8 @@ def main():
                     help="Timezone for date range (default: utc)")
     ap.add_argument("--verbose", "-v", action="store_true",
                     help="Print canonical name resolution and match details")
+    ap.add_argument("--resolve-livestats", action="store_true",
+                    help="Fetch V1 fixture slugs to resolve Sportradar match IDs for LiveStats WS")
     args = ap.parse_args()
 
     config_dir = args.config_dir or str(Path(__file__).resolve().parents[1] / "config")
@@ -429,6 +522,19 @@ def main():
     conn = sqlite3.connect(db_path)
     conn.row_factory = None  # tuple rows
 
+    # Resolve LiveStats Sportradar match IDs if requested.
+    livestats_ids: dict[str, str] = {}
+    if args.resolve_livestats:
+        # Collect unique sport codes from the requested leagues.
+        sport_codes: set[str] = set()
+        for league in args.league:
+            lk = league.strip().lower()
+            league_cfg = cfg["LEAGUES"].get(lk, {})
+            sf = league_cfg.get("sport_family", "")
+            if sf:
+                sport_codes.add(sf)
+        livestats_ids = resolve_livestats_ids(sorted(sport_codes))
+
     all_entries: list[dict] = []
 
     for league in args.league:
@@ -450,7 +556,7 @@ def main():
         matched = match_games(by_provider, league, alias_index, verbose=args.verbose)
         print_summary(matched, league)
 
-        entries = emit_json(matched, league, sport)
+        entries = emit_json(matched, league, sport, livestats_ids=livestats_ids or None)
         all_entries.extend(entries)
 
     conn.close()
