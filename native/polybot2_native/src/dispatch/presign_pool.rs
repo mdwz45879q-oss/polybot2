@@ -170,24 +170,82 @@ pub(crate) async fn warm_presign_startup_into(
         return Ok(());
     }
 
-    // Timeout: generous fixed budget. 308 orders at 50-concurrent finishes
-    // in ~5-10s on a healthy network; 120s gives ample margin for slow CLOB
-    // responses without the old per-key scaling that allowed 5+ minute hangs.
-    let base_s = cfg.presign_startup_warm_timeout_seconds.max(0.1);
-    let total_timeout_s = base_s.max(120.0);
+    let total_timeout_s = cfg.presign_startup_warm_timeout_seconds.max(120.0);
     let timeout = Duration::from_secs_f64(total_timeout_s);
-
-    // All tasks are spawned immediately but a semaphore caps concurrent
-    // SDK `.build()` calls (which hit GET /tick-size on first call per
-    // token). The SDK caches tick-size per token_id internally, so only
-    // ~N unique tokens produce HTTP calls. 50 concurrent is safe — tested
-    // at 100 concurrent with zero 429s. The old batch-of-5 + 500ms sleep
-    // caused 5+ minute warmup for ~150 orders; this brings it to seconds.
-    const MAX_CONCURRENT: usize = 50;
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT));
-
     let warmup_start = std::time::Instant::now();
     let n_orders = key_work.len();
+
+    // ── Phase 1: Prime SDK caches (GET /tick-size + GET /version) ──
+    //
+    // The SDK's .build() calls GET /tick-size per unique token_id and
+    // GET /version once. These are cached after the first call, but under
+    // high concurrency the first call per token blocks on HTTP while
+    // subsequent callers queue on the DashMap lock. Pre-warming all
+    // unique tokens here serializes the HTTP phase (50 concurrent) so
+    // that phase 2 signing is pure CPU with zero network waits.
+    {
+        // Collect unique token_id strings and parse them.
+        let mut unique_tokens: Vec<SdkU256> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (_, tpl) in &key_work {
+            if seen.insert(tpl.token_id.clone()) {
+                if let Ok(tid) = parse_sdk_token_id(tpl.token_id.as_str()) {
+                    unique_tokens.push(tid);
+                }
+            }
+        }
+
+        // Fetch tick-size for all unique tokens concurrently (semaphore-gated).
+        // The first .tick_size() call also triggers resolve_version() internally,
+        // which is cached globally after the first call.
+        const CACHE_CONCURRENT: usize = 50;
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(CACHE_CONCURRENT));
+        let cache_handles: Vec<_> = unique_tokens
+            .into_iter()
+            .map(|tid| {
+                let c = client.clone();
+                let s = sem.clone();
+                tokio::spawn(async move {
+                    let _permit = s.acquire().await.expect("semaphore closed");
+                    c.tick_size(tid).await
+                })
+            })
+            .collect();
+        let cache_results = tokio::time::timeout(
+            Duration::from_secs(60),
+            futures_util::future::join_all(cache_handles),
+        )
+        .await
+        .map_err(|_| "presign_cache_warm_timeout".to_string())?;
+
+        let mut cache_errs = 0usize;
+        for r in cache_results {
+            match r {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    eprintln!("[presign] tick-size cache error: {}", e);
+                    cache_errs += 1;
+                }
+                Err(e) => {
+                    eprintln!("[presign] tick-size task panic: {}", e);
+                    cache_errs += 1;
+                }
+            }
+        }
+        let cache_ms = warmup_start.elapsed().as_millis();
+        eprintln!(
+            "[presign] cache primed: {} unique tokens in {}ms ({} errors)",
+            seen.len(),
+            cache_ms,
+            cache_errs,
+        );
+    }
+
+    // ── Phase 2: Sign all orders (pure CPU, caches already warm) ──
+    //
+    // With tick-size and version cached, .build() is pure struct construction
+    // and .sign() is ECDSA. No semaphore needed — all tasks are CPU-bound.
+    let sign_start = std::time::Instant::now();
 
     let handles: Vec<_> = key_work
         .iter()
@@ -197,14 +255,9 @@ pub(crate) async fn warm_presign_startup_into(
             let tpl = template.clone();
             let i = *idx;
             let tif = tpl.time_in_force;
-            let sem = semaphore.clone();
-            let t0 = warmup_start;
             tokio::spawn(async move {
-                let _permit = sem.acquire().await.expect("semaphore closed");
-                let task_start = t0.elapsed();
                 let result = super::sdk_exec::sign_order_batch(&c, &s, &tpl, 1).await;
-                let task_dur = t0.elapsed() - task_start;
-                (i, tpl.token_id, tif, result, task_dur)
+                (i, tpl.token_id, tif, result)
             })
         })
         .collect();
@@ -220,19 +273,12 @@ pub(crate) async fn warm_presign_startup_into(
             )
         })?;
 
-    let mut max_task_ms = 0u128;
-    let mut sum_task_ms = 0u128;
     let mut n_ok = 0usize;
     let mut first_err: Option<String> = None;
 
     for result in results {
-        let (idx, token_id, tif, batch_result, task_dur) =
+        let (idx, token_id, tif, batch_result) =
             result.map_err(|e| format!("presign_task_panicked:{}", e))?;
-        let task_ms = task_dur.as_millis();
-        sum_task_ms += task_ms;
-        if task_ms > max_task_ms {
-            max_task_ms = task_ms;
-        }
         match batch_result {
             Ok(signed_orders) => {
                 if let Some(signed) = signed_orders.into_iter().next() {
@@ -248,15 +294,11 @@ pub(crate) async fn warm_presign_startup_into(
         }
     }
 
+    let sign_ms = sign_start.elapsed().as_millis();
     let wall_ms = warmup_start.elapsed().as_millis();
-    let avg_ms = if n_ok + first_err.iter().count() > 0 {
-        sum_task_ms / (n_ok + first_err.iter().count()) as u128
-    } else {
-        0
-    };
     eprintln!(
-        "[presign] warmup: {} orders, {} ok, wall={:.1}s, avg_task={}ms, max_task={}ms",
-        n_orders, n_ok, wall_ms as f64 / 1000.0, avg_ms, max_task_ms,
+        "[presign] warmup: {} orders, {} ok, cache={}ms, sign={}ms, wall={:.1}s",
+        n_orders, n_ok, wall_ms - sign_ms as u128, sign_ms, wall_ms as f64 / 1000.0,
     );
 
     if let Some(err) = first_err {
