@@ -451,7 +451,7 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 14. **`send_batch` zero-allocation success path — DONE.** `DispatchHandle::send_batch` sends first, recovers the batch from `SendError` on failure for diagnostics. No `Vec<TargetIdx>` allocation before the channel send.
 
-15. **Presign warmup parallelized — DONE.** Warmup Tokio runtime uses `new_multi_thread()` so `tokio::spawn`ed ECDSA tasks run on real OS threads. ~135 tokens warm up in ~1-2s instead of ~5s (single-threaded cooperative scheduling).
+15. **Presign warmup parallelized — DONE.** Warmup Tokio runtime uses `new_multi_thread()` so `tokio::spawn`ed ECDSA tasks run on real OS threads. All orders are spawned at once in one `join_all`; a `Semaphore(50)` caps concurrent SDK `.build()` calls (which hit `GET /tick-size` on first call per token — cached after). No inter-batch sleep. The old batch-of-5 + 500ms sleep caused 5+ minute warmup for ~150 orders; the semaphore approach brings it to seconds while staying safe at 1000+ targets.
 
 16. **Zero-alloc WS live path — DONE.** `process_tick_live` takes borrowed `fixture_id: &str` from serde, evaluates into `SmallVec<[Intent; 32]>` (stack), returns `LiveTickResult { game_idx, state, intents }` with no owned strings. `frame_pipeline.rs` parses `KalstropFrame<'a>` and calls `process_tick_live` directly — no `Tick`, no `TickResult`, no `Vec` on the success path. Evaluators use `_into(&mut SmallVec)` variants. `LogWriter` uses a reusable `String` buffer. Result: zero heap allocations from frame receipt through `send_batch`.
 

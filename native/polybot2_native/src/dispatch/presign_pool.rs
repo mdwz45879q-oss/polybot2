@@ -170,54 +170,55 @@ pub(crate) async fn warm_presign_startup_into(
         return Ok(());
     }
 
-    let per_key_s = 1.0_f64;
     let base_s = cfg.presign_startup_warm_timeout_seconds.max(0.1);
-    let total_timeout_s = base_s + per_key_s * key_work.len() as f64;
+    let total_timeout_s = base_s + 30.0_f64;
     let timeout = Duration::from_secs_f64(total_timeout_s);
 
-    const BATCH_SIZE: usize = 5;
-    const BATCH_DELAY_MS: u64 = 500;
+    // All tasks are spawned immediately but a semaphore caps concurrent
+    // SDK `.build()` calls (which hit GET /tick-size on first call per
+    // token). The SDK caches tick-size per token_id internally, so only
+    // ~N unique tokens produce HTTP calls. 50 concurrent is safe — tested
+    // at 100 concurrent with zero 429s. The old batch-of-5 + 500ms sleep
+    // caused 5+ minute warmup for ~150 orders; this brings it to seconds.
+    const MAX_CONCURRENT: usize = 50;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT));
 
-    let deadline = tokio::time::Instant::now() + timeout;
-
-    for chunk in key_work.chunks(BATCH_SIZE) {
-        let handles: Vec<_> = chunk
-            .iter()
-            .map(|(idx, template)| {
-                let c = client.clone();
-                let s = signer.clone();
-                let tpl = template.clone();
-                let i = *idx;
-                let tif = tpl.time_in_force;
-                tokio::spawn(async move {
-                    let result = super::sdk_exec::sign_order_batch(&c, &s, &tpl, 1).await;
-                    (i, tpl.token_id, tif, result)
-                })
+    let handles: Vec<_> = key_work
+        .iter()
+        .map(|(idx, template)| {
+            let c = client.clone();
+            let s = signer.clone();
+            let tpl = template.clone();
+            let i = *idx;
+            let tif = tpl.time_in_force;
+            let sem = semaphore.clone();
+            tokio::spawn(async move {
+                let _permit = sem.acquire().await.expect("semaphore closed");
+                let result = super::sdk_exec::sign_order_batch(&c, &s, &tpl, 1).await;
+                (i, tpl.token_id, tif, result)
             })
-            .collect();
+        })
+        .collect();
 
-        let results = tokio::time::timeout_at(deadline, futures_util::future::join_all(handles))
-            .await
-            .map_err(|_| {
-                format!(
-                    "presign_startup_warm_timeout:timeout_s={:.3}",
-                    total_timeout_s,
-                )
-            })?;
+    let results = tokio::time::timeout(timeout, futures_util::future::join_all(handles))
+        .await
+        .map_err(|_| {
+            format!(
+                "presign_startup_warm_timeout:timeout_s={:.3},n_orders={}",
+                total_timeout_s,
+                key_work.len(),
+            )
+        })?;
 
-        for result in results {
-            let (idx, token_id, tif, batch_result) =
-                result.map_err(|e| format!("presign_task_panicked:{}", e))?;
-            let signed_orders = batch_result.map_err(|e| {
-                format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
-            })?;
-            if let Some(signed) = signed_orders.into_iter().next() {
-                pool[idx].push(Box::new(prepare_payload_from_signed(signed, tif)?));
-            }
+    for result in results {
+        let (idx, token_id, tif, batch_result) =
+            result.map_err(|e| format!("presign_task_panicked:{}", e))?;
+        let signed_orders = batch_result.map_err(|e| {
+            format!("presign_warmup_failed:{}:{}", redact_token_id(&token_id), e)
+        })?;
+        if let Some(signed) = signed_orders.into_iter().next() {
+            pool[idx].push(Box::new(prepare_payload_from_signed(signed, tif)?));
         }
-
-        // Rate-limit pause between batches to avoid 429 from CLOB /tick-size
-        tokio::time::sleep(Duration::from_millis(BATCH_DELAY_MS)).await;
     }
 
     // Verify all tokens with templates have at least one signed order
