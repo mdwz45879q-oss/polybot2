@@ -28,7 +28,7 @@ class KalstropV1ProviderConfig(SportsProviderConfig):
         shared_secret_raw: str,
         http_base: str = "https://sportsapi.kalstropservice.com/odds_v1/v1",
         request_timeout_seconds: float = 20.0,
-        catalog_sport_codes: Sequence[str] = ("baseball", "soccer", "tennis", "cs2"),
+        catalog_sport_codes: Sequence[str] = ("baseball", "cs2", "dota2", "lol", "soccer", "tennis"),
         catalog_types: Sequence[str] = ("live", "upcoming", "popular"),
         catalog_first: int = 10,
         catalog_fixture_first: int = 50,

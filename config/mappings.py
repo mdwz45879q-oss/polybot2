@@ -50,6 +50,23 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 3,
     },
+    "cs2":{
+        "polymarket_league_code": "cs2",
+        "sport_family": "esports",
+        "provider": ["kalstrop_v1", "boltodds"],
+    },
+     "dota2":{
+        "polymarket_league_code": "dota2",
+        "sport_family": "esports",
+        "provider": ["kalstrop_v1", "boltodds"],
+    },
+    "lol":
+    {
+        "polymarket_league_code": "lol",
+        "sport_family": "esports",
+        "provider": ["kalstrop_v1", "boltodds"],
+    }
+
 
 }
 
@@ -61,6 +78,9 @@ PROVIDER_LEAGUE_ALIASES = {
         "bundesliga": "bundesliga",
         "laliga": "laliga",
         "french open men singles": "rolgar",
+        "cs2": "cs2",
+        "dota2": "dota2",
+        "lol": "lol",
     },
     "kalstrop_v2":{
         "uefa-champions-league": "ucl",
@@ -80,7 +100,10 @@ PROVIDER_LEAGUE_ALIASES = {
         "mlb": "mlb",
         "bundesliga": "bundesliga",
         "champions league": "ucl",
-        "la liga": "laliga"
+        "la liga": "laliga",
+        "cs2": "cs2",
+        "dota": "dota2",
+        "league of legends": "lol",
     },
 }
 

@@ -359,7 +359,7 @@ def test_sync_provider_games_kalstrop_inserts_rows(tmp_path, monkeypatch) -> Non
     assert row["home_raw"] == "Hoffenheim"
     assert row["away_raw"] == "Dortmund"
     assert row["parse_status"] == "ok"
-    assert tuple(seen_config.get("catalog_sport_codes") or ()) == ("baseball", "cs2", "soccer", "tennis")
+    assert tuple(seen_config.get("catalog_sport_codes") or ()) == ("baseball", "cs2", "dota2", "lol", "soccer", "tennis")
 
 
 def test_sync_provider_games_kalstrop_missing_credentials_returns_error(tmp_path, monkeypatch) -> None:

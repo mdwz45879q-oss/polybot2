@@ -85,6 +85,12 @@ def resolve_league(
     if country_key in provider_country:
         return provider_country[country_key]
 
+    # Fallback: try sport_raw as alias key (esports titles use sport_raw
+    # as the stable identifier, while league_raw varies by tournament).
+    sport_key = sport_raw.strip().lower()
+    if sport_key != key and sport_key in provider_aliases:
+        return provider_aliases[sport_key]
+
     return None
 
 
