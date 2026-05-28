@@ -368,19 +368,22 @@ async def boltodds_ws_capture(
         return
 
     count = 0
-    backoff = 2.0
+    # BoltOdds rate-limits WebSocket connections to 12/min per IP.
+    # Both livescores + PBP share this budget, so start backoff at 10s
+    # and cap at 60s to avoid cascading reconnection failures.
+    backoff = 10.0
     print(f"[{tag}] subscribing to {len(game_labels)} game(s)")
 
     while not stop.is_set():
         try:
             uri = f"{ws_url}?key={BOLTODDS_API_KEY}"
-            async with websockets.connect(uri, ping_interval=20, ping_timeout=20,
-                                          max_size=10*1024*1024) as ws:
+            async with websockets.connect(uri, max_size=None,
+                                          ping_interval=20, ping_timeout=20) as ws:
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
                 sub = json.dumps({"action": "subscribe", "filters": {"games": game_labels}})
                 await ws.send(sub)
                 print(f"[{tag}] connected, {len(game_labels)} game(s) subscribed")
-                backoff = 2.0
+                backoff = 10.0
                 async for raw in ws:
                     if stop.is_set():
                         break
@@ -413,7 +416,7 @@ async def boltodds_ws_capture(
                 break
             print(f"[{tag}] {type(e).__name__}: {e} -- reconnecting in {backoff:.0f}s")
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 30)
+            backoff = min(backoff * 2, 60)
 
     for fh in file_handles.values():
         try:
