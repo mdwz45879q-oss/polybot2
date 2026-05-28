@@ -375,10 +375,12 @@ async def boltodds_capture(games: list[dict], out_dir: Path, stop: asyncio.Event
                         frame = json.loads(raw)
                     except Exception:
                         frame = raw
-                    # Route by game label
+                    # Route by game label. Baseball/soccer use "game" field
+                    # (action=match_update), esports use "event" field
+                    # (action=new_play).
                     game_name = None
                     if isinstance(frame, dict):
-                        gl = frame.get("game", "")
+                        gl = frame.get("game") or frame.get("event") or ""
                         game_name = label_to_game.get(gl)
 
                     fh = file_handles.get(game_name) if game_name else None

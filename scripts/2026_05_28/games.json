@@ -1,0 +1,479 @@
+[
+  {
+    "name": "tricked_esport_vs_just_players",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "07:06",
+    "v1_fixture_id": "d17b12e9-4969-4473-aeea-41978828c631",
+    "boltodds_game_label": "Tricked vs Just Players, 2026-05-28, 07"
+  },
+  {
+    "name": "tyloo_vs_semperfi_esports",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "08:59",
+    "v1_fixture_id": "01e99806-86b4-4953-b752-ea69cf0387f2"
+  },
+  {
+    "name": "9z_team_vs_heroic",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "09:45",
+    "v1_fixture_id": "4d21f510-4e43-49cb-8b83-e33e02c3b8e1"
+  },
+  {
+    "name": "1win_vs_am_gaming",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:00",
+    "boltodds_game_label": "1Win vs AM Gaming, 2026-05-28, 10"
+  },
+  {
+    "name": "young_ninjas_vs_wazabi",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:00",
+    "boltodds_game_label": "Young Ninjas vs Wazabi, 2026-05-28, 10"
+  },
+  {
+    "name": "kolesie_vs_genone",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:05",
+    "v1_fixture_id": "8b4ebb82-b571-43a5-b9bb-3cd90b097ed2"
+  },
+  {
+    "name": "heroic_academy_vs_aaa",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:05",
+    "v1_fixture_id": "439cabb4-f35b-484b-ad50-fa5d3e4c230d",
+    "boltodds_game_label": "Heroic vs AAA, 2026-05-28, 10"
+  },
+  {
+    "name": "illwill_vs_fnatic",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:07",
+    "v1_fixture_id": "1f673c04-0134-41f4-bb9f-269de7035c4f",
+    "boltodds_game_label": "Illwill vs Fnatic, 2026-05-28, 10"
+  },
+  {
+    "name": "25cent_vs_largadosypelados",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:20",
+    "v1_fixture_id": "691f90e8-c276-411f-a6e6-3a75564b3679"
+  },
+  {
+    "name": "1win_vs_am_gaming",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:35",
+    "v1_fixture_id": "ca3c00a3-0228-4ad7-b055-63ebe7b3da0c"
+  },
+  {
+    "name": "nuclear_tigeres_vs_k27",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "10:50",
+    "v1_fixture_id": "75ffb385-6713-4a8c-aa6c-5fef146d047c"
+  },
+  {
+    "name": "magic_vs_faze",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "11:00",
+    "boltodds_game_label": "Magic vs Faze, 2026-05-28, 11"
+  },
+  {
+    "name": "magic_vs_faze",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "12:00",
+    "v1_fixture_id": "935ee011-1346-4182-a39b-6fcaa60579b1"
+  },
+  {
+    "name": "bestia_vs_galorys",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "v1_fixture_id": "5b29e040-8add-47f0-80b8-fb06fbdc6b7c",
+    "boltodds_game_label": "Bestia vs Galorys, 2026-05-28, 01"
+  },
+  {
+    "name": "team_nemesis_vs_tdk",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "v1_fixture_id": "d1d1627a-d70a-4450-9ae9-b37d75e1a1ea"
+  },
+  {
+    "name": "betclic_vs_eternal_fire",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "v1_fixture_id": "d2513150-152c-4251-b835-ea11290cdaa1",
+    "boltodds_game_label": "Betclic Apogee vs Eternal Fire, 2026-05-28, 01"
+  },
+  {
+    "name": "ww_team_vs_ex_ruby",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "v1_fixture_id": "d4e7c55a-7582-4ab5-a1b4-796ad3ef2450"
+  },
+  {
+    "name": "johnny_speeds_vs_oramond",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "boltodds_game_label": "Johnny Speeds vs Oramond, 2026-05-28, 01"
+  },
+  {
+    "name": "kolesie_vs_ex_zero_tenacity",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "boltodds_game_label": "Kolesie vs Ex Zero Tenacity, 2026-05-28, 01"
+  },
+  {
+    "name": "nemesis_vs_dragon_knights",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "boltodds_game_label": "Nemesis vs Dragon Knights, 2026-05-28, 01"
+  },
+  {
+    "name": "phantom_vs_atreides",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "boltodds_game_label": "Phantom vs Atreides, 2026-05-28, 01"
+  },
+  {
+    "name": "ww_vs_ex_ruby",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:00",
+    "boltodds_game_label": "WW vs Ex Ruby, 2026-05-28, 01"
+  },
+  {
+    "name": "sharks_esports_vs_ninjas_in_pyjamas",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "13:30",
+    "v1_fixture_id": "85687e2c-623d-4905-a0e5-37ce65586382",
+    "boltodds_game_label": "Ninjas In Pyjamas vs Sharks, 2026-05-28, 01"
+  },
+  {
+    "name": "arcred_vs_virtus_pro",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "14:00",
+    "v1_fixture_id": "2ecd92c0-beb7-4125-9986-d92c09d70f7f"
+  },
+  {
+    "name": "nemesis_vs_tdk",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "14:00",
+    "boltodds_game_label": "Nemesis vs TDK, 2026-05-28, 02"
+  },
+  {
+    "name": "alzon_vs_quintessencia",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "15:00",
+    "v1_fixture_id": "35cc5a4b-d8f3-4f3e-b040-78455fca7444"
+  },
+  {
+    "name": "bounty_hunters_esports_vs_blackbelt",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "16:00",
+    "v1_fixture_id": "e156c53e-f2a8-4c12-9b96-9ab043abdb16"
+  },
+  {
+    "name": "shinden_vs_imperial",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "17:00",
+    "v1_fixture_id": "14e3008c-97e8-4129-9d47-cd6e81d4ba91",
+    "boltodds_game_label": "Shinden vs Imperial, 2026-05-28, 05"
+  },
+  {
+    "name": "gamehunters_vs_fluxo_w7m",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "19:00",
+    "v1_fixture_id": "7aa46faf-5382-4c28-8988-12fbf369c77c"
+  },
+  {
+    "name": "game_hunters_vs_fluxo",
+    "sport": "esports",
+    "league": "cs2",
+    "kickoff_et": "19:00",
+    "boltodds_game_label": "Game Hunters vs Fluxo, 2026-05-28, 07"
+  },
+  {
+    "name": "t1_academy_vs_kt_rolster",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "01:00",
+    "boltodds_game_label": "T1 Academy vs KT Rolster, 2026-05-28, 01"
+  },
+  {
+    "name": "dn_soopers_vs_nongshim",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "04:00",
+    "boltodds_game_label": "DN SOOPers vs Nongshim, 2026-05-28, 04"
+  },
+  {
+    "name": "kt_rolster_vs_t1",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "07:00",
+    "boltodds_game_label": "KT Rolster vs T1, 2026-05-28, 07"
+  },
+  {
+    "name": "e_wie_einfach_vs_big",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "11:00",
+    "v1_fixture_id": "166efb2d-0798-48c6-8b27-e8956d5e6668",
+    "boltodds_game_label": "E Wie Einfach vs BIG, 2026-05-28, 11"
+  },
+  {
+    "name": "e_wie_einfach_vs_berlin_international",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "11:00",
+    "boltodds_game_label": "E Wie Einfach vs Berlin International, 2026-05-28, 11"
+  },
+  {
+    "name": "natalka_vs_spajkk",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "12:00",
+    "v1_fixture_id": "2c161b3b-b3f8-469f-bfa9-9011576561b3",
+    "boltodds_game_label": "Natalka vs Spajkk, 2026-05-28, 12"
+  },
+  {
+    "name": "galions_vs_tln_pirates",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "12:00",
+    "v1_fixture_id": "03e31d4e-b373-4050-9f22-cfa1f3965a0f",
+    "boltodds_game_label": "TLN Pirates vs Galions, 2026-05-28, 12"
+  },
+  {
+    "name": "mcon_vs_once_upon_a_team",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "12:00",
+    "boltodds_game_label": "mCon vs Once Upon A Team, 2026-05-28, 12"
+  },
+  {
+    "name": "xnapy_cz_vs_freeze_cz",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "13:00",
+    "boltodds_game_label": "Xnapy CZ vs Freeze CZ, 2026-05-28, 01"
+  },
+  {
+    "name": "team_xnapy_vs_team_freeze",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "13:00",
+    "v1_fixture_id": "a10ca947-7c79-4079-aa22-5e6a977c2765"
+  },
+  {
+    "name": "herdyn_vs_deethane",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "14:00",
+    "v1_fixture_id": "f62fdcc5-3eb8-46ad-a10a-f57754942cf0",
+    "boltodds_game_label": "Herdyn vs Deethane, 2026-05-28, 02"
+  },
+  {
+    "name": "ty_blaho_vs_kamilius1",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "15:00",
+    "boltodds_game_label": "Ty Blaho vs Kamilius1, 2026-05-28, 03"
+  },
+  {
+    "name": "team_tyblaho_vs_team_kamilius",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "15:00",
+    "v1_fixture_id": "8e221ff8-2302-41ae-8c8a-75838ccddcb6"
+  },
+  {
+    "name": "ccg_vs_conviction",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "16:00",
+    "boltodds_game_label": "CCG vs Conviction, 2026-05-28, 04"
+  },
+  {
+    "name": "deethane_vs_xnapy_cz",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "16:00",
+    "boltodds_game_label": "Deethane vs Xnapy CZ, 2026-05-28, 04"
+  },
+  {
+    "name": "nrg_vs_winthrop",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "16:00",
+    "v1_fixture_id": "fa4eed6c-b2e1-4ce9-98e9-4c7c03e6b85b",
+    "boltodds_game_label": "Winthrop vs NRG, 2026-05-28, 04"
+  },
+  {
+    "name": "team_deethane_vs_team_xnapy",
+    "sport": "esports",
+    "league": "lol",
+    "kickoff_et": "16:00",
+    "v1_fixture_id": "ca79be07-d0a1-4b20-8607-00779afa0ebe"
+  },
+  {
+    "name": "yandex_vs_tundra",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "05:10",
+    "boltodds_game_label": "Yandex vs Tundra, 2026-05-28, 05"
+  },
+  {
+    "name": "aurora_vs_team_liquid",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "06:10",
+    "boltodds_game_label": "Aurora vs Team Liquid, 2026-05-28, 06"
+  },
+  {
+    "name": "ns_club_vs_ramzes",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "07:10",
+    "boltodds_game_label": "NS Club vs Ramzes, 2026-05-28, 07"
+  },
+  {
+    "name": "lgd_vs_parivision",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "07:15",
+    "boltodds_game_label": "LGD vs Parivision, 2026-05-28, 07"
+  },
+  {
+    "name": "og_vs_glyph",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "07:30",
+    "boltodds_game_label": "OG vs Glyph, 2026-05-28, 07"
+  },
+  {
+    "name": "team_spirit_vs_xtreme",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "08:40",
+    "boltodds_game_label": "Team Spirit vs Xtreme, 2026-05-28, 08"
+  },
+  {
+    "name": "yandex_vs_aurora",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "09:00",
+    "boltodds_game_label": "Yandex vs Aurora, 2026-05-28, 09"
+  },
+  {
+    "name": "falcons_vs_tundra",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "10:10",
+    "boltodds_game_label": "Falcons vs Tundra, 2026-05-28, 10"
+  },
+  {
+    "name": "lgd_gaming_vs_team_og",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "10:21",
+    "v1_fixture_id": "960f9ebf-9bf9-41c4-bb9b-439e7ebc6828"
+  },
+  {
+    "name": "yandex_vs_bb",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "11:00",
+    "boltodds_game_label": "Yandex vs BB, 2026-05-28, 11",
+    "boltodds_game_label_2": "Yandex vs BB Team, 2026-05-28, 11"
+  },
+  {
+    "name": "yandex_vs_betboom",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "11:00",
+    "v1_fixture_id": "8aabbd64-803f-4fa9-9842-0dbe23fbe017",
+    "boltodds_game_label": "Yandex vs BetBoom, 2026-05-28, 11"
+  },
+  {
+    "name": "aurora_vs_parivision",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "11:10",
+    "boltodds_game_label": "Aurora vs Parivision, 2026-05-28, 11"
+  },
+  {
+    "name": "aurora_vs_pvision",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "11:15",
+    "boltodds_game_label": "Aurora vs Pvision, 2026-05-28, 11"
+  },
+  {
+    "name": "aurora_gaming_vs_parivision",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "11:30",
+    "v1_fixture_id": "8a57ffe2-919c-4c03-a0a3-6f091133fd48"
+  },
+  {
+    "name": "lgd_vs_og",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "12:10",
+    "boltodds_game_label": "LGD vs OG, 2026-05-28, 12"
+  },
+  {
+    "name": "team_spirit_vs_team_liquid",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "12:10",
+    "v1_fixture_id": "214125b2-8f3c-4546-a867-b239f5c7d999",
+    "boltodds_game_label": "Team Spirit vs Team Liquid, 2026-05-28, 12"
+  },
+  {
+    "name": "xtreme_vs_glyph",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "12:20",
+    "boltodds_game_label": "Xtreme vs Glyph, 2026-05-28, 12"
+  },
+  {
+    "name": "xtreme_gaming_vs_glyph",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "12:40",
+    "v1_fixture_id": "0dc227fc-079b-423b-840c-67d0e6f5bd92"
+  },
+  {
+    "name": "stariy_bog_vs_tpabomah_club",
+    "sport": "esports",
+    "league": "dota2",
+    "kickoff_et": "13:30",
+    "boltodds_game_label": "Stariy Bog vs Tpabomah Club, 2026-05-28, 01"
+  }
+]
