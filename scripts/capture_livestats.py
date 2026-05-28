@@ -563,7 +563,11 @@ def main():
                     help=f"LiveStats endpoint keys (default: {','.join(DEFAULT_ENDPOINTS)})")
     ap.add_argument("--no-livestats", action="store_true", help="Skip LiveStats capture")
     ap.add_argument("--no-v1", action="store_true", help="Skip V1 odds WS capture")
-    ap.add_argument("--no-boltodds", action="store_true", help="Skip BoltOdds capture")
+    ap.add_argument("--no-boltodds", action="store_true", help="Skip BoltOdds capture entirely")
+    ap.add_argument("--bo-livescores-only", action="store_true",
+                    help="BoltOdds: only use livescores endpoint (skip play-by-play)")
+    ap.add_argument("--bo-pbp-only", action="store_true",
+                    help="BoltOdds: only use play-by-play endpoint (skip livescores)")
     ap.add_argument("--resolve-esports", action="store_true",
                     help="Fetch correct esports labels from /api/playbyplay/esports "
                          "(required for esports — standard labels cause Code 1 errors)")
@@ -631,20 +635,20 @@ def main():
             tasks.append(asyncio.create_task(
                 v1_capture(games, out_dir, stop_event)))
         if not args.no_boltodds and n_bo > 0 and BOLTODDS_API_KEY:
-            # Livescores WS (match_update frames — baseball/soccer/etc.)
-            tasks.append(asyncio.create_task(
-                boltodds_ws_capture(games, out_dir, stop_event,
-                                   ws_url=BOLTODDS_LIVESCORES_WS,
-                                   tag="bo:livescores",
-                                   filename="boltodds_raw.jsonl",
-                                   label_to_kickoff=bo_label_to_kickoff)))
-            # Play-by-play WS (new_play frames — all sports, esp. esports)
-            tasks.append(asyncio.create_task(
-                boltodds_ws_capture(games, out_dir, stop_event,
-                                   ws_url=BOLTODDS_PBP_WS,
-                                   tag="bo:pbp",
-                                   filename="boltodds_pbp.jsonl",
-                                   label_to_kickoff=bo_label_to_kickoff)))
+            if not args.bo_pbp_only:
+                tasks.append(asyncio.create_task(
+                    boltodds_ws_capture(games, out_dir, stop_event,
+                                       ws_url=BOLTODDS_LIVESCORES_WS,
+                                       tag="bo:livescores",
+                                       filename="boltodds_raw.jsonl",
+                                       label_to_kickoff=bo_label_to_kickoff)))
+            if not args.bo_livescores_only:
+                tasks.append(asyncio.create_task(
+                    boltodds_ws_capture(games, out_dir, stop_event,
+                                       ws_url=BOLTODDS_PBP_WS,
+                                       tag="bo:pbp",
+                                       filename="boltodds_pbp.jsonl",
+                                       label_to_kickoff=bo_label_to_kickoff)))
 
         if not tasks:
             print("ERROR: no capture tasks started (check credentials and games.json fields)")
