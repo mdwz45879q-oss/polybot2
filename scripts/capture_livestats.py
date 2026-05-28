@@ -409,7 +409,7 @@ async def boltodds_ws_capture(
     ws_url: str,
     tag: str,
     filename: str,
-    label_to_kickoff: dict[str, int | None],
+    label_to_kickoff: dict[str, int | None] | None = None,
 ):
     """Generic BoltOdds WS capture — works for both livescores and play-by-play.
 
@@ -450,6 +450,7 @@ async def boltodds_ws_capture(
     backoff = 30.0
     subscribed: set[str] = set()
     finished: set[str] = set()
+    _kickoffs = label_to_kickoff or {}
 
     def _games_to_subscribe_now() -> list[str]:
         now = int(time.time())
@@ -457,14 +458,14 @@ async def boltodds_ws_capture(
         for label in all_labels:
             if label in subscribed or label in finished:
                 continue
-            kickoff = label_to_kickoff.get(label)
+            kickoff = _kickoffs.get(label)
             if kickoff is None or now >= kickoff - SUBSCRIBE_LEAD_SECONDS:
                 ready.append(label)
         return ready
 
     now_ts = int(time.time())
     n_live = sum(1 for l in all_labels
-                 if label_to_kickoff.get(l) is None or label_to_kickoff[l] <= now_ts + SUBSCRIBE_LEAD_SECONDS)
+                 if _kickoffs.get(l) is None or _kickoffs[l] <= now_ts + SUBSCRIBE_LEAD_SECONDS)
     print(f"[{tag}] {len(all_labels)} game(s): {n_live} live/imminent, {len(all_labels) - n_live} upcoming")
 
     while not stop.is_set():
@@ -563,6 +564,9 @@ def main():
     ap.add_argument("--no-livestats", action="store_true", help="Skip LiveStats capture")
     ap.add_argument("--no-v1", action="store_true", help="Skip V1 odds WS capture")
     ap.add_argument("--no-boltodds", action="store_true", help="Skip BoltOdds capture")
+    ap.add_argument("--resolve-esports", action="store_true",
+                    help="Fetch correct esports labels from /api/playbyplay/esports "
+                         "(required for esports — standard labels cause Code 1 errors)")
     args = ap.parse_args()
 
     with open(args.games_file) as f:
@@ -571,6 +575,32 @@ def main():
     if not games:
         print("ERROR: no games in games file")
         return 1
+
+    # Build BoltOdds label → kickoff mapping for dynamic subscription
+    bo_label_to_kickoff: dict[str, int | None] = {}
+    for g in games:
+        label = str(g.get("boltodds_game_label") or "").strip()
+        if label:
+            kickoff = g.get("start_ts_utc")
+            bo_label_to_kickoff[label] = int(kickoff) if kickoff is not None else None
+
+    # Resolve esports labels if requested
+    if args.resolve_esports and BOLTODDS_API_KEY:
+        bo_labels = [str(g.get("boltodds_game_label") or "").strip()
+                     for g in games if g.get("boltodds_game_label")]
+        resolved = resolve_esports_pbp_labels(bo_labels)
+        if resolved:
+            # Replace labels in games list and kickoff map
+            new_kickoff: dict[str, int | None] = {}
+            for g in games:
+                old_label = str(g.get("boltodds_game_label") or "").strip()
+                if old_label and old_label in resolved:
+                    new_label = resolved[old_label]
+                    g["boltodds_game_label"] = new_label
+                    new_kickoff[new_label] = bo_label_to_kickoff.get(old_label)
+                elif old_label:
+                    new_kickoff[old_label] = bo_label_to_kickoff.get(old_label)
+            bo_label_to_kickoff = new_kickoff
 
     endpoints = [e.strip() for e in args.endpoints.split(",") if e.strip()]
     out_dir = Path(args.out)
@@ -606,13 +636,15 @@ def main():
                 boltodds_ws_capture(games, out_dir, stop_event,
                                    ws_url=BOLTODDS_LIVESCORES_WS,
                                    tag="bo:livescores",
-                                   filename="boltodds_raw.jsonl")))
+                                   filename="boltodds_raw.jsonl",
+                                   label_to_kickoff=bo_label_to_kickoff)))
             # Play-by-play WS (new_play frames — all sports, esp. esports)
             tasks.append(asyncio.create_task(
                 boltodds_ws_capture(games, out_dir, stop_event,
                                    ws_url=BOLTODDS_PBP_WS,
                                    tag="bo:pbp",
-                                   filename="boltodds_pbp.jsonl")))
+                                   filename="boltodds_pbp.jsonl",
+                                   label_to_kickoff=bo_label_to_kickoff)))
 
         if not tasks:
             print("ERROR: no capture tasks started (check credentials and games.json fields)")
