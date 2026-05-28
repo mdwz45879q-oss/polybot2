@@ -36,6 +36,9 @@ import time
 from pathlib import Path
 
 
+import unicodedata
+import urllib.request as _urllib_request
+
 CLIENT_ID = os.environ.get("KALSTROP_CLIENT_ID") or os.environ.get("CLIENT_ID", "")
 SECRET_RAW = os.environ.get("KALSTROP_SHARED_SECRET_RAW") or os.environ.get("SHARED_SECRET_RAW", "")
 BOLTODDS_API_KEY = os.environ.get("BOLTODDS_API_KEY", "")
@@ -44,8 +47,11 @@ LIVESTATS_BASE = "https://sportsapi.kalstropservice.com"
 V1_WS = "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"
 BOLTODDS_LIVESCORES_WS = "wss://spro.agency/api/livescores"
 BOLTODDS_PBP_WS = "wss://spro.agency/api/playbyplay"
+BOLTODDS_PBP_ESPORTS_URL = "https://spro.agency/api/playbyplay/esports"
 
 DEFAULT_ENDPOINTS = ["match_info", "match_timeline", "match_timelinedelta"]
+SUBSCRIBE_LEAD_SECONDS = 120  # subscribe 2 min before kickoff
+SUBSCRIPTION_CHECK_INTERVAL = 30  # check for new games every 30s
 
 
 def sanitize_name(name: str) -> str:
@@ -319,7 +325,80 @@ async def v1_capture(games: list[dict], out_dir: Path, stop: asyncio.Event):
 
 
 # ---------------------------------------------------------------------------
-# BoltOdds WS capture
+# BoltOdds esports label resolution
+# ---------------------------------------------------------------------------
+
+def _strip_accents(s: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def _normalize_team(s: str) -> str:
+    s = _strip_accents(s.strip().lower())
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def resolve_esports_pbp_labels(game_labels: list[str]) -> dict[str, str]:
+    """Fetch PBP esports labels and match to standard labels.
+
+    BoltOdds uses different game labels for esports on /api/get_games vs
+    the WS endpoints. The correct labels come from /api/playbyplay/esports.
+    Returns dict mapping standard_label → correct_pbp_label.
+    """
+    url = f"{BOLTODDS_PBP_ESPORTS_URL}?key={BOLTODDS_API_KEY}"
+    try:
+        with _urllib_request.urlopen(url, timeout=15) as resp:
+            pbp_games = json.loads(resp.read())
+    except Exception as e:
+        print(f"[resolve-esports] failed: {e}")
+        return {}
+
+    print(f"[resolve-esports] fetched {len(pbp_games)} PBP esports games")
+
+    def parse_label(label):
+        parts = label.rsplit(", ", 2)
+        if len(parts) >= 3:
+            teams, date_suffix = parts[0], f"{parts[1]}, {parts[2]}"
+        elif len(parts) == 2:
+            teams, date_suffix = parts[0], parts[1]
+        else:
+            teams, date_suffix = label, ""
+        team_parts = teams.split(" vs ", 1)
+        if len(team_parts) == 2:
+            return (_normalize_team(team_parts[0]), _normalize_team(team_parts[1]), date_suffix)
+        return (_normalize_team(teams), "", date_suffix)
+
+    pbp_index: dict[tuple, str] = {}
+    for pbp_label in pbp_games:
+        h, a, ds = parse_label(pbp_label)
+        pbp_index[(h, a, ds)] = pbp_label
+        if a:
+            pbp_index[(a, h, ds)] = pbp_label
+
+    resolved: dict[str, str] = {}
+    for std_label in game_labels:
+        h, a, ds = parse_label(std_label)
+        if (h, a, ds) in pbp_index:
+            resolved[std_label] = pbp_index[(h, a, ds)]
+        else:
+            for (ph, pa, _), plabel in pbp_index.items():
+                if h == ph and a == pa:
+                    resolved[std_label] = plabel
+                    break
+
+    n = sum(1 for s, p in resolved.items() if s != p)
+    print(f"[resolve-esports] matched {len(resolved)}/{len(game_labels)} ({n} renamed)")
+    for std, pbp in resolved.items():
+        if std != pbp:
+            print(f"  {std}  →  {pbp}")
+
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# BoltOdds WS capture (dynamic subscription)
 # ---------------------------------------------------------------------------
 
 async def boltodds_ws_capture(
@@ -330,13 +409,13 @@ async def boltodds_ws_capture(
     ws_url: str,
     tag: str,
     filename: str,
+    label_to_kickoff: dict[str, int | None],
 ):
     """Generic BoltOdds WS capture — works for both livescores and play-by-play.
 
-    The two endpoints use the same subscription/frame protocol; only the URL
-    and the set of actions differ (livescores: match_update; pbp: new_play,
-    current_state, stats, etc.). Frame routing uses ``game`` or ``event``
-    field to map to per-game files.
+    Subscribes to games only when they approach kickoff (2 min lead) and
+    tracks finished games to avoid resubscribing. This keeps the active
+    subscription list small, avoiding Code 1 errors and rate-limit issues.
     """
     try:
         import websockets
@@ -348,7 +427,7 @@ async def boltodds_ws_capture(
         print(f"[{tag}] no BOLTODDS_API_KEY set, skipping")
         return
 
-    game_labels = []
+    all_labels = []
     label_to_game: dict[str, str] = {}
     file_handles: dict[str, any] = {}
     for g in games:
@@ -356,34 +435,57 @@ async def boltodds_ws_capture(
         if not label:
             continue
         game_name = g.get("name", sanitize_name(label))
-        game_labels.append(label)
+        all_labels.append(label)
         label_to_game[label] = game_name
         game_dir = out_dir / game_name
         game_dir.mkdir(parents=True, exist_ok=True)
         fpath = game_dir / filename
         file_handles[game_name] = fpath.open("a")
 
-    if not game_labels:
+    if not all_labels:
         print(f"[{tag}] no games with boltodds_game_label, skipping")
         return
 
     count = 0
-    # BoltOdds rate-limits WebSocket connections to 12/min per IP.
-    # Both livescores + PBP share this budget, so start backoff at 10s
-    # and cap at 60s to avoid cascading reconnection failures.
     backoff = 30.0
-    print(f"[{tag}] subscribing to {len(game_labels)} game(s)")
+    subscribed: set[str] = set()
+    finished: set[str] = set()
+
+    def _games_to_subscribe_now() -> list[str]:
+        now = int(time.time())
+        ready = []
+        for label in all_labels:
+            if label in subscribed or label in finished:
+                continue
+            kickoff = label_to_kickoff.get(label)
+            if kickoff is None or now >= kickoff - SUBSCRIBE_LEAD_SECONDS:
+                ready.append(label)
+        return ready
+
+    now_ts = int(time.time())
+    n_live = sum(1 for l in all_labels
+                 if label_to_kickoff.get(l) is None or label_to_kickoff[l] <= now_ts + SUBSCRIBE_LEAD_SECONDS)
+    print(f"[{tag}] {len(all_labels)} game(s): {n_live} live/imminent, {len(all_labels) - n_live} upcoming")
 
     while not stop.is_set():
         try:
             uri = f"{ws_url}?key={BOLTODDS_API_KEY}"
-            async with websockets.connect(uri, max_size=None,
-                                          ping_interval=20, ping_timeout=20) as ws:
+            async with websockets.connect(uri, max_size=None) as ws:
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
-                sub = json.dumps({"action": "subscribe", "filters": {"games": game_labels}})
-                await ws.send(sub)
-                print(f"[{tag}] connected, {len(game_labels)} game(s) subscribed")
+                print(f"[{tag}] connected")
                 backoff = 30.0
+                subscribed.clear()
+
+                # Initial subscribe — only live/imminent games
+                initial = _games_to_subscribe_now()
+                if initial:
+                    sub = json.dumps({"action": "subscribe", "filters": {"games": initial}})
+                    await ws.send(sub)
+                    subscribed.update(initial)
+                    print(f"[{tag}] subscribed to {len(initial)} game(s)")
+
+                last_sub_check = time.time()
+
                 async for raw in ws:
                     if stop.is_set():
                         break
@@ -392,9 +494,17 @@ async def boltodds_ws_capture(
                         frame = json.loads(raw)
                     except Exception:
                         frame = raw
-                    # Route by game label. Livescores uses "game" field
-                    # (action=match_update), play-by-play uses "event" field
-                    # (action=new_play, current_state, stats, etc.).
+
+                    action = frame.get("action", "") if isinstance(frame, dict) else ""
+
+                    # Track finished games
+                    if action == "game_removed":
+                        gl = frame.get("game") or frame.get("event") or ""
+                        if gl:
+                            finished.add(gl)
+                            print(f"[{tag}] game finished: {gl[:50]}")
+
+                    # Route to per-game file
                     game_name = None
                     if isinstance(frame, dict):
                         gl = frame.get("game") or frame.get("event") or ""
@@ -411,6 +521,19 @@ async def boltodds_ws_capture(
                             f.write(json.dumps({"ts_ns": ts_ns, "source": tag, "frame": frame},
                                                separators=(",", ":")) + "\n")
                     count += 1
+
+                    # Periodically check for new games to subscribe
+                    now = time.time()
+                    if now - last_sub_check >= SUBSCRIPTION_CHECK_INTERVAL:
+                        last_sub_check = now
+                        new_games = _games_to_subscribe_now()
+                        if new_games:
+                            all_active = [l for l in subscribed | set(new_games) if l not in finished]
+                            sub = json.dumps({"action": "subscribe", "filters": {"games": all_active}})
+                            await ws.send(sub)
+                            subscribed.update(new_games)
+                            print(f"[{tag}] added {len(new_games)} game(s), total active: {len(all_active)}")
+
         except Exception as e:
             if stop.is_set():
                 break

@@ -150,11 +150,16 @@ def resolve_esports_pbp_labels(game_labels: list[str]) -> dict[str, str]:
     return resolved
 
 
+SUBSCRIBE_LEAD_SECONDS = 120  # subscribe 2 min before kickoff
+SUBSCRIPTION_CHECK_INTERVAL = 30  # check for new games to subscribe every 30s
+
+
 async def capture_endpoint(
     ws_url: str,
     tag: str,
     game_labels: list[str],
     label_to_name: dict[str, str],
+    label_to_kickoff: dict[str, int | None],
     out_dir: Path,
     filename: str,
     stop: asyncio.Event,
@@ -171,24 +176,59 @@ async def capture_endpoint(
     connected_games = 0
     backoff = 30.0
 
+    # Track subscription state
+    subscribed: set[str] = set()
+    finished: set[str] = set()
+
+    def _games_to_subscribe_now() -> list[str]:
+        """Return labels that should be subscribed right now."""
+        now = int(time.time())
+        ready = []
+        for label in game_labels:
+            if label in subscribed or label in finished:
+                continue
+            kickoff = label_to_kickoff.get(label)
+            if kickoff is None:
+                # No kickoff time — subscribe immediately
+                ready.append(label)
+            elif now >= kickoff - SUBSCRIBE_LEAD_SECONDS:
+                ready.append(label)
+        return ready
+
     while not stop.is_set():
         try:
             uri = f"{ws_url}?key={API_KEY}"
             print(f"[{tag}] connecting to {ws_url} ...")
             async with websockets.connect(uri, max_size=None) as ws:
-                # Wait for socket_connected handshake
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
                 handshake = json.loads(raw) if isinstance(raw, (str, bytes)) else {}
                 print(f"[{tag}] handshake: {handshake}")
 
-                # Subscribe
-                sub = {"action": "subscribe", "filters": {"games": game_labels}}
-                await ws.send(json.dumps(sub))
-                print(f"[{tag}] subscribed to {len(game_labels)} game(s)")
-
                 backoff = 30.0
                 connected_games = 0
                 errors = 0
+                subscribed.clear()
+
+                # Initial subscribe for games that are live or near kickoff
+                initial = _games_to_subscribe_now()
+                if initial:
+                    sub = {"action": "subscribe", "filters": {"games": initial}}
+                    await ws.send(json.dumps(sub))
+                    subscribed.update(initial)
+                    print(f"[{tag}] initial subscribe: {len(initial)} game(s)")
+                else:
+                    # Subscribe to empty list to keep connection alive
+                    # (will resubscribe when games go live)
+                    next_kickoff = None
+                    for label in game_labels:
+                        k = label_to_kickoff.get(label)
+                        if k and (next_kickoff is None or k < next_kickoff):
+                            next_kickoff = k
+                    if next_kickoff:
+                        wait_min = max(0, (next_kickoff - int(time.time()) - SUBSCRIBE_LEAD_SECONDS)) / 60
+                        print(f"[{tag}] no games live yet, next kickoff in ~{wait_min:.0f} min")
+
+                last_sub_check = time.time()
 
                 async for raw in ws:
                     if stop.is_set():
@@ -201,7 +241,6 @@ async def capture_endpoint(
 
                     action = frame.get("action", "") if isinstance(frame, dict) else ""
 
-                    # Log errors and connections to stdout
                     if action == "error":
                         errors += 1
                         msg = frame.get("message", "")
@@ -213,6 +252,12 @@ async def capture_endpoint(
                         print(f"[{tag}] CONNECTED #{connected_games}: stream={stream} event={event}")
                     elif action == "subscription_updated":
                         print(f"[{tag}] subscription_updated: {frame.get('message', '')}")
+                    elif action in ("game_removed",):
+                        # Game finished — track it
+                        gl = frame.get("game") or frame.get("event") or ""
+                        if gl:
+                            finished.add(gl)
+                            print(f"[{tag}] game finished: {gl[:50]}")
                     elif action == "ping":
                         pass
                     elif action in ("socket_connected",):
@@ -239,6 +284,19 @@ async def capture_endpoint(
                         with shared.open("a") as f:
                             f.write(json.dumps({"ts_ns": ts_ns, "source": tag, "frame": frame},
                                                separators=(",", ":")) + "\n")
+
+                    # Periodically check for new games to subscribe
+                    now = time.time()
+                    if now - last_sub_check >= SUBSCRIPTION_CHECK_INTERVAL:
+                        last_sub_check = now
+                        new_games = _games_to_subscribe_now()
+                        if new_games:
+                            # Resubscribe with full list (BoltOdds replaces filters)
+                            all_active = [l for l in subscribed | set(new_games) if l not in finished]
+                            sub = {"action": "subscribe", "filters": {"games": all_active}}
+                            await ws.send(json.dumps(sub))
+                            subscribed.update(new_games)
+                            print(f"[{tag}] added {len(new_games)} game(s), total active: {len(all_active)}")
 
                 print(f"[{tag}] connection closed normally")
 
@@ -286,9 +344,10 @@ def main():
     with open(args.games_file) as f:
         games = json.load(f)
 
-    # Build standard label → game name mapping
+    # Build standard label → game name + kickoff mapping
     std_labels = []
     label_to_name: dict[str, str] = {}
+    label_to_kickoff: dict[str, int | None] = {}
     for g in games:
         label = str(g.get("boltodds_game_label") or "").strip()
         if not label:
@@ -296,6 +355,8 @@ def main():
         name = g.get("name", sanitize(label))
         std_labels.append(label)
         label_to_name[label] = name
+        kickoff = g.get("start_ts_utc")
+        label_to_kickoff[label] = int(kickoff) if kickoff is not None else None
 
     if not std_labels:
         print("ERROR: no games with 'boltodds_game_label' found in games.json")
@@ -312,13 +373,16 @@ def main():
             # Replace labels for ALL endpoints (livescores + PBP)
             new_labels = []
             new_label_to_name = {}
+            new_label_to_kickoff = {}
             for std_label in std_labels:
                 correct_label = resolved.get(std_label, std_label)
                 game_name = label_to_name[std_label]
                 new_labels.append(correct_label)
                 new_label_to_name[correct_label] = game_name
+                new_label_to_kickoff[correct_label] = label_to_kickoff.get(std_label)
             std_labels = new_labels
             label_to_name = new_label_to_name
+            label_to_kickoff = new_label_to_kickoff
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -337,16 +401,26 @@ def main():
     signal.signal(signal.SIGINT, handle_sig)
     signal.signal(signal.SIGTERM, handle_sig)
 
+    # Show subscription schedule
+    now_ts = int(time.time())
+    n_live_now = sum(1 for l in std_labels
+                     if label_to_kickoff.get(l) is None or label_to_kickoff[l] <= now_ts + SUBSCRIBE_LEAD_SECONDS)
+    n_upcoming = len(std_labels) - n_live_now
+    print(f"  Live/imminent: {n_live_now}, upcoming: {n_upcoming}")
+    print()
+
     async def run():
         tasks = []
         if not args.pbp_only:
             tasks.append(asyncio.create_task(
                 capture_endpoint(LIVESCORES_WS, "livescores", std_labels,
-                                 label_to_name, out_dir, "boltodds_livescores.jsonl", stop)))
+                                 label_to_name, label_to_kickoff,
+                                 out_dir, "boltodds_livescores.jsonl", stop)))
         if not args.livescores_only:
             tasks.append(asyncio.create_task(
                 capture_endpoint(PBP_WS, "pbp", std_labels,
-                                 label_to_name, out_dir, "boltodds_pbp.jsonl", stop)))
+                                 label_to_name, label_to_kickoff,
+                                 out_dir, "boltodds_pbp.jsonl", stop)))
 
         if not tasks:
             print("ERROR: no endpoints selected")

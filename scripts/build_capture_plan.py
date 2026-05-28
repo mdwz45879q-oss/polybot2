@@ -408,6 +408,7 @@ def emit_json(matched: list[dict], league: str, sport: str, livestats_ids: dict[
             "sport": sport,
             "league": league,
             "kickoff_et": ts_to_et(m["start_ts_utc"]),
+            "start_ts_utc": m["start_ts_utc"],
         }
 
         providers = m["providers"]
