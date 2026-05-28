@@ -104,7 +104,7 @@ PROVIDER_LEAGUE_ALIASES = {
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
-        "Roland Garros (M) - Tennis": "rolgar",
+        "roland garros (m) - tennis": "rolgar",
     },
 }
 

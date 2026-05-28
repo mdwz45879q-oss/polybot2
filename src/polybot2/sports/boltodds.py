@@ -262,8 +262,44 @@ class BoltOddsProvider(SportsDataProviderBase):
         teams = tuple(sorted([home, away]))
         return f"{teams[0]}|{teams[1]}|{date_str}"
 
+    _ESPORTS_SPORTS = frozenset({"cs2", "dota", "league of legends", "valorant"})
+
+    def _fetch_esports_pbp_labels(self) -> dict[str, dict[str, Any]]:
+        """Fetch the esports game catalog from /api/playbyplay/esports.
+
+        BoltOdds uses different game labels for esports on the standard
+        ``/api/get_games`` endpoint vs the WebSocket endpoints. The WS
+        endpoints (livescores + playbyplay) only accept the labels from
+        ``/api/playbyplay/esports``. Differences include casing
+        (``"Heroic"`` vs ``"HEROIC"``), spacing (``"Game Hunters"`` vs
+        ``"GameHunters"``), and abbreviations (``"1Win"`` vs ``"1w"``).
+        """
+        try:
+            return self._http_get_json("playbyplay/esports")
+        except Exception:
+            return {}
+
     def load_game_catalog(self) -> list[ProviderGameRecord]:
         payload = self._http_get_json("get_games")
+
+        # For esports games, replace with labels from /api/playbyplay/esports
+        # which are the only ones accepted by the WS endpoints.
+        esports_catalog = self._fetch_esports_pbp_labels()
+        if esports_catalog and isinstance(esports_catalog, dict):
+            esports_rows = self._rows_from_games_payload(esports_catalog)
+            # Remove esports games from the standard payload, replace with PBP versions
+            if isinstance(payload, dict):
+                to_remove = [
+                    k for k, v in payload.items()
+                    if isinstance(v, dict) and str(v.get("sport") or "").strip().lower() in self._ESPORTS_SPORTS
+                ]
+                for k in to_remove:
+                    del payload[k]
+                # Add PBP esports entries
+                for label, meta in esports_catalog.items():
+                    if isinstance(meta, dict):
+                        payload[label] = meta
+
         rows = self._rows_from_games_payload(payload)
         grouped: dict[str, list[ProviderGameRecord]] = {}
         for row in rows:

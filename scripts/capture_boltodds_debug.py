@@ -169,7 +169,7 @@ async def capture_endpoint(
     count = 0
     errors = 0
     connected_games = 0
-    backoff = 10.0
+    backoff = 30.0
 
     while not stop.is_set():
         try:
@@ -186,7 +186,7 @@ async def capture_endpoint(
                 await ws.send(json.dumps(sub))
                 print(f"[{tag}] subscribed to {len(game_labels)} game(s)")
 
-                backoff = 10.0
+                backoff = 30.0
                 connected_games = 0
                 errors = 0
 
