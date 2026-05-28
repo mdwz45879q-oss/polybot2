@@ -42,7 +42,8 @@ BOLTODDS_API_KEY = os.environ.get("BOLTODDS_API_KEY", "")
 
 LIVESTATS_BASE = "https://sportsapi.kalstropservice.com"
 V1_WS = "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"
-BOLTODDS_WS = "wss://spro.agency/api/livescores"
+BOLTODDS_LIVESCORES_WS = "wss://spro.agency/api/livescores"
+BOLTODDS_PBP_WS = "wss://spro.agency/api/playbyplay"
 
 DEFAULT_ENDPOINTS = ["match_info", "match_timeline", "match_timelinedelta"]
 
@@ -321,15 +322,30 @@ async def v1_capture(games: list[dict], out_dir: Path, stop: asyncio.Event):
 # BoltOdds WS capture
 # ---------------------------------------------------------------------------
 
-async def boltodds_capture(games: list[dict], out_dir: Path, stop: asyncio.Event):
+async def boltodds_ws_capture(
+    games: list[dict],
+    out_dir: Path,
+    stop: asyncio.Event,
+    *,
+    ws_url: str,
+    tag: str,
+    filename: str,
+):
+    """Generic BoltOdds WS capture — works for both livescores and play-by-play.
+
+    The two endpoints use the same subscription/frame protocol; only the URL
+    and the set of actions differ (livescores: match_update; pbp: new_play,
+    current_state, stats, etc.). Frame routing uses ``game`` or ``event``
+    field to map to per-game files.
+    """
     try:
         import websockets
     except ImportError:
-        print("[bo] ERROR: pip install websockets")
+        print(f"[{tag}] ERROR: pip install websockets")
         return
 
     if not BOLTODDS_API_KEY:
-        print("[bo] no BOLTODDS_API_KEY set, skipping")
+        print(f"[{tag}] no BOLTODDS_API_KEY set, skipping")
         return
 
     game_labels = []
@@ -344,28 +360,26 @@ async def boltodds_capture(games: list[dict], out_dir: Path, stop: asyncio.Event
         label_to_game[label] = game_name
         game_dir = out_dir / game_name
         game_dir.mkdir(parents=True, exist_ok=True)
-        fpath = game_dir / "boltodds_raw.jsonl"
+        fpath = game_dir / filename
         file_handles[game_name] = fpath.open("a")
 
     if not game_labels:
-        print("[bo] no games with boltodds_game_label, skipping")
+        print(f"[{tag}] no games with boltodds_game_label, skipping")
         return
 
     count = 0
     backoff = 2.0
-    print(f"[bo] subscribing to {len(game_labels)} game(s)")
+    print(f"[{tag}] subscribing to {len(game_labels)} game(s)")
 
     while not stop.is_set():
         try:
-            uri = f"{BOLTODDS_WS}?key={BOLTODDS_API_KEY}"
+            uri = f"{ws_url}?key={BOLTODDS_API_KEY}"
             async with websockets.connect(uri, ping_interval=20, ping_timeout=20,
                                           max_size=10*1024*1024) as ws:
-                # Wait for socket_connected handshake
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
-                # Subscribe
                 sub = json.dumps({"action": "subscribe", "filters": {"games": game_labels}})
                 await ws.send(sub)
-                print(f"[bo] connected, {len(game_labels)} game(s) subscribed")
+                print(f"[{tag}] connected, {len(game_labels)} game(s) subscribed")
                 backoff = 2.0
                 async for raw in ws:
                     if stop.is_set():
@@ -375,9 +389,9 @@ async def boltodds_capture(games: list[dict], out_dir: Path, stop: asyncio.Event
                         frame = json.loads(raw)
                     except Exception:
                         frame = raw
-                    # Route by game label. Baseball/soccer use "game" field
-                    # (action=match_update), esports use "event" field
-                    # (action=new_play).
+                    # Route by game label. Livescores uses "game" field
+                    # (action=match_update), play-by-play uses "event" field
+                    # (action=new_play, current_state, stats, etc.).
                     game_name = None
                     if isinstance(frame, dict):
                         gl = frame.get("game") or frame.get("event") or ""
@@ -385,19 +399,19 @@ async def boltodds_capture(games: list[dict], out_dir: Path, stop: asyncio.Event
 
                     fh = file_handles.get(game_name) if game_name else None
                     if fh:
-                        fh.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame},
+                        fh.write(json.dumps({"ts_ns": ts_ns, "source": tag, "frame": frame},
                                             separators=(",", ":")) + "\n")
                         fh.flush()
                     else:
-                        shared = out_dir / "boltodds_events.jsonl"
+                        shared = out_dir / f"{tag}_events.jsonl"
                         with shared.open("a") as f:
-                            f.write(json.dumps({"ts_ns": ts_ns, "source": "boltodds", "frame": frame},
+                            f.write(json.dumps({"ts_ns": ts_ns, "source": tag, "frame": frame},
                                                separators=(",", ":")) + "\n")
                     count += 1
         except Exception as e:
             if stop.is_set():
                 break
-            print(f"[bo] {type(e).__name__}: {e} -- reconnecting in {backoff:.0f}s")
+            print(f"[{tag}] {type(e).__name__}: {e} -- reconnecting in {backoff:.0f}s")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
@@ -406,7 +420,7 @@ async def boltodds_capture(games: list[dict], out_dir: Path, stop: asyncio.Event
             fh.close()
         except Exception:
             pass
-    print(f"[bo] captured {count} frames")
+    print(f"[{tag}] captured {count} frames")
 
 
 # ---------------------------------------------------------------------------
@@ -461,8 +475,18 @@ def main():
             tasks.append(asyncio.create_task(
                 v1_capture(games, out_dir, stop_event)))
         if not args.no_boltodds and n_bo > 0 and BOLTODDS_API_KEY:
+            # Livescores WS (match_update frames — baseball/soccer/etc.)
             tasks.append(asyncio.create_task(
-                boltodds_capture(games, out_dir, stop_event)))
+                boltodds_ws_capture(games, out_dir, stop_event,
+                                   ws_url=BOLTODDS_LIVESCORES_WS,
+                                   tag="bo:livescores",
+                                   filename="boltodds_raw.jsonl")))
+            # Play-by-play WS (new_play frames — all sports, esp. esports)
+            tasks.append(asyncio.create_task(
+                boltodds_ws_capture(games, out_dir, stop_event,
+                                   ws_url=BOLTODDS_PBP_WS,
+                                   tag="bo:pbp",
+                                   filename="boltodds_pbp.jsonl")))
 
         if not tasks:
             print("ERROR: no capture tasks started (check credentials and games.json fields)")
