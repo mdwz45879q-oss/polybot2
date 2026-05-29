@@ -1163,3 +1163,275 @@ PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES = {
             "pm_aliases": ["Alex de Minaur"],
     },
 }
+
+
+# =============================================================================
+# FRENCH OPEN WOMEN SINGLES (Roland-Garros, Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES = {
+    # Mirra Andreeva
+    "andreeva, mirra": {
+            "polymarket_code": "andreev",
+            "provider_aliases": {
+                "kalstrop_v1": ["Andreeva, Mirra"],
+            },
+            "pm_aliases": ["Mirra Andreeva"],
+    },
+    # Amanda Anisimova
+    "anisimova, amanda": {
+            "polymarket_code": "anisimo",
+            "provider_aliases": {
+                "kalstrop_v1": ["Anisimova, Amanda"],
+            },
+            "pm_aliases": ["Amanda Anisimova"],
+    },
+    # Belinda Bencic
+    "bencic, belinda": {
+            "polymarket_code": "bencic",
+            "provider_aliases": {
+                "kalstrop_v1": ["Bencic, Belinda"],
+            },
+            "pm_aliases": ["Belinda Bencic"],
+    },
+    # Marie Bouzkova
+    "bouzkova, marie": {
+            "polymarket_code": "bouzkov",
+            "provider_aliases": {
+                "kalstrop_v1": ["Bouzkova, Marie"],
+            },
+            "pm_aliases": ["Marie Bouzkova"],
+    },
+    # Maja Chwalinska
+    "chwalinska, maja": {
+            "polymarket_code": "chwalin",
+            "provider_aliases": {
+                "kalstrop_v1": ["Chwalinska, Maja"],
+            },
+            "pm_aliases": ["Maja Chwalinska"],
+    },
+    # Sorana Cirstea
+    "cirstea, sorana": {
+            "polymarket_code": "cirstea",
+            "provider_aliases": {
+                "kalstrop_v1": ["Cirstea, Sorana"],
+            },
+            "pm_aliases": ["Sorana Cirstea"],
+    },
+    # Coco Gauff
+    "gauff, coco": {
+            "polymarket_code": "gauff",
+            "provider_aliases": {
+                "kalstrop_v1": ["Gauff, Coco"],
+            },
+            "pm_aliases": ["Coco Gauff"],
+    },
+    # Viktorija Golubic
+    "golubic, viktorija": {
+            "polymarket_code": "golubic",
+            "provider_aliases": {
+                "kalstrop_v1": ["Golubic, Viktorija"],
+            },
+            "pm_aliases": ["Viktorija Golubic"],
+    },
+    # Iva Jovic
+    "jovic, iva": {
+            "polymarket_code": "jovic",
+            "provider_aliases": {
+                "kalstrop_v1": ["Jovic, Iva"],
+            },
+            "pm_aliases": ["Iva Jovic"],
+    },
+    # Anna Kalinskaya
+    "kalinskaya, anna": {
+            "polymarket_code": "kalinsk",
+            "provider_aliases": {
+                "kalstrop_v1": ["Kalinskaya, Anna"],
+            },
+            "pm_aliases": ["Anna Kalinskaya"],
+    },
+    # Daria Kasatkina
+    "kasatkina, daria": {
+            "polymarket_code": "kasatki",
+            "provider_aliases": {
+                "kalstrop_v1": ["Kasatkina, Daria"],
+            },
+            "pm_aliases": ["Daria Kasatkina"],
+    },
+    # Madison Keys
+    "keys, madison": {
+            "polymarket_code": "keys",
+            "provider_aliases": {
+                "kalstrop_v1": ["Keys, Madison"],
+            },
+            "pm_aliases": ["Madison Keys"],
+    },
+    # Tamara Korpatsch
+    "korpatsch, tamara": {
+            "polymarket_code": "korpats",
+            "provider_aliases": {
+                "kalstrop_v1": ["Korpatsch, Tamara"],
+            },
+            "pm_aliases": ["Tamara Korpatsch"],
+    },
+    # Marta Kostyuk
+    "kostyuk, marta": {
+            "polymarket_code": "kostyuk",
+            "provider_aliases": {
+                "kalstrop_v1": ["Kostyuk, Marta"],
+            },
+            "pm_aliases": ["Marta Kostyuk"],
+    },
+    # Magda Linette
+    "linette, magda": {
+            "polymarket_code": "linette",
+            "provider_aliases": {
+                "kalstrop_v1": ["Linette, Magda"],
+            },
+            "pm_aliases": ["Magda Linette"],
+    },
+    # Victoria Mboko
+    "mboko, victoria": {
+            "polymarket_code": "mboko",
+            "provider_aliases": {
+                "kalstrop_v1": ["Mboko, Victoria"],
+            },
+            "pm_aliases": ["Victoria Mboko"],
+    },
+    # Karolina Muchova
+    "muchova, karolina": {
+            "polymarket_code": "muchova",
+            "provider_aliases": {
+                "kalstrop_v1": ["Muchova, Karolina"],
+            },
+            "pm_aliases": ["Karolina Muchova"],
+    },
+    # Oleksandra Oliynykova
+    "oliynykova, oleksandra": {
+            "polymarket_code": "oliynyk",
+            "provider_aliases": {
+                "kalstrop_v1": ["Oliynykova, Oleksandra"],
+            },
+            "pm_aliases": ["Oleksandra Oliynykova"],
+    },
+    # Naomi Osaka
+    "osaka, naomi": {
+            "polymarket_code": "osaka",
+            "provider_aliases": {
+                "kalstrop_v1": ["Osaka, Naomi"],
+            },
+            "pm_aliases": ["Naomi Osaka"],
+    },
+    # Camila Osorio
+    "osorio, camila": {
+            "polymarket_code": "osorio",
+            "provider_aliases": {
+                "kalstrop_v1": ["Osorio, Camila"],
+            },
+            "pm_aliases": ["Camila Osorio"],
+    },
+    # Diane Parry
+    "parry, diane": {
+            "polymarket_code": "parry",
+            "provider_aliases": {
+                "kalstrop_v1": ["Parry, Diane"],
+            },
+            "pm_aliases": ["Diane Parry"],
+    },
+    # Anastasia Potapova
+    "potapova, anastasia": {
+            "polymarket_code": "potapov",
+            "provider_aliases": {
+                "kalstrop_v1": ["Potapova, Anastasia"],
+            },
+            "pm_aliases": ["Anastasia Potapova"],
+    },
+    # Aryna Sabalenka
+    "sabalenka, aryna": {
+            "polymarket_code": "sabalen",
+            "provider_aliases": {
+                "kalstrop_v1": ["Sabalenka, Aryna"],
+            },
+            "pm_aliases": ["Aryna Sabalenka"],
+    },
+    # Maria Sakkari
+    "sakkari, maria": {
+            "polymarket_code": "sakkari",
+            "provider_aliases": {
+                "kalstrop_v1": ["Sakkari, Maria"],
+            },
+            "pm_aliases": ["Maria Sakkari"],
+    },
+    # Diana Shnaider
+    "shnaider, diana": {
+            "polymarket_code": "shnaide",
+            "provider_aliases": {
+                "kalstrop_v1": ["Shnaider, Diana"],
+            },
+            "pm_aliases": ["Diana Shnaider"],
+    },
+    # Solana Sierra
+    "sierra, solana": {
+            "polymarket_code": "sierra",
+            "provider_aliases": {
+                "kalstrop_v1": ["Sierra, Solana"],
+            },
+            "pm_aliases": ["Solana Sierra"],
+    },
+    # Yulia Starodubtseva
+    "starodubtseva, yulia": {
+            "polymarket_code": "starodu",
+            "provider_aliases": {
+                "kalstrop_v1": ["Starodubtseva, Yulia"],
+            },
+            "pm_aliases": ["Yulia Starodubtseva"],
+    },
+    # Peyton Stearns
+    "stearns, peyton": {
+            "polymarket_code": "stearns",
+            "provider_aliases": {
+                "kalstrop_v1": ["Stearns, Peyton"],
+            },
+            "pm_aliases": ["Peyton Stearns"],
+    },
+    # Iga Swiatek
+    "swiatek, iga": {
+            "polymarket_code": "swiatek",
+            "provider_aliases": {
+                "kalstrop_v1": ["Swiatek, Iga"],
+            },
+            "pm_aliases": ["Iga Swiatek"],
+    },
+    # Elina Svitolina
+    "svitolina, elina": {
+            "polymarket_code": "svitoli",
+            "provider_aliases": {
+                "kalstrop_v1": ["Svitolina, Elina"],
+            },
+            "pm_aliases": ["Elina Svitolina"],
+    },
+    # Jil Teichmann
+    "teichmann, jil": {
+            "polymarket_code": "teichma",
+            "provider_aliases": {
+                "kalstrop_v1": ["Teichmann, Jil"],
+            },
+            "pm_aliases": ["Jil Teichmann"],
+    },
+    # Panna Udvardy
+    "udvardy, panna": {
+            "polymarket_code": "udvardy",
+            "provider_aliases": {
+                "kalstrop_v1": ["Udvardy, Panna"],
+            },
+            "pm_aliases": ["Panna Udvardy"],
+    },
+    # Xiyu Wang
+    "wang, xiyu": {
+            "polymarket_code": "wan",
+            "provider_aliases": {
+                "kalstrop_v1": ["Wang, Xiyu"],
+            },
+            "pm_aliases": ["Xiyu Wang"],
+    },
+}
