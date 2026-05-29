@@ -10,6 +10,7 @@ LIVE_BETTING_LEAGUES = {
     "ucl",
     "laliga",
     "rolgar",
+    "garros",
 }
 LIVE_BETTING_MARKET_TYPES = {
     "mlb": ["nrfi", 
@@ -33,8 +34,10 @@ LIVE_BETTING_MARKET_TYPES = {
             "spreads",
             "soccer_halftime_result",],
     "rolgar": ["moneyline",
-            "tennis_match_totals",
-            "tennis_first_set_totals",
+            "tennis_first_set_winner",
+            "tennis_set_totals",
+            "tennis_set_handicap",],
+    "garros":["moneyline",
             "tennis_first_set_winner",
             "tennis_set_totals",
             "tennis_set_handicap",],
@@ -43,13 +46,13 @@ LIVE_BETTING_MARKET_TYPES = {
 # Centralized hotpath execution profile used by league runtime plugins.
 HOTPATH_EXECUTION_POLICY = {
     "mlb": {
-        "amount_usdc": 750.0,
-        "size_shares": 750.0,
+        "amount_usdc": 150.0,
+        "size_shares": 150.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
-        "secondary_amount_usdc": 750.0,
-        "secondary_size_shares": 750.0, 
+        "secondary_amount_usdc": 150.0,
+        "secondary_size_shares": 150.0, 
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
     },
@@ -104,6 +107,17 @@ HOTPATH_EXECUTION_POLICY = {
                     },
     },
     "rolgar": {
+        "amount_usdc": 50.0,
+        "size_shares": 50.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+        "secondary_amount_usdc": 50.0,
+        "secondary_size_shares": 50.0, 
+        "secondary_time_in_force": "FAK",
+        "secondary_limit_price": 0.99,
+    },
+    "garros": {
         "amount_usdc": 25.0,
         "size_shares": 25.0,
         "time_in_force": "GTC",
@@ -112,7 +126,7 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_amount_usdc": 25.0,
         "secondary_size_shares": 25.0, 
         "secondary_time_in_force": "FAK",
-        "secondary_limit_price": 0.95,
+        "secondary_limit_price": 0.99,
     },
 }
 
@@ -155,6 +169,15 @@ HOTPATH_RUNTIME_POLICY = {
         "submitter_core_idx": 8,
     },
     "rolgar": {
+        "plan_horizon_hours": 6,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 20000,
+        "refresh_interval_seconds": 1800,
+	    "ws_core_idx": 3,
+	    "submitter_code_idx": 4,
+    },
+    "garros": {
         "plan_horizon_hours": 6,
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
