@@ -307,6 +307,10 @@ async def discover_new_markets(
             events_fetched=events_fetched, markets_discovered=len(new_cids), targets_inserted=0,
         )
 
+    # include_inactive=True: skip the catalog-staleness check. The games
+    # are already in the running plan — we're just looking for new markets.
+    # Without this, incremental refresh fails with no_in_scope_games if
+    # provider sync hasn't run within provider_catalog_max_age_seconds.
     new_plan = compile_hotpath_plan(
         db=db,
         provider=provider,
@@ -318,6 +322,7 @@ async def discover_new_markets(
         now_ts_utc=now_ts_utc if now_ts_utc is not None else int(time.time()),
         plan_horizon_hours=plan_horizon_hours,
         exclude_strategy_keys=exclude_strategy_keys,
+        include_inactive=True,
     )
     new_targets = _extract_new_targets(current_plan, new_plan)
     if not new_targets:
