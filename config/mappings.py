@@ -25,7 +25,7 @@ LEAGUES = {
     "ucl":{
         "polymarket_league_code": "ucl", 
         "sport_family": "soccer", 
-        "provider": ["kalstrop_v2","kalstrop_v1"],
+        "provider": ["kalstrop_v2","kalstrop_v1", "boltodds"],
     },
     ## Premier League
     "epl": {
@@ -43,7 +43,7 @@ LEAGUES = {
     "laliga": {
         "polymarket_league_code": "lal",
         "sport_family": "soccer",
-        "provider": ["kalstrop_v2", "kalstrop_v1"],
+        "provider": ["boltodds", "kalstrop_v2", "kalstrop_v1"],
     },
     "rolgar": {
         "polymarket_league_code": "atp",

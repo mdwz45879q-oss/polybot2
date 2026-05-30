@@ -199,7 +199,7 @@ pub(crate) async fn warm_presign_startup_into(
         // concurrency. Cloudflare returns 429 (code 1015) above ~20
         // concurrent requests from the same IP. Use a semaphore of 10
         // with retry for 429s.
-        const CACHE_CONCURRENT: usize = 10;
+        const CACHE_CONCURRENT: usize = 8;
         const MAX_RETRIES: usize = 3;
         const RETRY_DELAY_MS: u64 = 1000;
 

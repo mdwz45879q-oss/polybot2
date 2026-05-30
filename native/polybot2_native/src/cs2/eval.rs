@@ -172,17 +172,25 @@ impl NativeCs2Engine {
         }
         let targets = &self.game_targets[gi];
         let total_now = state.total_maps;
+        let maps_home = state.maps_home.unwrap_or(0);
+        let maps_away = state.maps_away.unwrap_or(0);
+        let mtw = self.maps_to_win[gi];
 
-        // Progressive over: fire when total crosses a line
+        // Over: fire when outcome is guaranteed (not when map completes).
+        // Over N.5 (half_int = N) is guaranteed when both teams have enough
+        // maps that the total cannot stay at N or below.
+        // Condition: min(maps_home, maps_away) >= N + 1 - maps_to_win.
+        // Example BO3: Over 2.5 guaranteed when min(h,a) >= 1 (i.e., 1-1).
+        // Example BO5: Over 3.5 guaranteed when min(h,a) >= 1 (i.e., 1-1).
+        // Example BO5: Over 4.5 guaranteed when min(h,a) >= 2 (i.e., 2-2).
+        // prev_total_maps = None on first tick → skip (cold-start safe).
         if let Some(prev_total) = state.prev_total_maps {
             if total_now > prev_total {
-                let prev = prev_total as u16;
-                let now = total_now as u16;
+                let min_maps = maps_home.min(maps_away);
                 for ol in &targets.over_lines {
-                    if ol.half_int >= now {
-                        break; // sorted — no more can match
-                    }
-                    if ol.half_int >= prev {
+                    let n = ol.half_int as i64;
+                    let min_needed = (n + 1 - mtw).max(0);
+                    if min_maps >= min_needed {
                         out.push(Intent {
                             target_idx: ol.target_idx,
                         });
@@ -192,9 +200,6 @@ impl NativeCs2Engine {
         }
 
         // Under: fire at match completion
-        let maps_home = state.maps_home.unwrap_or(0);
-        let maps_away = state.maps_away.unwrap_or(0);
-        let mtw = self.maps_to_win[gi];
         let is_match_end =
             state.match_completed || maps_home >= mtw || maps_away >= mtw;
 
@@ -610,6 +615,31 @@ mod tests {
         let s = state_with_prev(2, 1, 1, 1, 0, 0, 0, false);
         let intents = eval_totals(&mut engine, &s);
         assert_eq!(intents, vec![t_over]);
+    }
+
+    #[test]
+    fn totals_over_fires_at_guaranteed_certainty() {
+        let t_over = TargetIdx(20);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.over_lines.push(OverLine { half_int: 2, target_idx: t_over });
+        });
+        // BO3, maps go 1-0 → 1-1. Over 2.5 is guaranteed at 1-1
+        // (min(1,1) >= 2+1-2 = 1). Should fire NOW, not when map 3 completes.
+        let s = state_with_prev(1, 1, 0, 1, 0, 0, 3, false);
+        let intents = eval_totals(&mut engine, &s);
+        assert_eq!(intents, vec![t_over], "over 2.5 should fire at 1-1 (guaranteed)");
+    }
+
+    #[test]
+    fn totals_over_not_guaranteed_at_1_0() {
+        let mut engine = make_engine(2, |tgt| {
+            tgt.over_lines.push(OverLine { half_int: 2, target_idx: TargetIdx(20) });
+        });
+        // BO3, maps go 0-0 → 1-0. Over 2.5 NOT guaranteed (could end 2-0).
+        // min(1,0) = 0 < 1. Should not fire.
+        let s = state_with_prev(1, 0, 0, 0, 0, 0, 2, false);
+        let intents = eval_totals(&mut engine, &s);
+        assert!(intents.is_empty(), "over 2.5 should NOT fire at 1-0");
     }
 
     #[test]
