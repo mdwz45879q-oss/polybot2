@@ -19,6 +19,22 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["9z"],
     },
+    # AaB Esport
+    "aab esport": {
+        "polymarket_code": "aab",
+        "provider_aliases": {
+            "kalstrop_v1": ["AaB Esport"],
+        },
+        "pm_aliases": ["AaB Esport", "AAB"],
+    },
+    # ALGO Esports
+    "algo esports": {
+        "polymarket_code": "algo1",
+        "provider_aliases": {
+            "kalstrop_v1": ["ALGO Esports"],
+        },
+        "pm_aliases": ["ALGO Esports", "ALGO"],
+    },
     # ALKA
     "alka": {
         "polymarket_code": "alkaa",
@@ -81,7 +97,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["cirahvi"],
         },
-        "pm_aliases": ["cirahvi"],
+        "pm_aliases": ["cirahvi", "CRH"],
     },
     # CYBERSHOKE
     "cybershoke": {
@@ -107,6 +123,14 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["ENCE"],
     },
+    # Endless Journey
+    "endless journey": {
+        "polymarket_code": "ej",
+        "provider_aliases": {
+            "kalstrop_v1": ["Endless Journey"],
+        },
+        "pm_aliases": ["Endless Journey", "EJ"],
+    },
     # Eternal Fire
     "eternal fire": {
         "polymarket_code": "ef1",
@@ -115,6 +139,14 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Eternal Fire"],
     },
+    # eternal premium
+    "eternal premium": {
+        "polymarket_code": "ep",
+        "provider_aliases": {
+            "kalstrop_v1": ["eternal premium"],
+        },
+        "pm_aliases": ["eternal premium", "EP"],
+    },
     # FaZe
     "faze": {
         "polymarket_code": "faze",
@@ -122,6 +154,14 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["FaZe"],
         },
         "pm_aliases": ["FaZe"],
+    },
+    # Fire Flux Esports
+    "fire flux esports": {
+        "polymarket_code": "ff",
+        "provider_aliases": {
+            "kalstrop_v1": ["Fire Flux Esports"],
+        },
+        "pm_aliases": ["Fire Flux Esports", "FF"],
     },
     # FURIA Esports Female / FURIA fe
     "furia fe": {
@@ -178,6 +218,14 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Just players"],
         },
         "pm_aliases": ["Just Players"],
+    },
+    # Johnny Speeds
+    "johnny speeds": {
+        "polymarket_code": "js1",
+        "provider_aliases": {
+            "kalstrop_v1": ["Johnny Speeds"],
+        },
+        "pm_aliases": ["Johnny Speeds", "JS"],
     },
     # KOLESIE
     "kolesie": {

@@ -105,6 +105,8 @@ def _parse_outcome_semantic(
     canonical_away_team: str,
     home_polymarket_code: str = "",
     away_polymarket_code: str = "",
+    home_pm_aliases: tuple[str, ...] = (),
+    away_pm_aliases: tuple[str, ...] = (),
 ) -> str:
     """Dispatch on sports_market_type. Each branch uses only its reliable signal.
 
@@ -118,6 +120,8 @@ def _parse_outcome_semantic(
     away_norm = _norm(canonical_away_team)
     home_code = _norm(home_polymarket_code)
     away_code = _norm(away_polymarket_code)
+    home_aliases = tuple(_norm(a) for a in home_pm_aliases)
+    away_aliases = tuple(_norm(a) for a in away_pm_aliases)
     idx = int(outcome_index)
 
     # ── Totals / corners: labels "Over" / "Under" (exact match) ──────
@@ -228,6 +232,12 @@ def _parse_outcome_semantic(
             return "home"
         if away_code and away_code in label:
             return "away"
+        for alias in home_aliases:
+            if alias and alias in label:
+                return "home"
+        for alias in away_aliases:
+            if alias and alias in label:
+                return "away"
         return "unknown"
 
     # ── CS2 map handicap: question-first side determination ──────────
@@ -255,6 +265,16 @@ def _parse_outcome_semantic(
             favored_side = "home"
         elif away_code and away_code in favored_label:
             favored_side = "away"
+        else:
+            for alias in home_aliases:
+                if alias and (alias in favored_label or favored_label in alias):
+                    favored_side = "home"
+                    break
+            if not favored_side:
+                for alias in away_aliases:
+                    if alias and (alias in favored_label or favored_label in alias):
+                        favored_side = "away"
+                        break
 
         if not favored_side:
             return "unknown"
@@ -269,6 +289,16 @@ def _parse_outcome_semantic(
             label_side = "home"
         elif away_code and away_code in label:
             label_side = "away"
+        else:
+            for alias in home_aliases:
+                if alias and alias in label:
+                    label_side = "home"
+                    break
+            if not label_side:
+                for alias in away_aliases:
+                    if alias and alias in label:
+                        label_side = "away"
+                        break
 
         if label_side:
             # idx=0 label should be the favored team; idx=1 should be the underdog
@@ -623,8 +653,10 @@ def compile_hotpath_plan(
     }
     by_game: dict[str, dict[str, Any]] = {}
 
-    # Build canonical-team → polymarket-code lookup for slug-based disambiguation.
+    # Build canonical-team → polymarket-code lookup for slug-based disambiguation,
+    # and canonical-team → pm_aliases lookup for question-text matching.
     _pm_code_by_canonical: dict[str, str] = {}
+    _pm_aliases_by_canonical: dict[str, tuple[str, ...]] = {}
     try:
         from polybot2.linking.mapping_loader import load_mapping as _load_mapping
         _mapping = _load_mapping()
@@ -633,6 +665,9 @@ def compile_hotpath_plan(
             _code = _norm(str(_meta.get("polymarket_code", "")))
             if _code:
                 _pm_code_by_canonical[_norm(_canonical)] = _code
+            _aliases = tuple(_norm(str(a)) for a in _meta.get("pm_aliases", []) if a)
+            if _aliases:
+                _pm_aliases_by_canonical[_norm(_canonical)] = _aliases
     except Exception:
         pass
 
@@ -675,6 +710,8 @@ def compile_hotpath_plan(
             canonical_away_team=_away_canonical,
             home_polymarket_code=_pm_code_by_canonical.get(_home_canonical, ""),
             away_polymarket_code=_pm_code_by_canonical.get(_away_canonical, ""),
+            home_pm_aliases=_pm_aliases_by_canonical.get(_home_canonical, ()),
+            away_pm_aliases=_pm_aliases_by_canonical.get(_away_canonical, ()),
         )
 
         if is_totals_market_type(sports_market_type):
