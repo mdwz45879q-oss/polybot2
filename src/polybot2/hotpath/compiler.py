@@ -158,6 +158,14 @@ def _parse_outcome_semantic(
             return "home"
         if away_code and away_code in label:
             return "away"
+        # PM aliases fallback: catches Last,First vs First Last mismatch
+        # (e.g., canonical "auger-aliassime, felix" vs label "felix auger-aliassime")
+        for alias in home_aliases:
+            if alias and (alias in label or label in alias):
+                return "home"
+        for alias in away_aliases:
+            if alias and (alias in label or label in alias):
+                return "away"
         # Soccer: slug determines side, index determines yes/no
         side = _three_way_side_from_slug(slug_norm, home_code, away_code)
         if side != "unknown":

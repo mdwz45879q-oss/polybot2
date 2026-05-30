@@ -136,6 +136,7 @@ TEAM_MAP_UCL = {
         "polymarket_code": "ars",
         "provider_aliases": {
             "kalstrop_v2": ["arsenal",],
+            "kalstrop_v1": ["Arsenal FC"],
         },
     },
     "club atlético de madrid": {
@@ -148,6 +149,7 @@ TEAM_MAP_UCL = {
         "polymarket_code": "psg",
         "provider_aliases": {
             "kalstrop_v2": ["psg",],
+            "kalstrop_v1": ["Paris Saint-Germain",]
         },
     },
      "fc bayern münchen": {
