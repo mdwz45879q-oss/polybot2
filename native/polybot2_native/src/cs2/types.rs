@@ -118,6 +118,7 @@ pub(crate) struct NativeCs2Engine {
     // Resolution flags (per-game)
     pub(crate) final_resolved_games: Vec<bool>,
     pub(crate) totals_under_emitted: Vec<bool>,
+    pub(crate) map_handicap_early_emitted: Vec<bool>,
     /// Per-game, per-map: whether the map winner has been resolved.
     /// `map_winner_resolved[gi][map_num - 1]` = true when map N winner fired.
     pub(crate) map_winner_resolved: Vec<Vec<bool>>,

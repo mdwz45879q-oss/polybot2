@@ -11,6 +11,14 @@
 # =============================================================================
 
 TEAM_MAP_CS2 = {
+    # 100 Thieves
+    "100 thieves": {
+        "polymarket_code": "100t",
+        "provider_aliases": {
+            "kalstrop_v1": ["100 Thieves"],
+        },
+        "pm_aliases": ["100T"],
+    },
     # 9z Team
     "9z team": {
         "polymarket_code": "9z",
@@ -170,6 +178,22 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["FURIA Esports Female"],
         },
         "pm_aliases": ["FURIA fe"],
+    },
+    # FOKUS
+    "fokus": {
+        "polymarket_code": "fokus",
+        "provider_aliases": {
+            "kalstrop_v1": ["FOKUS"],
+        },
+        "pm_aliases": ["FURIA fe"],
+    },
+    # FOKUS
+    "fnatic": {
+        "polymarket_code": "fnc",
+        "provider_aliases": {
+            "kalstrop_v1": ["Fnatic"],
+        },
+        "pm_aliases": ["fnatic"],
     },
     # Game Hunters
     "game hunters": {

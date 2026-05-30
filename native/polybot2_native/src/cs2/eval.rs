@@ -27,7 +27,7 @@ fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 3
 /// - `d >= 2`: kills 13-12 and 16-15 (1-0 in OT set, undecided)
 /// - `d <= 4`: OT margin caps at 4 (set is 6 rounds, max lead is 4-0)
 /// - `small <= 11` / `big >= 16`: separates regulation from OT branches
-fn map_winner(rounds_home: i64, rounds_away: i64) -> Option<&'static str> {
+pub(crate) fn map_winner(rounds_home: i64, rounds_away: i64) -> Option<&'static str> {
     let big = rounds_home.max(rounds_away);
     let small = rounds_home.min(rounds_away);
     let d = big - small;
@@ -255,13 +255,14 @@ impl NativeCs2Engine {
                 } else {
                     push_if_some(slot.not_covers_idx, out);
                 }
-            } else {
+            } else if !self.map_handicap_early_emitted[gi] {
                 // Mid-match: fire not_covers when it's already guaranteed.
                 // Best case for favored: win all remaining maps →
                 // margin = mtw - opponent_maps.
                 let max_margin = mtw - opponent_maps;
                 if (max_margin as f64) + slot.line <= 0.0 {
                     push_if_some(slot.not_covers_idx, out);
+                    self.map_handicap_early_emitted[gi] = true;
                 }
             }
         }
@@ -299,6 +300,7 @@ mod tests {
         engine.game_states.push(Cs2GameState::default());
         engine.final_resolved_games.push(false);
         engine.totals_under_emitted.push(false);
+        engine.map_handicap_early_emitted.push(false);
         let max_maps = (maps_to_win * 2 - 1).max(1) as usize;
         engine.map_winner_resolved.push(vec![false; max_maps]);
 
@@ -687,6 +689,9 @@ mod tests {
         let intents = eval_handicap(&mut engine, &s);
         assert!(intents.contains(&t_not), "not_covers should fire early at 0-1");
         assert!(!intents.contains(&t_covers), "covers must not fire mid-match");
+        // Second call with same state: tombstone prevents double-fire
+        let intents2 = eval_handicap(&mut engine, &s);
+        assert!(intents2.is_empty(), "tombstone should prevent re-fire");
     }
 
     #[test]
@@ -800,6 +805,44 @@ mod tests {
         let r2 = engine.process_tick_live(GameIdx(0), 0, 0, 16, 14, 1, false, "LIVE", 0);
         let intents: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert_eq!(intents, vec![t_home], "16-14 OT1 should fire map 1 home");
+    }
+
+    // ── Match-end fires on round-13 (effective maps) ─────────────────
+
+    #[test]
+    fn match_end_fires_on_round13_signal() {
+        let t_ml_home = TargetIdx(10);
+        let t_map2_home = TargetIdx(2);
+        let t_under = TargetIdx(20);
+        let t_covers = TargetIdx(30);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.moneyline_home = Some(t_ml_home);
+            tgt.moneyline_away = Some(TargetIdx(11));
+            tgt.map_moneyline.push((Some(TargetIdx(0)), Some(TargetIdx(1))));
+            tgt.map_moneyline.push((Some(t_map2_home), Some(TargetIdx(3))));
+            tgt.under_lines.push(OverLine { half_int: 2, target_idx: t_under });
+            tgt.map_handicaps.push(SpreadSlot {
+                side: SpreadSide::Home,
+                line: -1.5,
+                covers_idx: Some(t_covers),
+                not_covers_idx: Some(TargetIdx(31)),
+            });
+        });
+        // Tick 0: pre-match 0-0
+        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", 0);
+        // Tick 1: home wins map 1 (maps-won fallback: 0-0 → 1-0)
+        engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", 0);
+        // Tick 2: map 2 round-13 → home wins map 2 via Signal 1.
+        // maps counter is STILL 1-0 (V1 hasn't caught up), but effective is 2-0.
+        let r = engine.process_tick_live(GameIdx(0), 1, 0, 13, 7, 2, false, "LIVE", 0);
+        let intents: Vec<TargetIdx> = r.unwrap().intents.iter().map(|i| i.target_idx).collect();
+        // All four should fire on the SAME tick:
+        assert!(intents.contains(&t_map2_home), "child_moneyline MAP2 should fire");
+        assert!(intents.contains(&t_ml_home), "moneyline should fire (effective maps=2)");
+        assert!(intents.contains(&t_under), "totals under should fire (effective total=2)");
+        assert!(intents.contains(&t_covers), "map handicap covers should fire (effective margin=2)");
+        // Match should be resolved
+        assert!(engine.final_resolved_games[0], "match should be final-resolved");
     }
 
     // ── BO5 map numbering ───────────────────────────────────────────

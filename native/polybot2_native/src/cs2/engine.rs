@@ -41,6 +41,7 @@ impl NativeCs2Engine {
             maps_to_win: Vec::new(),
             final_resolved_games: Vec::new(),
             totals_under_emitted: Vec::new(),
+            map_handicap_early_emitted: Vec::new(),
             map_winner_resolved: Vec::new(),
         }
     }
@@ -331,6 +332,7 @@ impl NativeCs2Engine {
         self.game_states.resize(n, Cs2GameState::default());
         self.final_resolved_games.resize(n, false);
         self.totals_under_emitted.resize(n, false);
+        self.map_handicap_early_emitted.resize(n, false);
         // map_winner_resolved: per-game vec of bools, sized to max possible maps
         self.map_winner_resolved.resize(n, Vec::new());
         for gi in 0..n {
@@ -361,6 +363,7 @@ impl NativeCs2Engine {
         self.game_states = vec![Cs2GameState::default(); n];
         self.final_resolved_games = vec![false; n];
         self.totals_under_emitted = vec![false; n];
+        self.map_handicap_early_emitted = vec![false; n];
         for gi in 0..n {
             let max_maps = (self.maps_to_win[gi] * 2 - 1).max(1) as usize;
             self.map_winner_resolved[gi] = vec![false; max_maps];
@@ -457,15 +460,51 @@ impl NativeCs2Engine {
 
         let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_child_moneyline_into(gidx, &state, &mut intents);
-        self.evaluate_moneyline_into(gidx, &state, &mut intents);
-        self.evaluate_totals_into(gidx, &state, &mut intents);
-        self.evaluate_map_handicap_into(gidx, &state, &mut intents);
 
-        // Mark match resolved AFTER all evaluators have run (not inside any
-        // single evaluator). Subsequent ticks skip at the process_tick_live
-        // gate (line 415). Matches tennis/engine.rs pattern.
+        // If Signal 1 detected a map winner on this tick via round-13,
+        // compute effective maps for match-end evaluators. This fires
+        // moneyline/totals/handicap 24+ seconds earlier than waiting
+        // for V1's maps counter to increment.
+        let effective_state = if state.current_map > 0 {
+            let map_idx = (state.current_map - 1) as usize;
+            let signal1_fired = map_idx < self.map_winner_resolved[gi].len()
+                && self.map_winner_resolved[gi][map_idx];
+            let maps_already_counted = maps_home + maps_away;
+            let map_number = (map_idx + 1) as i64;
+            if signal1_fired && map_number > maps_already_counted {
+                if let Some(winner) = crate::cs2::eval::map_winner(state.rounds_home, state.rounds_away) {
+                    let (eff_home, eff_away) = match winner {
+                        "home" => (maps_home + 1, maps_away),
+                        _ => (maps_home, maps_away + 1),
+                    };
+                    Some(Cs2GameState {
+                        maps_home: Some(eff_home),
+                        maps_away: Some(eff_away),
+                        total_maps: eff_home + eff_away,
+                        ..state
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let eval_state = effective_state.as_ref().unwrap_or(&state);
+        self.evaluate_moneyline_into(gidx, eval_state, &mut intents);
+        self.evaluate_totals_into(gidx, eval_state, &mut intents);
+        self.evaluate_map_handicap_into(gidx, eval_state, &mut intents);
+
+        // Mark match resolved AFTER all evaluators have run.
         let mtw = self.maps_to_win[gi];
-        if match_completed || maps_home >= mtw || maps_away >= mtw {
+        let (eff_home, eff_away) = match effective_state {
+            Some(ref es) => (es.maps_home.unwrap_or(0), es.maps_away.unwrap_or(0)),
+            None => (maps_home, maps_away),
+        };
+        if match_completed || eff_home >= mtw || eff_away >= mtw {
             self.final_resolved_games[gi] = true;
         }
 
