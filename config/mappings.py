@@ -25,7 +25,7 @@ LEAGUES = {
     "ucl":{
         "polymarket_league_code": "ucl", 
         "sport_family": "soccer", 
-        "provider": "kalstrop_v2",
+        "provider": ["kalstrop_v2","kalstrop_v1"],
     },
     ## Premier League
     "epl": {
@@ -89,6 +89,7 @@ PROVIDER_LEAGUE_ALIASES = {
         "dota2": "dota2",
         "lol": "lol",
         "french open women singles": "garros",
+        "uefa champions league": "ucl",
     },
     "kalstrop_v2":{
         "uefa-champions-league": "ucl",
@@ -125,6 +126,7 @@ PROVIDER_LEAGUE_COUNTRY = {
         "spain|laliga": "laliga",
         "atp|french open men singles": "rolgar",
         "wta|french open women singles": "garros",
+        "international clubs|uefa champions league": "ucl",
     },
 }
 
