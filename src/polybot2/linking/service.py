@@ -217,8 +217,8 @@ class LinkService:
             canonical_league = _norm(str(matched))
 
         # Fall back to unambiguous aliases (PROVIDER_LEAGUE_ALIASES).
+        provider_alias_map = mapping.provider_league_aliases.get(_norm(provider), {})
         if not canonical_league:
-            provider_alias_map = mapping.provider_league_aliases.get(_norm(provider), {})
             canonical_league = _norm(provider_alias_map.get(league_signal) or "")
 
         # Fall back to normalize_league_key.
@@ -226,6 +226,16 @@ class LinkService:
             normalized_guess = _norm(normalize_league_key(league_signal))
             if normalized_guess in mapping.leagues:
                 canonical_league = normalized_guess
+
+        # Fall back to sport_raw as alias key. Esports titles use sport_raw
+        # as the stable identifier (e.g., "CS2") while league_raw varies by
+        # tournament (e.g., "stake ranked episode 2").
+        if not canonical_league and sport_raw and sport_raw != league_signal:
+            canonical_league = _norm(provider_alias_map.get(sport_raw) or "")
+            if not canonical_league:
+                normalized_guess = _norm(normalize_league_key(sport_raw))
+                if normalized_guess in mapping.leagues:
+                    canonical_league = normalized_guess
 
         if not canonical_league:
             return (None, "league_unmapped")

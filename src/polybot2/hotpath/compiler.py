@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -213,6 +214,71 @@ def _parse_outcome_semantic(
         else:
             return "unknown"
         return f"{side}_covers" if idx == 0 else f"{side}_not_covers"
+
+    # ── CS2 child moneyline (map winner): label-based team matching ───
+    # Guard lowered to len >= 2 (from >= 3) to support short team names
+    # like "OG" (V1: "Team OG", PM label: "OG"). CS2 team names are
+    # specific enough that 2-char labels don't false-match.
+    if sports_type == "child_moneyline":
+        if home_norm and (home_norm in label or (len(label) >= 2 and label in home_norm)):
+            return "home"
+        if away_norm and (away_norm in label or (len(label) >= 2 and label in away_norm)):
+            return "away"
+        if home_code and home_code in label:
+            return "home"
+        if away_code and away_code in label:
+            return "away"
+        return "unknown"
+
+    # ── CS2 map handicap: question-first side determination ──────────
+    # The favored team's side is derived ONCE from the question text,
+    # then used for BOTH outcomes. This ensures both outcomes share the
+    # same SpreadSide, creating a single SpreadSlot in Rust.
+    # (Previous version derived side independently per outcome label,
+    # producing different SpreadSides → two slots → double-fire.)
+    if sports_type == "map_handicap":
+        import re as _re
+
+        # Primary: extract favored team from question "Map Handicap: TEAM (-1.5) vs ..."
+        favored_match = _re.search(r':\s*(.+?)\s*\(-', _norm(question))
+        if not favored_match:
+            return "unknown"
+        favored_label = favored_match.group(1).strip()
+
+        # Match favored team to canonical home/away
+        favored_side = ""
+        if home_norm and (home_norm in favored_label or favored_label in home_norm):
+            favored_side = "home"
+        elif away_norm and (away_norm in favored_label or favored_label in away_norm):
+            favored_side = "away"
+        elif home_code and home_code in favored_label:
+            favored_side = "home"
+        elif away_code and away_code in favored_label:
+            favored_side = "away"
+
+        if not favored_side:
+            return "unknown"
+
+        # Cross-validate: match this outcome's label to home/away
+        label_side = ""
+        if home_norm and (home_norm in label or (len(label) >= 2 and label in home_norm)):
+            label_side = "home"
+        elif away_norm and (away_norm in label or (len(label) >= 2 and label in away_norm)):
+            label_side = "away"
+        elif home_code and home_code in label:
+            label_side = "home"
+        elif away_code and away_code in label:
+            label_side = "away"
+
+        if label_side:
+            # idx=0 label should be the favored team; idx=1 should be the underdog
+            if idx == 0 and label_side != favored_side:
+                return "unknown"
+            if idx == 1 and label_side == favored_side:
+                return "unknown"
+
+        # Both outcomes use favored_side: idx=0 → covers, idx=1 → not_covers
+        return f"{favored_side}_covers" if idx == 0 else f"{favored_side}_not_covers"
 
     return "unknown"
 
@@ -441,7 +507,7 @@ def compile_hotpath_plan(
     exclude_strategy_keys: set[str] | None = None,
     include_inactive: bool = False,
 ) -> CompiledPlan:
-    if sport not in {"baseball", "soccer", "tennis"}:
+    if sport not in {"baseball", "soccer", "tennis", "cs2"}:
         raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis, got: {sport!r}")
     policy = live_policy or load_live_trading_policy()
     scope = evaluate_hotpath_scope(
@@ -676,6 +742,19 @@ def compile_hotpath_plan(
         } and line_val is not None:
             line_key = _line_key(line_val)
             strategy_key = f"{gid}:TENNIS_SET_HANDICAP:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "child_moneyline" and outcome_semantic in {"home", "away"}:
+            # Extract map number from slug suffix: "-game1", "-game2", etc.
+            _map_match = re.search(r"-game(\d+)", str(market_slug or "").lower())
+            _map_num = int(_map_match.group(1)) if _map_match else 0
+            if _map_num > 0:
+                strategy_key = f"{gid}:CHILD_MONEYLINE:MAP{_map_num}:{outcome_semantic.upper()}"
+            else:
+                strategy_key = f"{gid}:CHILD_MONEYLINE:{condition_id}:{outcome_semantic.upper()}"
+        elif sports_market_type == "map_handicap" and outcome_semantic in {
+            "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+        } and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:MAP_HANDICAP:{outcome_semantic.upper()}:{line_key}"
         else:
             strategy_key = f"{gid}:{sports_market_type.upper()}:{condition_id}:{outcome_index}"
 
@@ -699,6 +778,10 @@ def compile_hotpath_plan(
             or (sports_market_type == "tennis_set_totals" and outcome_semantic in {"over", "under"})
             or (sports_market_type == "tennis_first_set_winner" and outcome_semantic in {"home", "away"})
             or (sports_market_type == "tennis_set_handicap" and outcome_semantic in {
+                "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+            })
+            or (sports_market_type == "child_moneyline" and outcome_semantic in {"home", "away"})
+            or (sports_market_type == "map_handicap" and outcome_semantic in {
                 "home_covers", "home_not_covers", "away_covers", "away_not_covers",
             })
         ):
@@ -819,6 +902,26 @@ def compile_hotpath_plan(
             if pid and pid != str(meta.provider_game_id)
         )
 
+        # For CS2: parse maps_to_win from market question (BON format).
+        # Overrides the league-level sets_to_win with per-game value.
+        game_sets_to_win = int(sets_to_win)
+        if sport == "cs2":
+            bo_match = None
+            for m in market_values:
+                q = str(m.get("question") or "")
+                bo_match = re.search(r"\(BO(\d+)\)", q)
+                if bo_match:
+                    break
+            if bo_match:
+                bo_n = int(bo_match.group(1))
+                game_sets_to_win = (bo_n + 1) // 2  # BO1→1, BO3→2, BO5→3
+            else:
+                log.warning(
+                    "CS2 game %s: could not parse (BON) from market questions — skipping",
+                    gid,
+                )
+                continue  # fail-closed: skip games with unknown BO format
+
         compiled_games.append(
             CompiledGamePlan(
                 provider_game_id=str(meta.provider_game_id),
@@ -828,7 +931,7 @@ def compile_hotpath_plan(
                 kickoff_ts_utc=(None if meta.kickoff_ts_utc is None else int(meta.kickoff_ts_utc)),
                 markets=tuple(compiled_markets),
                 alternate_provider_game_ids=_alternates,
-                sets_to_win=int(sets_to_win),
+                sets_to_win=game_sets_to_win,
             )
         )
 
@@ -911,7 +1014,7 @@ def compile_multi_league_plan(
     Skips leagues that have no in-scope games (HotPathPlanError with
     code 'scope_blocked'). Raises only if ALL leagues fail.
     """
-    if sport not in {"baseball", "soccer", "tennis"}:
+    if sport not in {"baseball", "soccer", "tennis", "cs2"}:
         raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis, got: {sport!r}")
     all_games: list[CompiledGamePlan] = []
     seen_game_ids: set[str] = set()

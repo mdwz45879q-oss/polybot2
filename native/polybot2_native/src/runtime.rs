@@ -29,6 +29,7 @@ fn detect_sport_from_plan(plan_json: &str) -> Result<&'static str, String> {
         Some("baseball") => Ok("baseball"),
         Some("soccer") => Ok("soccer"),
         Some("tennis") => Ok("tennis"),
+        Some("cs2") => Ok("cs2"),
         Some(other) => Err(format!("unknown_sport: {}", other)),
         None => Err("missing_sport_field_in_plan".to_string()),
     }
@@ -99,6 +100,13 @@ impl NativeHotPathRuntime {
                     .map_err(|err| PyValueError::new_err(format!("baseball_load_plan:{}", err)))?;
                 e.reset_runtime_state();
                 SportEngine::Baseball(e)
+            }
+            "cs2" => {
+                let mut e = crate::cs2::types::NativeCs2Engine::new();
+                e.load_plan_from_json(compiled_plan_json)
+                    .map_err(|err| PyValueError::new_err(format!("cs2_load_plan:{}", err)))?;
+                e.reset_runtime_state();
+                SportEngine::Cs2(e)
             }
             _ => unreachable!("detect_sport_from_plan already rejects unknown sports"),
         };
@@ -182,6 +190,12 @@ impl NativeHotPathRuntime {
                     v
                 }
                 Some(SportEngine::Tennis(e)) => {
+                    let mut v: Vec<&str> = e.game_leagues.iter().map(|s| s.as_ref()).collect();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                }
+                Some(SportEngine::Cs2(e)) => {
                     let mut v: Vec<&str> = e.game_leagues.iter().map(|s| s.as_ref()).collect();
                     v.sort_unstable();
                     v.dedup();
@@ -295,6 +309,7 @@ impl NativeHotPathRuntime {
                 SportEngine::Baseball(e) => SportEngine::Baseball(e.clone()),
                 SportEngine::Soccer(e) => SportEngine::Soccer(e.clone()),
                 SportEngine::Tennis(e) => SportEngine::Tennis(e.clone()),
+                SportEngine::Cs2(e) => SportEngine::Cs2(e.clone()),
             };
             let worker_dispatch_handle = dispatch_handle;
             let subs_clone = Arc::clone(&subs);

@@ -307,6 +307,13 @@ async def discover_new_markets(
             events_fetched=events_fetched, markets_discovered=len(new_cids), targets_inserted=0,
         )
 
+    # Resolve sets_to_win from the LEAGUES config (source of truth), not
+    # from the first game in the plan — a multi-league plan can mix BO3
+    # and BO5 leagues (e.g., women's BO3 + men's BO5 French Open).
+    from polybot2.linking.mapping_loader import load_mapping as _load_mapping
+    _mapping = _load_mapping()
+    _sets_to_win = int(_mapping.leagues.get(league, {}).get("sets_to_win", 2))
+
     # include_inactive=True: skip the catalog-staleness check. The games
     # are already in the running plan — we're just looking for new markets.
     # Without this, incremental refresh fails with no_in_scope_games if
@@ -317,7 +324,7 @@ async def discover_new_markets(
         league=league,
         run_id=run_id,
         sport=getattr(current_plan, "sport", "") or "",
-        sets_to_win=int(getattr(current_plan.games[0], "sets_to_win", 2)) if current_plan.games else 2,
+        sets_to_win=_sets_to_win,
         live_policy=policy,
         now_ts_utc=now_ts_utc if now_ts_utc is not None else int(time.time()),
         plan_horizon_hours=plan_horizon_hours,

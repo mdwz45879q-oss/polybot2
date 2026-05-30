@@ -11,6 +11,7 @@ LIVE_BETTING_LEAGUES = {
     "laliga",
     "rolgar",
     "garros",
+    "cs2",
 }
 LIVE_BETTING_MARKET_TYPES = {
     "mlb": ["nrfi", 
@@ -41,6 +42,10 @@ LIVE_BETTING_MARKET_TYPES = {
             "tennis_first_set_winner",
             "tennis_set_totals",
             "tennis_set_handicap",],
+    "cs2": ["moneyline",
+            "child_moneyline",
+            "totals",
+            "map_handicap",],
 }
 
 # Centralized hotpath execution profile used by league runtime plugins.
@@ -128,6 +133,13 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
     },
+    "cs2":{
+        "amount_usdc": 5.0,
+        "size_shares": 5.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+    }
 }
 
 # Runtime timing controls for live snapshot refresh and subscription windows.
@@ -169,7 +181,7 @@ HOTPATH_RUNTIME_POLICY = {
         "submitter_core_idx": 8,
     },
     "rolgar": {
-        "plan_horizon_hours": 6,
+        "plan_horizon_hours": 12,
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 20000,
@@ -178,12 +190,21 @@ HOTPATH_RUNTIME_POLICY = {
 	    "submitter_code_idx": 4,
     },
     "garros": {
-        "plan_horizon_hours": 6,
+        "plan_horizon_hours": 12,
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 1800,
 	    "ws_core_idx": 3,
 	    "submitter_code_idx": 4,
+    },
+    "cs2": {
+        "plan_horizon_hours": 12,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 43200,
+        "refresh_interval_seconds": 1800,
+	    "ws_core_idx": 1,
+	    "submitter_code_idx": 2,
     },
 }

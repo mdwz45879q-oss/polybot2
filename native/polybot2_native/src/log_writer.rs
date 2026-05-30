@@ -38,6 +38,16 @@ pub(crate) enum TickPayload<'a> {
         half: &'a str,
         gs: &'a str,
     },
+    Cs2 {
+        lg: &'a str,
+        maps_home: i64,
+        maps_away: i64,
+        rounds_home: i64,
+        rounds_away: i64,
+        current_map: i64,
+        gs: &'a str,
+        src: &'static str,
+    },
 }
 
 pub(crate) struct LogWriter {
@@ -112,6 +122,7 @@ impl LogWriter {
             TickPayload::Baseball { lg, .. } => write_json_escape(&mut self.buf, lg),
             TickPayload::Soccer { lg, .. } => write_json_escape(&mut self.buf, lg),
             TickPayload::Tennis { lg, .. } => write_json_escape(&mut self.buf, lg),
+            TickPayload::Cs2 { lg, .. } => write_json_escape(&mut self.buf, lg),
         }
         self.buf.push_str(r#"","gid":""#);
         write_json_escape(&mut self.buf, gid);
@@ -230,6 +241,33 @@ impl LogWriter {
                 self.buf.push('"');
                 self.buf.push_str(r#","gs":""#);
                 write_json_escape(&mut self.buf, gs);
+                self.buf.push('"');
+            }
+            TickPayload::Cs2 {
+                maps_home,
+                maps_away,
+                rounds_home,
+                rounds_away,
+                current_map,
+                gs,
+                src,
+                ..
+            } => {
+                self.buf.push_str(r#","maps_home":"#);
+                let _ = write!(self.buf, "{}", maps_home);
+                self.buf.push_str(r#","maps_away":"#);
+                let _ = write!(self.buf, "{}", maps_away);
+                self.buf.push_str(r#","rounds_home":"#);
+                let _ = write!(self.buf, "{}", rounds_home);
+                self.buf.push_str(r#","rounds_away":"#);
+                let _ = write!(self.buf, "{}", rounds_away);
+                self.buf.push_str(r#","current_map":"#);
+                let _ = write!(self.buf, "{}", current_map);
+                self.buf.push_str(r#","gs":""#);
+                write_json_escape(&mut self.buf, gs);
+                self.buf.push('"');
+                self.buf.push_str(r#","src":""#);
+                write_json_escape(&mut self.buf, src);
                 self.buf.push('"');
             }
         }

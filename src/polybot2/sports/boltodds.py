@@ -282,44 +282,23 @@ class BoltOddsProvider(SportsDataProviderBase):
     def load_game_catalog(self) -> list[ProviderGameRecord]:
         payload = self._http_get_json("get_games")
 
-        # For esports games, replace with labels from /api/playbyplay/esports
-        # which are the ones accepted by the WS endpoints. Keep the standard
-        # get_games labels as aliases so both can be tried at subscription time.
+        # For esports games, replace with labels from /api/playbyplay/esports.
+        # The standard /api/get_games labels do NOT work on BoltOdds WS
+        # endpoints (confirmed by BoltOdds support). Remove them entirely
+        # and use only the PBP labels.
         esports_catalog = self._fetch_esports_pbp_labels()
-        _std_esports_labels: dict[str, str] = {}  # pbp_label → std_label (for aliasing)
         if esports_catalog and isinstance(esports_catalog, dict) and isinstance(payload, dict):
-            # Build fuzzy index: normalized_teams → std_label
-            import unicodedata as _ud
-            def _norm_teams(label: str) -> str:
-                teams = label.rsplit(", ", 2)[0] if ", " in label else label
-                s = "".join(c for c in _ud.normalize("NFD", teams) if _ud.category(c) != "Mn")
-                return re.sub(r"[^a-z0-9]", "", s.lower())
-
-            std_by_norm: dict[str, str] = {}
-            for k, v in payload.items():
-                if isinstance(v, dict) and str(v.get("sport") or "").strip().lower() in self._ESPORTS_SPORTS:
-                    std_by_norm[_norm_teams(k)] = k
-
-            # Remove standard esports entries from payload
-            for std_label in std_by_norm.values():
-                payload.pop(std_label, None)
-
-            # Add PBP entries, linking back to standard labels via orig_teams
-            # and aliases so both labels are persisted and resolvable.
-            for pbp_label, meta in esports_catalog.items():
+            # Remove all standard esports entries
+            to_remove = [
+                k for k, v in payload.items()
+                if isinstance(v, dict) and str(v.get("sport") or "").strip().lower() in self._ESPORTS_SPORTS
+            ]
+            for k in to_remove:
+                del payload[k]
+            # Add PBP esports entries (the only labels that work)
+            for label, meta in esports_catalog.items():
                 if isinstance(meta, dict):
-                    meta = dict(meta)
-                    std_label = std_by_norm.get(_norm_teams(pbp_label))
-                    if std_label and std_label != pbp_label:
-                        _std_esports_labels[pbp_label] = std_label
-                        # Store standard label in orig_teams (persisted to DB)
-                        meta["orig_teams"] = std_label
-                        # Also carry as alias (used for in-memory resolution)
-                        existing = meta.get("aliases", [])
-                        if not isinstance(existing, list):
-                            existing = []
-                        meta["aliases"] = existing + [std_label]
-                    payload[pbp_label] = meta
+                    payload[label] = meta
 
         rows = self._rows_from_games_payload(payload)
         grouped: dict[str, list[ProviderGameRecord]] = {}

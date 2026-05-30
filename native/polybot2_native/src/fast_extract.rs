@@ -469,6 +469,124 @@ pub(crate) fn fast_extract_tennis_v1(json: &str) -> Option<TennisV1Extract<'_>> 
     })
 }
 
+// ---------------------------------------------------------------------------
+// CS2: extract maps, rounds, current phase from V1 frames
+// ---------------------------------------------------------------------------
+
+pub(crate) struct Cs2V1Extract<'a> {
+    pub fixture_id: &'a str,
+    pub maps_home: &'a str,         // top-level homeScore (maps won)
+    pub maps_away: &'a str,         // top-level awayScore
+    pub rounds_home: &'a str,       // currentPhase.homeScore (rounds in current map, empty if null)
+    pub rounds_away: &'a str,       // currentPhase.awayScore
+    pub free_text: &'a str,         // matchStatusDisplay[0].freeText ("1st map", "Closed")
+    pub current_phase: Option<i64>, // currentPhase.phase (map number, None if null)
+}
+
+/// Dedicated CS2 V1 frame extractor. Same frame structure as tennis
+/// (`sportsMatchStateUpdatedV2`) but without phases array scanning.
+pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
+    let bytes = json.as_bytes();
+
+    // Quick reject: check for "type":"next".
+    let is_next = find_with(&FINDER_TYPE, bytes, 0)
+        .and_then(|pos| {
+            let mut p = pos + 6;
+            while p < bytes.len() && bytes[p] != b'"' {
+                p += 1;
+            }
+            if p < bytes.len() {
+                extract_string_value(bytes, p + 1)
+            } else {
+                None
+            }
+        })
+        .map(|(val, _)| val == b"next")
+        .unwrap_or(false);
+
+    if !is_next {
+        return None;
+    }
+
+    let mut fixture_id: Option<&str> = None;
+    let mut pos = 0usize;
+
+    if let Some(start) = find_key_value_start(&FINDER_FIXTURE_ID, 11, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            fixture_id = Some(std::str::from_utf8(val).ok()?);
+            pos = end;
+        }
+    }
+
+    let mut free_text: &str = "";
+    if let Some(start) = find_key_value_start(&FINDER_FREE_TEXT, 10, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            free_text = std::str::from_utf8(val).ok()?;
+            pos = end;
+        }
+    }
+
+    let mut maps_home: &str = "";
+    let mut maps_away: &str = "";
+    if let Some(start) = find_key_value_start(&FINDER_HOME_SCORE, 11, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            maps_home = std::str::from_utf8(val).ok()?;
+            pos = end;
+        }
+    }
+    if let Some(start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, bytes, pos) {
+        if let Some((val, end)) = extract_string_value(bytes, start) {
+            maps_away = std::str::from_utf8(val).ok()?;
+            pos = end;
+        }
+    }
+
+    // currentPhase — may be null (match ended)
+    let mut rounds_home: &str = "";
+    let mut rounds_away: &str = "";
+    let mut current_phase: Option<i64> = None;
+
+    if let Some(cp_pos) = find_with(&FINDER_CURRENT_PHASE, bytes, pos) {
+        let key_end = cp_pos + 14;
+        let mut p = key_end;
+        while p < bytes.len() && bytes[p] != b':' {
+            p += 1;
+        }
+        if p < bytes.len() {
+            p += 1;
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') {
+                p += 1;
+            }
+            if p < bytes.len() && bytes[p] != b'n' {
+                let cp_content_start = p;
+                if let Some(start) = find_key_value_start(&FINDER_HOME_SCORE, 11, bytes, cp_content_start) {
+                    if let Some((val, _)) = extract_string_value(bytes, start) {
+                        rounds_home = std::str::from_utf8(val).ok()?;
+                    }
+                }
+                if let Some(start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, bytes, cp_content_start) {
+                    if let Some((val, _)) = extract_string_value(bytes, start) {
+                        rounds_away = std::str::from_utf8(val).ok()?;
+                    }
+                }
+                if let Some((phase_val, _)) = find_key_integer(&FINDER_PHASE, 7, bytes, cp_content_start) {
+                    current_phase = Some(phase_val);
+                }
+            }
+        }
+    }
+
+    Some(Cs2V1Extract {
+        fixture_id: fixture_id?,
+        maps_home,
+        maps_away,
+        rounds_home,
+        rounds_away,
+        free_text,
+        current_phase,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

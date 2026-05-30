@@ -1,4 +1,5 @@
 mod baseball;
+mod cs2;
 pub(crate) mod boltodds_baseball_types;
 pub(crate) mod boltodds_baseball_frame_pipeline;
 pub(crate) mod boltodds_frame_pipeline;
@@ -143,6 +144,7 @@ enum SportEngine {
     Baseball(baseball::types::NativeMlbEngine),
     Soccer(soccer::types::NativeSoccerEngine),
     Tennis(tennis::types::NativeTennisEngine),
+    Cs2(cs2::types::NativeCs2Engine),
 }
 
 impl SportEngine {
@@ -168,6 +170,11 @@ impl SportEngine {
                 now_ts_utc,
                 subscribe_lead_minutes,
             ),
+            Self::Cs2(e) => e.active_subscriptions_for_candidates(
+                candidates,
+                now_ts_utc,
+                subscribe_lead_minutes,
+            ),
         }
     }
 
@@ -176,6 +183,7 @@ impl SportEngine {
             Self::Baseball(e) => e.merge_plan(plan_json),
             Self::Soccer(e) => e.merge_plan(plan_json),
             Self::Tennis(e) => e.merge_plan(plan_json),
+            Self::Cs2(e) => e.merge_plan(plan_json),
         }
     }
 
@@ -184,6 +192,7 @@ impl SportEngine {
             Self::Baseball(e) => &e.tokens,
             Self::Soccer(e) => &e.tokens,
             Self::Tennis(e) => &e.tokens,
+            Self::Cs2(e) => &e.tokens,
         }
     }
 
@@ -192,6 +201,7 @@ impl SportEngine {
             Self::Baseball(e) => &e.target_slots,
             Self::Soccer(e) => &e.target_slots,
             Self::Tennis(e) => &e.target_slots,
+            Self::Cs2(e) => &e.target_slots,
         }
     }
 
@@ -200,6 +210,7 @@ impl SportEngine {
             Self::Baseball(e) => e.registry = reg,
             Self::Soccer(e) => e.registry = reg,
             Self::Tennis(e) => e.registry = reg,
+            Self::Cs2(e) => e.registry = reg,
         }
     }
 
@@ -208,6 +219,7 @@ impl SportEngine {
             Self::Baseball(e) => &e.game_ids,
             Self::Soccer(e) => &e.game_ids,
             Self::Tennis(e) => &e.game_ids,
+            Self::Cs2(e) => &e.game_ids,
         }
     }
 
@@ -216,6 +228,7 @@ impl SportEngine {
             Self::Baseball(e) => e.all_token_ids(),
             Self::Soccer(e) => e.all_token_ids(),
             Self::Tennis(e) => e.all_token_ids(),
+            Self::Cs2(e) => e.all_token_ids(),
         }
     }
 
@@ -224,6 +237,7 @@ impl SportEngine {
             Self::Baseball(e) => e.clone_registry(),
             Self::Soccer(e) => e.clone_registry(),
             Self::Tennis(e) => e.clone_registry(),
+            Self::Cs2(e) => e.clone_registry(),
         }
     }
 
@@ -232,6 +246,7 @@ impl SportEngine {
             Self::Baseball(e) => e.token_ids_by_game.len(),
             Self::Soccer(e) => e.token_ids_by_game.len(),
             Self::Tennis(e) => e.token_ids_by_game.len(),
+            Self::Cs2(e) => e.token_ids_by_game.len(),
         }
     }
 }

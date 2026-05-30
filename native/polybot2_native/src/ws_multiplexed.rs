@@ -162,6 +162,15 @@ pub(crate) async fn run_multiplexed_worker_async(
     let mut v1_reconnect_count: u32 = 0;
     let mut v2_reconnect_count: u32 = 0;
     let mut bo_reconnect_count: u32 = 0;
+    // Per-provider reconnection timers. After a failed reconnection attempt,
+    // the timer is set with exponential backoff. The event loop checks these
+    // during housekeeping and breaks to retry when the timer expires.
+    // Without this, a dead connection that fails to reconnect would never
+    // get another attempt — the event loop would run indefinitely draining
+    // only the live connections.
+    let mut v1_reconnect_at: Option<Instant> = None;
+    let mut v2_reconnect_at: Option<Instant> = None;
+    let mut bo_reconnect_at: Option<Instant> = None;
     let mut candidate_subs: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     let mut v1_active_subs: Vec<String> = Vec::new();
     let mut v2_active_subs: Vec<String> = Vec::new();
@@ -206,9 +215,14 @@ pub(crate) async fn run_multiplexed_worker_async(
                             v1_ws = Some(ws);
                             v1_active_subs = v1_subs.clone();
                             v1_reconnect_count = 0;
+                            v1_reconnect_at = None;
                             eprintln!("[mux] V1 connected, {} subscriptions", v1_subs.len());
                         }
                         Err(e) => {
+                            let backoff_ms = 2000u64 * (1u64 << v1_reconnect_count.min(5));
+                            let backoff_ms = backoff_ms.min(30_000);
+                            v1_reconnect_at = Some(Instant::now() + Duration::from_millis(backoff_ms));
+                            eprintln!("[mux] V1 reconnect failed (attempt {}): {} — retry in {}ms", v1_reconnect_count + 1, e, backoff_ms);
                             with_health(&health, |h| {
                                 h.reconnects += 1;
                                 h.last_error = format!("v1:{}", e);
@@ -227,9 +241,14 @@ pub(crate) async fn run_multiplexed_worker_async(
                             v2_conn = Some(conn);
                             v2_active_subs = v2_subs.clone();
                             v2_reconnect_count = 0;
+                            v2_reconnect_at = None;
                             eprintln!("[mux] V2 connected, {} subscriptions", v2_subs.len());
                         }
                         Err(e) => {
+                            let backoff_ms = 2000u64 * (1u64 << v2_reconnect_count.min(5));
+                            let backoff_ms = backoff_ms.min(30_000);
+                            v2_reconnect_at = Some(Instant::now() + Duration::from_millis(backoff_ms));
+                            eprintln!("[mux] V2 reconnect failed (attempt {}): {} — retry in {}ms", v2_reconnect_count + 1, e, backoff_ms);
                             with_health(&health, |h| {
                                 h.reconnects += 1;
                                 h.last_error = format!("v2:{}", e);
@@ -247,9 +266,14 @@ pub(crate) async fn run_multiplexed_worker_async(
                         Ok(ws) => {
                             bo_ws = Some(ws);
                             bo_reconnect_count = 0;
+                            bo_reconnect_at = None;
                             eprintln!("[mux] BoltOdds connected, {} games", bo_game_labels.len());
                         }
                         Err(e) => {
+                            let backoff_ms = 2000u64 * (1u64 << bo_reconnect_count.min(5));
+                            let backoff_ms = backoff_ms.min(30_000);
+                            bo_reconnect_at = Some(Instant::now() + Duration::from_millis(backoff_ms));
+                            eprintln!("[mux] BoltOdds reconnect failed (attempt {}): {} — retry in {}ms", bo_reconnect_count + 1, e, backoff_ms);
                             with_health(&health, |h| {
                                 h.reconnects += 1;
                                 h.last_error = format!("bo:{}", e);
@@ -545,14 +569,18 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 }
                             }
                             Some(Ok(Message::Close(_))) | None => {
-                                eprintln!("[mux] V2 connection closed");
+                                eprintln!("[mux] V2 connection closed (v1={}, bo={})",
+                                    if v1_ws.is_some() { "up" } else { "down" },
+                                    if bo_ws.is_some() { "up" } else { "down" });
                                 v2_conn = None;
                                 v2_active_subs.clear();
                                 reconn_v2 = true;
                                 if v1_ws.is_none() && bo_ws.is_none() { break 'event_loop; }
                             }
                             Some(Err(e)) => {
-                                eprintln!("[mux] V2 error: {}", e);
+                                eprintln!("[mux] V2 error: {} (v1={}, bo={})", e,
+                                    if v1_ws.is_some() { "up" } else { "down" },
+                                    if bo_ws.is_some() { "up" } else { "down" });
                                 v2_conn = None;
                                 v2_active_subs.clear();
                                 reconn_v2 = true;
@@ -593,14 +621,18 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 }
                             }
                             Some(Ok(Message::Close(_))) | None => {
-                                eprintln!("[mux] V1 connection closed");
+                                eprintln!("[mux] V1 connection closed (v2={}, bo={})",
+                                    if v2_conn.is_some() { "up" } else { "down" },
+                                    if bo_ws.is_some() { "up" } else { "down" });
                                 v1_ws = None;
                                 v1_active_subs.clear();
                                 reconn_v1 = true;
                                 if v2_conn.is_none() && bo_ws.is_none() { break 'event_loop; }
                             }
                             Some(Err(e)) => {
-                                eprintln!("[mux] V1 error: {}", e);
+                                eprintln!("[mux] V1 error: {} (v2={}, bo={})", e,
+                                    if v2_conn.is_some() { "up" } else { "down" },
+                                    if bo_ws.is_some() { "up" } else { "down" });
                                 v1_ws = None;
                                 v1_active_subs.clear();
                                 reconn_v1 = true;
@@ -668,13 +700,17 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 }
                             }
                             Some(Ok(Message::Close(_))) | None => {
-                                eprintln!("[mux] BoltOdds connection closed");
+                                eprintln!("[mux] BoltOdds connection closed (v1={}, v2={})",
+                                    if v1_ws.is_some() { "up" } else { "down" },
+                                    if v2_conn.is_some() { "up" } else { "down" });
                                 bo_ws = None;
                                 reconn_bo = true;
                                 if v1_ws.is_none() && v2_conn.is_none() { break 'event_loop; }
                             }
                             Some(Err(e)) => {
-                                eprintln!("[mux] BoltOdds error: {}", e);
+                                eprintln!("[mux] BoltOdds error: {} (v1={}, v2={})", e,
+                                    if v1_ws.is_some() { "up" } else { "down" },
+                                    if v2_conn.is_some() { "up" } else { "down" });
                                 bo_ws = None;
                                 reconn_bo = true;
                                 if v1_ws.is_none() && v2_conn.is_none() { break 'event_loop; }
@@ -762,7 +798,41 @@ pub(crate) async fn run_multiplexed_worker_async(
                 g.flush();
             }
 
-            // If any connection died, break to reconnect
+            // Check reconnection timers: if a dead connection's backoff has
+            // expired, schedule a reconnection by setting its flag. Without
+            // this, a connection that fails to reconnect would stay dead
+            // forever — the event loop drains only live connections and
+            // nothing sets the reconn flag for an already-None connection.
+            let now = Instant::now();
+            if v1_ws.is_none() {
+                if let Some(t) = v1_reconnect_at {
+                    if now >= t {
+                        reconn_v1 = true;
+                        v1_reconnect_at = None;
+                        eprintln!("[mux] V1 reconnect timer expired, will retry");
+                    }
+                }
+            }
+            if v2_conn.is_none() {
+                if let Some(t) = v2_reconnect_at {
+                    if now >= t {
+                        reconn_v2 = true;
+                        v2_reconnect_at = None;
+                        eprintln!("[mux] V2 reconnect timer expired, will retry");
+                    }
+                }
+            }
+            if bo_ws.is_none() {
+                if let Some(t) = bo_reconnect_at {
+                    if now >= t {
+                        reconn_bo = true;
+                        bo_reconnect_at = None;
+                        eprintln!("[mux] BoltOdds reconnect timer expired, will retry");
+                    }
+                }
+            }
+
+            // If any connection died or needs reconnection, break to outer loop
             if reconn_v1 || reconn_v2 || reconn_bo {
                 with_health(&health, |h| {
                     h.reconnects += 1;

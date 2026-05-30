@@ -1,6 +1,7 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA
 from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES
+from cs2_mappings import TEAM_MAP_CS2
 
 MAPPING_VERSION = "v1"
 STRICT_FAIL_CLOSED = True  # never guess
@@ -59,18 +60,17 @@ LEAGUES = {
     },
     "cs2":{
         "polymarket_league_code": "cs2",
-        "sport_family": "esports",
+        "sport_family": "cs2",
         "provider": ["kalstrop_v1", "boltodds"],
     },
-     "dota2":{
+    "dota2":{
         "polymarket_league_code": "dota2",
-        "sport_family": "esports",
+        "sport_family": "dota2",
         "provider": ["kalstrop_v1", "boltodds"],
     },
-    "lol":
-    {
+    "lol":{
         "polymarket_league_code": "lol",
-        "sport_family": "esports",
+        "sport_family": "lol",
         "provider": ["kalstrop_v1", "boltodds"],
     }
 
@@ -153,6 +153,7 @@ TEAM_MAP = {
     "laliga": TEAM_MAP_LALIGA,
     "rolgar": PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES,
     "garros": PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES,
+    "cs2": TEAM_MAP_CS2,
 }
 
 # =============================================================================
@@ -164,6 +165,7 @@ PM_LEAGUE_ORDERINGS = {
     "ucl": "home", 
     "rolgar": "home",
     "garros": "home",
+    "cs2": "home",
 }
 
 # =============================================================================

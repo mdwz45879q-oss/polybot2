@@ -12,6 +12,7 @@ CANONICAL_MARKET_TYPES = {
     "tennis_match_totals", "tennis_first_set_totals",
     "tennis_first_set_winner", "tennis_set_totals",
     "tennis_set_handicap",
+    "child_moneyline", "map_handicap",
     "other",
 }
 
@@ -30,7 +31,11 @@ def normalize_sports_market_type(value: Any) -> str:
         return "nrfi"
     if raw in {"spread", "spreads"}:
         return "spread"
-    if raw in {"moneyline", "game", "child_moneyline", "first_half_moneyline"}:
+    if raw == "child_moneyline":
+        return "child_moneyline"
+    if raw == "map_handicap":
+        return "map_handicap"
+    if raw in {"moneyline", "game", "first_half_moneyline"}:
         return "moneyline"
     if raw in {"btts", "both_teams_to_score"}:
         return "btts"
