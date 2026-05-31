@@ -255,9 +255,8 @@ pub(crate) fn fast_extract_boltodds_baseball(json: &str) -> Option<BoltOddsBaseb
     let period_detail = std::str::from_utf8(period_bytes).ok()?;
     pos = end;
 
-    let (home_score, end) = find_key_integer(&FINDER_TOTAL_RUNS_A, 19, bytes, pos)?;
-    pos = end;
-
+    // Search both from the same pos — BoltOdds doesn't guarantee A before B.
+    let (home_score, _) = find_key_integer(&FINDER_TOTAL_RUNS_A, 19, bytes, pos)?;
     let (away_score, _) = find_key_integer(&FINDER_TOTAL_RUNS_B, 19, bytes, pos)?;
 
     Some(BoltOddsBaseballExtract {
