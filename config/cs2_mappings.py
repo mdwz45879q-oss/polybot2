@@ -171,6 +171,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Fire Flux Esports", "FF"],
     },
+    "fluxo":{
+        "polymarket_code": "fx",
+        "provider_aliases": {
+            "kalstrop_v1": ["Fluxo W7M"],
+        },
+        "pm_aliases": ["FX", "Fluxo",],
+    },
     # FURIA Esports Female / FURIA fe
     "furia fe": {
         "polymarket_code": "furiaf",
@@ -185,7 +192,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["FOKUS"],
         },
-        "pm_aliases": ["FURIA fe"],
+        "pm_aliases": ["fokuså"],
     },
     # FOKUS
     "fnatic": {
@@ -194,6 +201,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Fnatic"],
         },
         "pm_aliases": ["fnatic"],
+    },
+    "galorys":{
+        "polymarket_code": "gls1",
+        "provider_aliases": {
+            "kalstrop_v1": ["Galorys"],
+        },
+        "pm_aliases": ["Galorys"],
     },
     # Game Hunters
     "game hunters": {
@@ -339,6 +353,14 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Phantom"],
     },
+    "rustec":{
+        "polymarket_code": "rust",
+        "provider_aliases": {
+            "kalstrop_v1": ["Rustec"],
+        },
+        "pm_aliases": ["RUST"],
+
+    },
     # Sharks Esports
     "sharks esports": {
         "polymarket_code": "shk",
@@ -354,6 +376,14 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Team Nemesis"],
         },
         "pm_aliases": ["Team Nemesis"],
+    },
+    # TDK
+    "tdk": {
+        "polymarket_code": "tdk",
+        "provider_aliases": {
+            "kalstrop_v1": ["TDK"],
+        },
+        "pm_aliases": ["TDK"],
     },
     # Team UNiTY / UNiTY esports
     "unity esports": {
