@@ -26,8 +26,23 @@ pub(crate) fn process_boltodds_baseball_frame_sync(
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
 ) -> Option<BoltOddsBaseballPendingLog> {
-    let extract = fast_extract_boltodds_baseball(frame_text)?;
-    let gidx = engine.check_boltodds_game(extract.game_label)?;
+    let extract = match fast_extract_boltodds_baseball(frame_text) {
+        Some(e) => e,
+        None => {
+            eprintln!(
+                "[mux-bo] baseball extract failed: {}",
+                &frame_text[..frame_text.len().min(200)]
+            );
+            return None;
+        }
+    };
+    let gidx = match engine.check_boltodds_game(extract.game_label) {
+        Some(g) => g,
+        None => {
+            eprintln!("[mux-bo] unknown game_label: '{}'", extract.game_label);
+            return None;
+        }
+    };
     let result = engine.process_boltodds_tick_live(
         gidx,
         extract.outs,
