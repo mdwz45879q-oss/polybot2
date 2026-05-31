@@ -875,6 +875,43 @@ mod tests {
         assert!(engine.final_resolved_games[0], "match should be final-resolved");
     }
 
+    #[test]
+    fn match_end_fires_on_map3_without_child_ml() {
+        // BO3 map 3: no child_moneyline market for map 3 (PM doesn't list it).
+        // Only maps 1-2 have child_moneyline targets.
+        let t_ml_home = TargetIdx(10);
+        let t_covers = TargetIdx(30);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.moneyline_home = Some(t_ml_home);
+            tgt.moneyline_away = Some(TargetIdx(11));
+            // Only 2 map_moneyline entries (maps 1-2) — NO map 3 target
+            tgt.map_moneyline.push((Some(TargetIdx(0)), Some(TargetIdx(1))));
+            tgt.map_moneyline.push((Some(TargetIdx(2)), Some(TargetIdx(3))));
+            tgt.map_handicaps.push(SpreadSlot {
+                side: SpreadSide::Home,
+                line: -1.5,
+                covers_idx: Some(t_covers),
+                not_covers_idx: Some(TargetIdx(31)),
+            });
+        });
+        // Tick 0: pre-match
+        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", 0);
+        // Tick 1: maps go to 1-1 (both teams won a map)
+        engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", 0);
+        engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", 0);
+        // Tick 3: map 3, round-13 → home wins map 3. No child_moneyline target.
+        // effective_state should detect the map winner via map_winner() directly.
+        // Effective maps = 2-1. Moneyline fires (2 >= mtw=2).
+        // Note: under 2.5 does NOT fire because effective total=3 > 2.5.
+        let r = engine.process_tick_live(GameIdx(0), 1, 1, 13, 5, 3, false, "LIVE", 0);
+        let intents: Vec<TargetIdx> = r.unwrap().intents.iter().map(|i| i.target_idx).collect();
+        assert!(intents.contains(&t_ml_home), "moneyline should fire on map 3 round-13 (no child_ml needed)");
+        // Map handicap: margin=2-1=1, 1+(-1.5)=-0.5≤0 → not_covers.
+        // But map_handicap_early_emitted might already be set from tick at 1-1.
+        // The key assertion: moneyline fires without needing child_moneyline.
+        assert!(engine.final_resolved_games[0], "match should be final-resolved");
+    }
+
     // ── BO5 map numbering ───────────────────────────────────────────
 
     #[test]

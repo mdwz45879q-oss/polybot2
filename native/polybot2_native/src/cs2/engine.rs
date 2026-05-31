@@ -461,17 +461,16 @@ impl NativeCs2Engine {
         let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_child_moneyline_into(gidx, &state, &mut intents);
 
-        // If Signal 1 detected a map winner on this tick via round-13,
-        // compute effective maps for match-end evaluators. This fires
-        // moneyline/totals/handicap 24+ seconds earlier than waiting
-        // for V1's maps counter to increment.
+        // Compute effective maps for match-end evaluators when the current
+        // map is decided (round-13 / OT win) but V1's maps counter hasn't
+        // caught up yet. Calls map_winner() directly — no dependency on
+        // map_winner_resolved flag, so it works for ALL maps including those
+        // without a child_moneyline market (BO3 map 3, BO1).
         let effective_state = if state.current_map > 0 {
             let map_idx = (state.current_map - 1) as usize;
-            let signal1_fired = map_idx < self.map_winner_resolved[gi].len()
-                && self.map_winner_resolved[gi][map_idx];
             let maps_already_counted = maps_home + maps_away;
             let map_number = (map_idx + 1) as i64;
-            if signal1_fired && map_number > maps_already_counted {
+            if map_number > maps_already_counted {
                 if let Some(winner) = crate::cs2::eval::map_winner(state.rounds_home, state.rounds_away) {
                     let (eff_home, eff_away) = match winner {
                         "home" => (maps_home + 1, maps_away),

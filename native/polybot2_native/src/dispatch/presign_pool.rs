@@ -197,11 +197,13 @@ pub(crate) async fn warm_presign_startup_into(
 
         // Fetch tick-size for all unique tokens with rate-limit-aware
         // concurrency. Cloudflare returns 429 (code 1015) above ~20
-        // concurrent requests from the same IP. Use a semaphore of 10
-        // with retry for 429s.
-        const CACHE_CONCURRENT: usize = 8;
-        const MAX_RETRIES: usize = 3;
-        const RETRY_DELAY_MS: u64 = 1000;
+        // concurrent requests from the same IP. On 429, the permit is
+        // DROPPED before sleeping — this frees a slot so the entire
+        // pipeline slows down, not just the failed request. Combined
+        // with exponential backoff, this adapts to any rate limit
+        // without being overly conservative on concurrency.
+        const CACHE_CONCURRENT: usize = 10;
+        const MAX_RETRIES: usize = 5;
 
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(CACHE_CONCURRENT));
         let cache_handles: Vec<_> = unique_tokens
@@ -210,30 +212,25 @@ pub(crate) async fn warm_presign_startup_into(
                 let c = client.clone();
                 let s = sem.clone();
                 tokio::spawn(async move {
-                    let _permit = s.acquire().await.expect("semaphore closed");
-                    let mut last_err = None;
                     for attempt in 0..=MAX_RETRIES {
-                        if attempt > 0 {
-                            tokio::time::sleep(Duration::from_millis(
-                                RETRY_DELAY_MS * attempt as u64,
-                            ))
-                            .await;
-                        }
+                        let permit = s.acquire().await.expect("semaphore closed");
                         match c.tick_size(tid).await {
                             Ok(v) => return Ok(v),
                             Err(e) => {
                                 let msg = format!("{}", e);
-                                if msg.contains("429") {
-                                    last_err = Some(msg);
-                                    continue; // retry on rate limit
+                                if msg.contains("429") && attempt < MAX_RETRIES {
+                                    // Drop permit BEFORE sleeping — frees a slot
+                                    // so the whole pipeline slows down.
+                                    drop(permit);
+                                    let backoff_ms = 1000u64 * (1u64 << attempt); // 1s, 2s, 4s, 8s, 16s
+                                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                                    continue;
                                 }
-                                return Err(e); // non-429 → fail immediately
+                                return Err(e);
                             }
                         }
                     }
-                    Err(polymarket_client_sdk_v2::error::Error::validation(
-                        last_err.unwrap_or_else(|| "tick_size_retries_exhausted".into()),
-                    ))
+                    unreachable!()
                 })
             })
             .collect();

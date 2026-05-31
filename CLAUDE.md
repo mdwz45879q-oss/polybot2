@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball), soccer (EPL, La Liga, Bundesliga, UCL), and tennis (ATP, WTA, ITF — French Open men's singles as first league). Four score data providers: Kalstrop V1 (Sportradar, WS, baseball + soccer + tennis), Kalstrop V2 (BetGenius, Socket.IO, soccer + tennis), BoltOdds (WS, broad coverage), Kalstrop Opta (REST catalog, football + baseball — streaming pending for non-World-Cup). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
+polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball), soccer (EPL, La Liga, Bundesliga, UCL), tennis (ATP, WTA, ITF — French Open men's and women's singles), and CS2 esports (full Rust hotpath with closed-form map winner detection). Dota2 and LoL are catalog-only (provider sync + linking — no Rust engine yet). Four score data providers: Kalstrop V1 (Sportradar, WS, baseball + soccer + tennis + CS2), Kalstrop V2 (BetGenius, Socket.IO, soccer + tennis), BoltOdds (WS, broad coverage including esports), Kalstrop Opta (REST catalog, football + baseball — streaming pending for non-World-Cup). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
 
 ## Build & Test
 
@@ -57,25 +57,28 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `baseball/` | Sport-specific: `engine.rs` (NativeMlbEngine, process_tick_live, merge_plan), `eval.rs` (totals, NRFI, walkoff, moneyline, spreads), `parse.rs` (inning parsing), `frame_pipeline.rs` (zero-alloc live path), `types.rs` (GameState, GameTargets, etc.) |
 | `soccer/` | Sport-specific: `engine.rs` (NativeSoccerEngine), `eval.rs` (totals, three-way moneyline, BTTS, spreads, corners, halftime result, exact score with early NO), `parse.rs` (half parsing), `frame_pipeline.rs`, `types.rs` |
 | `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 6 evaluators: match totals, first-set totals, set totals, moneyline, first-set winner, set handicap), `frame_pipeline.rs`, `types.rs`. Per-game `sets_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-module dependency on soccer). |
+| `cs2/` | Sport-specific: `engine.rs` (NativeCs2Engine, process_tick_live, merge_plan), `eval.rs` (closed-form map winner via `map_winner()`, child moneyline with dual-signal detection, match moneyline, totals, map handicap — 27 tests), `frame_pipeline.rs` (uses `"Closed"` not `"Ended"` for match completion), `types.rs` (Cs2GameTargets, Cs2GameState, SpreadSlot). Per-game `maps_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-sport imports). |
 | `kalstrop_v2_sio.rs` | Socket.IO/Engine.IO client for Kalstrop V2 (`SioConnection`, handshake, `subscribe`/`unsubscribe`, frame classification) |
 | `kalstrop_v2_types.rs` | V2 frame extractor (`fast_extract_v2`): fixture_id, home/away scores, currentPhase. Prebuilt finders. |
 | `kalstrop_v2_frame_pipeline.rs` | V2 soccer frame pipeline: extract → dedup → phase map → engine → dispatch |
 | `ws_kalstrop_v2.rs` | V2 Socket.IO worker: reconnect loop, subscription management, frame drain |
-| `ws_multiplexed.rs` | Multiplexed WS worker: manages V1+V2 connections in one `tokio::select!` loop. "Fastest wins" — whichever provider delivers a score change first triggers evaluation. Independent reconnection per provider. |
+| `ws_multiplexed.rs` | Multiplexed WS worker: manages V1+V2+BoltOdds connections in one `tokio::select!` loop. "Fastest wins" — whichever provider delivers a score change first triggers evaluation. Independent reconnection per provider. BoltOdds dispatch branches on `SportEngine::Baseball` vs `SportEngine::Soccer` for sport-specific frame processing. |
 | `boltodds_types.rs` | Byte-level extractor for BoltOdds frames (`fast_extract_boltodds`). Extracts `game_label`, goals, corners, match period from raw JSON without serde. |
 | `boltodds_frame_pipeline.rs` | BoltOdds soccer frame pipeline: extract → dedup → eval → dispatch. Uses integer-based dedup (goals + corners + period). |
+| `boltodds_baseball_frame_pipeline.rs` | BoltOdds baseball frame pipeline: extract → engine tick → dispatch. Thin glue layer called per-frame from the multiplexed WS worker. |
+| `boltodds_baseball_types.rs` | Byte-level extractor for BoltOdds baseball frames (`BoltOddsBaseballExtract`). Scans raw JSON for fields needed by the baseball engine. |
 | `ws_boltodds.rs` | BoltOdds WS worker: plain WS connection (`?key=TOKEN`), subscribe by game labels, frame drain loop. Simpler protocol than V1 (no GraphQL). |
-| `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames. `fast_extract_v1` (soccer/baseball): fixtureId, homeScore, awayScore, freeText, corners. `fast_extract_tennis_v1` (tennis): adds nested currentPhase fields (games_home/away, phase number) and phases array scan for total_games/first_set_games. |
-| `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by baseball, soccer (V1, BoltOdds, V2), and tennis frame pipelines. |
+| `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames. `fast_extract_v1` (soccer/baseball): fixtureId, homeScore, awayScore, freeText, corners. `fast_extract_tennis_v1` (tennis): adds nested currentPhase fields (games_home/away, phase number) and phases array scan for total_games/first_set_games. `fast_extract_cs2_v1` (CS2): extracts fixture_id, maps_home/away, rounds_home/away, free_text, current_phase. No phases array scanning (unlike tennis). |
+| `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by baseball, soccer (V1, BoltOdds, V2), tennis, and CS2 frame pipelines. |
 | `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`). Depth is 1-2 per token (primary + optional secondary order). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes orders per token at startup. |
 | `dispatch/fast_submit_client.rs` | `FastClobSubmitClient`: custom HTTP client bypassing the SDK for `POST /order` (single) and `POST /orders` (batch). Caches decoded API secret, uses stack-based `itoa` + base64 for HMAC, sends pre-serialized order bytes directly. Two methods: `post_order_bytes_single` (single order) and `post_orders_bytes` (batch, via generic `send_json_post` helper). `warmup_connection()` pre-establishes TCP + TLS + HTTP/2 via `GET /time`. Configured with `tcp_nodelay(true)`, `connect_timeout(5s)`, `timeout(10s)`, `pool_max_idle_per_host(30)`, `pool_idle_timeout(None)`, HTTP/2 via ALPN. |
 | `dispatch/sdk_exec.rs` | `OrderSubmitter::new`, `ensure_sdk_runtime_async`, `sdk_client_ref`, `signer_ref` (SDK init for presign signing). `sign_order_batch` (presign warmup). `map_post_response` helper. The SDK client is used only for order signing at startup/patch — not for HTTP submission. |
 | `dispatch/submitter.rs` | `run_submitter_async`: spin-loop that pops from SPSC ring and calls `submit_batch_task` inline (no `tokio::spawn`). 3-tier dispatch: `len==1` (single `POST /order`, bare `.await`), `2..=15` (one `POST /orders` batch — 1 HMAC, 1 HTTP request), `>15` (chunked into groups of `MAX_CLOB_BATCH=15`, concurrent `join_all`). Uses `ChunkScratch` for reusable body/index buffers. No semaphore. Keeps CLOB connection warm via `CLOB_KEEPALIVE_INTERVAL` (120s) pings during idle — no order ever pays cold-start TLS. |
 | `dispatch/types.rs` | `DispatchHandle`, `OrderSubmitter`, `SubmitWork`, `SubmitBatch`, `PreparedOrderPayload`, `SharedRegistry` (ArcSwap). `PreparedOrderPayload` stores pre-serialized order JSON bytes + `time_in_force: OrderTimeInForce` (carried through to log output). |
-| `ws.rs` | Kalstrop V1 live worker: GraphQL WS connect, subscription management, frame drain loop. Uses `worker_clock_origin: Instant` for monotonic timestamps. Dispatches to sport-specific frame pipeline via `SportEngine` enum (`Baseball`/`Soccer`/`Tennis` variants). Drains `patch_rx` at quiescent points for hot-patch application. |
-| `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), `ws_boltodds.rs` (BoltOdds), or `ws_multiplexed.rs` (multi-provider) based on `provider`/`providers` in config. Sport engine selected from explicit `sport` field in plan JSON via `detect_sport_from_plan()` — returns `Result`, crashes on unknown sport (no silent fallback). CPU core pinning via `core_affinity` for WS + submitter threads (`ws_core_idx`/`submitter_core_idx` in config). `health_snapshot()` exposes WS + submitter health. |
-| `lib.rs` | Shared types (`GameIdx`, `TargetIdx`, `TokenIdx`, `OverLine`, `SpreadSide`, `Intent`, `RawIntent`), `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`), `PatchPayload`, `NativeHotPathRuntime`, config structs. Sport-specific types live in `baseball/types.rs`, `soccer/types.rs`, `tennis/types.rs`. |
-| `log_writer.rs` | Structured JSONL log (schema V2). Wrapped in `Arc<Mutex<LogWriter>>` and shared by WS thread (logs ticks) and submitter thread (logs order outcomes). `LogWriter` stores `sport: &'static str` set at construction. `log_tick` takes `gid: &str` + `&TickPayload` enum (`Baseball`/`Soccer`/`Tennis`) — each variant carries sport-specific named score fields (`runs_home`/`goals_home`/`sets_home`), league (`lg`), game state, and source provider (`src`). Order events include `gid`, `tif` ("FAK"/"GTC"/"FOK"), and are keyed via `gid_from_sk(sk)`. Startup event emits `v:2`, `sport`, `leagues` array. Connection events carry `src` (provider name). |
+| `ws.rs` | Kalstrop V1 live worker: GraphQL WS connect, subscription management, frame drain loop. Uses `worker_clock_origin: Instant` for monotonic timestamps. Dispatches to sport-specific frame pipeline via `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2` variants). Drains `patch_rx` at quiescent points for hot-patch application. |
+| `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), `ws_boltodds.rs` (BoltOdds), or `ws_multiplexed.rs` (multi-provider) based on `provider`/`providers` in config. Sport engine selected from explicit `sport` field in plan JSON via `detect_sport_from_plan()` (accepts `"baseball"`/`"soccer"`/`"tennis"`/`"cs2"`) — returns `Result`, crashes on unknown sport (no silent fallback). CPU core pinning via `core_affinity` for WS + submitter threads (`ws_core_idx`/`submitter_core_idx` in config). `health_snapshot()` exposes WS + submitter health. |
+| `lib.rs` | Shared types (`GameIdx`, `TargetIdx`, `TokenIdx`, `OverLine`, `SpreadSide`, `Intent`, `RawIntent`), `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2`), `PatchPayload`, `NativeHotPathRuntime`, config structs. Sport-specific types live in `baseball/types.rs`, `soccer/types.rs`, `tennis/types.rs`, `cs2/types.rs`. |
+| `log_writer.rs` | Structured JSONL log (schema V2). Wrapped in `Arc<Mutex<LogWriter>>` and shared by WS thread (logs ticks) and submitter thread (logs order outcomes). `LogWriter` stores `sport: &'static str` set at construction. `log_tick` takes `gid: &str` + `&TickPayload` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2`) — each variant carries sport-specific named score fields (`runs_home`/`goals_home`/`sets_home`/`maps_home`), league (`lg`), game state, and source provider (`src`). CS2 variant includes `maps_home`/`maps_away`, `rounds_home`/`rounds_away`, `current_map`. Order events include `gid`, `tif` ("FAK"/"GTC"/"FOK"), and are keyed via `gid_from_sk(sk)`. Startup event emits `v:2`, `sport`, `leagues` array. Connection events carry `src` (provider name). |
 
 ### Hot Path Pipeline
 
@@ -87,7 +90,7 @@ WS thread (per frame, zero-alloc live path):
                                                       returns LiveTickResult { game_idx, intents: SmallVec<[Intent; 32]> }
   → process_decoded_frame_sync builds one SubmitBatch per frame:
         for each Intent:
-            DispatchHandle::pop_for_target(target_idx)   (Vec index + Option::take, ~100ns)
+            DispatchHandle::pop_for_target(target_idx)   (Vec index + std::mem::take, ~100ns)
             batch.push((target_idx, signed_order))
         DispatchHandle::send_batch(batch, &log)          (one tx.send for the whole frame)
   → log tick using engine.game_ids[game_idx]         (borrowed, no clone)
@@ -108,7 +111,7 @@ Submitter thread (spin-loop, inline execution, 3-tier dispatch):
 
 The registry exists so the channel payload can be `(TargetIdx, SdkSignedOrder)` — strings (`strategy_key`, `token_id`) are reconstructed from the registry only at log time, on the submitter, after the order has been handed off. The WS thread allocates no strings on the success path.
 
-The `tokens` vector is deduplicated by `token_id` at load time. A `TargetIdx` always references a `TokenIdx`; multiple targets pointing to the same token (rare in practice) share the single pool entry. This preserves the "one signed order per unique token" invariant — there is exactly one `Option` slot per `TokenIdx`, regardless of how many targets reference that token.
+The `tokens` vector is deduplicated by `token_id` at load time. A `TargetIdx` always references a `TokenIdx`; multiple targets pointing to the same token (rare in practice) share the single pool entry. This preserves the "one signed order per unique token" invariant — there is exactly one `SmallVec` slot per `TokenIdx`, regardless of how many targets reference that token.
 
 ### Integer-Indexed Evaluator
 
@@ -120,7 +123,7 @@ At plan load, `engine.load_plan` interns each `provider_game_id` → `GameIdx(u1
 - `moneyline_home`, `moneyline_away`: `Option<TargetIdx>` — direct slot access.
 - `spreads: Vec<(SpreadSide, f64, TargetIdx)>` — small, iterated at game end.
 
-Per-game state (rows, GameState, resolution flags) is stored in `Vec<...>` indexed by `GameIdx`. One-shot gating is enforced by the presign pool (depth=1, `Option::take()`), not by the engine — there is no `attempted` bitset. No cooldown or debounce logic exists — the presign pool is the sole gate against duplicate intents.
+Per-game state (rows, GameState, resolution flags) is stored in `Vec<...>` indexed by `GameIdx`. One-shot gating is enforced by the presign pool (`std::mem::take()` drains all pre-signed orders for the token), not by the engine — there is no `attempted` bitset. No cooldown or debounce logic exists — the presign pool is the sole gate against duplicate intents.
 
 The only string hash on the live path is `game_id_to_idx.get(fixture_id)` — one `FxHashMap::get` per tick, done once in `check_duplicate` (baseball/soccer V1) or `check_boltodds_dedup` (soccer BoltOdds) and the resulting `GameIdx` passed through. After filtering, the engine emits `Intent { target_idx: TargetIdx }` (`Copy`, no strings). String resolution happens only at the FFI boundary and on the submitter (via the shared `Arc<TargetRegistry>` at log time). StateRow uses `InlineStr<N>` (stack-allocated, no heap) for dedup fields.
 
@@ -144,6 +147,8 @@ The Python compiler (`compiler.py`) produces strategy keys (`"gid:TOTAL:OVER:5.5
 | **Tennis first-set winner** | outcome_index (0=home, 1=away) | `home`, `away` |
 | **Tennis set handicap** | Slug (`-handicap-home-` / `-handicap-away-`) + outcome_index | `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers` |
 | **Moneyline (tennis)** | PM code in label (fallback after team-name match) | `home`, `away` |
+| **Child moneyline (CS2)** | Map number from slug suffix + team name in label, cross-validated against question text | `home`, `away` |
+| **Map handicap (CS2)** | Slug (`-handicap-home-` / `-handicap-away-`) + question text determines favored side for both outcomes | `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers` |
 
 Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exact_score_from_slug`. Polymarket codes looked up from `TEAM_MAP_*` / `PLAYER_MAP_*` via the mapping at compile time.
 
@@ -155,6 +160,8 @@ Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exa
 - `{gid}:TENNIS_MATCH_TOTAL:OVER:36.5`, `{gid}:TENNIS_FIRST_SET_TOTAL:UNDER:9.5`
 - `{gid}:TENNIS_SET_TOTAL:OVER:3.5`, `{gid}:TENNIS_FIRST_SET_WINNER:HOME`
 - `{gid}:TENNIS_SET_HANDICAP:HOME_COVERS:-2.5`, `{gid}:TENNIS_SET_HANDICAP:AWAY_NOT_COVERS:-1.5`
+- `{gid}:CHILD_MONEYLINE:MAP1:HOME`, `{gid}:CHILD_MONEYLINE:MAP2:AWAY`
+- `{gid}:MAP_HANDICAP:HOME_COVERS:-1.5`, `{gid}:MAP_HANDICAP:AWAY_NOT_COVERS:1.5`
 
 The Rust plan loader has `eprintln!` warnings on unhandled semantics — visible at startup. The serializer emits per-target `line` (required for exact scores where `market.line` is NULL).
 
@@ -164,7 +171,7 @@ The Rust plan loader has `eprintln!` warnings on unhandled semantics — visible
 
 Two structs back the dispatch path:
 
-- **`DispatchHandle`** (WS thread): `cfg`, `registry: Arc<TargetRegistry>`, `shared_registry: SharedRegistry` (ArcSwap), `presign_pool: Vec<Option<Box<PreparedOrderPayload>>>` indexed by `TokenIdx` (depth=1), `submit_tx: Option<rtrb::Producer<SubmitWork>>`. All methods are synchronous.
+- **`DispatchHandle`** (WS thread): `cfg`, `registry: Arc<TargetRegistry>`, `shared_registry: SharedRegistry` (ArcSwap), `presign_template_catalog: HashMap<String, SmallVec<[OrderRequestData; 2]>>`, `presign_templates: Vec<SmallVec<[OrderRequestData; 2]>>` (indexed by `TokenIdx`), `presign_pool: Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>` (indexed by `TokenIdx`, depth 0–2), `submit_tx: Option<rtrb::Producer<SubmitWork>>`. All methods are synchronous.
 - **`OrderSubmitter`** (submitter thread): `cfg`, `shared_registry: SharedRegistry`, `submit_rx: rtrb::Consumer<SubmitWork>`, `stop_flag: Arc<AtomicBool>`, `log`, `health`. Initializes `FastClobSubmitClient` at startup (custom HTTP + L2 auth, bypasses SDK for submission).
 
 Channel: `rtrb::RingBuffer<SubmitWork>` (capacity 64), lock-free SPSC. `SubmitBatch` is `SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 32]>`. With dual-order, a frame with N intents produces up to 2N batch entries. The WS thread pushes one Batch per material frame. The submitter spins on `submit_rx.pop()` and processes batches inline (no `tokio::spawn`). 3-tier dispatch: single orders use bare `.await` on `POST /order`; batches of 2–15 use one `POST /orders` call (1 HMAC, 1 HTTP request — strictly faster than N individual calls); batches >15 are chunked into groups of `MAX_CLOB_BATCH` and fired concurrently via `join_all`. The tradeoff vs per-order submission: a deactivated token in a batch causes all orders in that batch to be rejected, but the common dual-order case saves ~8ms by eliminating the second HTTP round-trip.
@@ -215,19 +222,19 @@ The worker uses `worker_clock_origin: Instant` set at startup, and `source_recv_
 |--------|------|
 | `_cli/` | argparse CLI: market, provider, link, hotpath subcommands |
 | `data/` | Market sync from Polymarket CLOB API, SQLite storage |
-| `linking/` | Deterministic provider↔Polymarket matching, review workflows |
+| `linking/` | Deterministic provider↔Polymarket matching, review workflows. `sport_raw` fallback in `_resolve_provider_game` for esports league resolution (when `league_raw` is empty). |
 | `execution/` | Config container for Rust dispatch (no order methods — Rust handles all dispatch) |
 | `hotpath/` | Plan compiler, native service adapter, incremental market refresh |
-| `hotpath/incremental.py` | `discover_new_markets()` — targeted Gamma API fetch for known event IDs, diff against current plan, insert new market targets, return delta for hot-patch |
+| `hotpath/incremental.py` | `discover_new_markets()` — targeted Gamma API fetch for known event IDs (`include_inactive=True`), diff against current plan, insert new market targets, return delta for hot-patch. `sets_to_win` read from LEAGUES config (source of truth), not from first game in plan. |
 | `hotpath/order_policy.py` | `OrderPolicy` dataclass — sport-generic execution profile (amount, size, price, time-in-force). `market_overrides` dict for per-market-type sizing (e.g., smaller bets on exact score). `for_market_type()` resolves overrides. Supports dual-order via `secondary_*` fields — when configured, each intent fires two pre-signed orders (primary + secondary). |
 | `hotpath/v2_resolver.py` | V2 fixture ID resolver: `build_pending_games`, `try_resolve_games` (polls V2 tournament fixtures, matches by teams+time), `compile_for_resolved_game` (single-game plan with fixture_id substitution). Detects finished games. |
-| `sports/` | Provider catalog adapters: `KalstropV1Provider` (V1 REST catalog), `KalstropV2Provider` (V2 REST catalog), `KalstropOptaProvider` (Opta REST catalog), `BoltOddsProvider` (REST catalog). No Python-side streaming — all WS streaming is handled by Rust or standalone capture scripts. |
+| `sports/` | Provider catalog adapters: `KalstropV1Provider` (V1 REST catalog), `KalstropV2Provider` (V2 REST catalog), `KalstropOptaProvider` (Opta REST catalog), `BoltOddsProvider` (REST catalog, with esports label resolution via `_fetch_esports_pbp_labels()` from `/api/playbyplay/esports`). No Python-side streaming — all WS streaming is handled by Rust or standalone capture scripts. |
 | `sports/kalstrop_v2.py` | Kalstrop V2 catalog discovery — REST hierarchy: sports → competitions → tournaments → fixtures |
 | `sports/kalstrop_opta.py` | Kalstrop Opta catalog discovery — REST hierarchy: sports → competitions (numeric IDs) → fixtures. Covers football + baseball. Composite `"Name|ID"` encoding in `category_name`/`league_raw` columns. |
-| `sports/kalstrop_auth.py` | Shared HMAC auth helper for V1, V2, and Opta REST + WS auth headers |
-| `config/` | `live_trading.py` (execution policy), `mappings.py` (league registry, provider aliases, league disambiguation via `PROVIDER_LEAGUE_COUNTRY`), `baseball_mappings.py` / `soccer_mappings.py` / `tennis_mappings.py` (team/player aliases per league). Tennis uses `PLAYER_MAP_*` dicts with PM code derivation rule: last word of PM name, lowercased, truncated to 7 chars. |
+| `sports/kalstrop_auth.py` | Shared HMAC auth helper for V1, V2, and Opta REST + WS auth headers. `kalstrop_livestats_auth_query()` for LiveStats Socket.IO endpoint (no Bearer prefix). |
+| `config/` | `live_trading.py` (execution policy), `mappings.py` (league registry, provider aliases, league disambiguation via `PROVIDER_LEAGUE_COUNTRY`), `baseball_mappings.py` / `soccer_mappings.py` / `tennis_mappings.py` / `cs2_mappings.py` (team/player aliases per league). Tennis uses `PLAYER_MAP_*` dicts with PM code derivation rule: last word of PM name, lowercased, truncated to 7 chars. Tennis includes both `PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES` and `PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES`. |
 | `guardian/` | Overturn detection for soccer. `manager.py` (orchestrator integration), `tracker.py` (log tailing + WS + state), `overturn.py` (dual-signal detector), `executor.py` (sell/cancel). See Guardian section below. |
-| `scripts/` | Standalone capture scripts for raw frame recording: `capture_kalstrop_v2.py`, `capture_opta.py`, `capture_multi.py` (multi-provider comparison with V1+V2+BoltOdds+Opta), `build_capture_plan.py` (auto-generates `games.json` from DB). Not part of the `polybot2` package — run directly. |
+| `scripts/` | Standalone capture scripts for raw frame recording: `capture_kalstrop_v1.py`, `capture_kalstrop_v2.py`, `capture_opta.py`, `capture_multi.py` (multi-provider comparison with V1+V2+BoltOdds+Opta), `capture_boltodds.py`, `capture_boltodds_debug.py` (standalone BoltOdds debug with `--resolve-esports`), `capture_livestats.py` (multi-source: LiveStats Socket.IO + V1 + BoltOdds, dynamic subscription based on `start_ts_utc`), `build_capture_plan.py` (auto-generates `games.json` from DB, `--resolve-livestats` flag). Not part of the `polybot2` package — run directly. |
 
 ### FFI Boundary (Python → Rust)
 
@@ -235,7 +242,7 @@ Python `NativeHotPathService` calls Rust `NativeHotPathRuntime` via PyO3:
 - `start(config_json, compiled_plan_json, exec_config_json)` — all configs use `deny_unknown_fields`
 - `stop()`, `set_subscriptions(provider_subs: HashMap<String, Vec<String>>)`, `prewarm_presign(templates_json)`, `health_snapshot()`
 - `patch_plan(plan_json, templates_json)` — hot-patch: signs new orders (GIL released), sends `PatchPayload` to WS thread via dedicated `patch_tx` channel. WS thread calls `engine.merge_plan()` (append-only), extends dispatch pool, rebuilds registry, stores into `ArcSwap` (submitter sees new registry on next batch).
-- Compiled plan serialized via `serialize_compiled_plan()` in `native_engine.py`. Top-level fields: `provider`, `league`, `sport` (explicit: "baseball"/"soccer"/"tennis"), `run_id`, `games[]`. Per-game: `provider_game_id`, `kickoff_ts_utc`, `markets[]`, `alternate_provider_game_ids[]`, `sets_to_win` (tennis only, 2=BO3, 3=BO5). Rust reads `sport` via `detect_sport_from_plan()` — unknown/missing sport is a hard error.
+- Compiled plan serialized via `serialize_compiled_plan()` in `native_engine.py`. Top-level fields: `provider`, `league`, `sport` (explicit: "baseball"/"soccer"/"tennis"/"cs2"), `run_id`, `games[]`. Per-game: `provider_game_id`, `kickoff_ts_utc`, `markets[]`, `alternate_provider_game_ids[]`, `sets_to_win` (tennis: 2=BO3, 3=BO5; CS2: reused as `maps_to_win`, 2=BO3, 3=BO5). Rust reads `sport` via `detect_sport_from_plan()` — unknown/missing sport is a hard error.
 - `health_snapshot()` returns `{running, subscriptions, reconnects, last_error, submitter: {present, running, last_error}}`. The nested `submitter` object is populated in HTTP mode and absent (`present: false`) in paper mode.
 
 ### Order Types
@@ -256,7 +263,7 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 4. **Totals over crossing:** For a score change from `prev` to `now`, iterate `over_lines` and fire any with `half_int in [prev, now)`. Direct array indexing — no string keys, no HashMap.
 
-5. **One-shot intents:** Each token can fire at most once per session, enforced by the presign pool (depth=1, `Option::take()`). Once `pop_for_target` takes the signed order, the pool slot is `None` and any repeat intent fails closed at dispatch time. There is no engine-side `attempted` bitset — the pool is the sole gate.
+5. **One-shot intents:** Each token can fire at most once per session, enforced by the presign pool (`std::mem::take()` drains all pre-signed orders). Once drained, the SmallVec is empty and any repeat intent fails closed at dispatch time. There is no engine-side `attempted` bitset — the pool is the sole gate.
 
 6. **Independent evaluation:** `evaluate_totals`, `evaluate_nrfi`, `evaluate_final` all run on every tick (not an if/else chain). Each takes `&mut self` only to update its own resolution flags (`Vec<bool>` writes); no string allocations.
 
@@ -291,6 +298,7 @@ polybot2 hotpath live --league mlb --execution-mode live  # auto-discovers lates
 polybot2 hotpath live --league epl --execution-mode live  # single league
 polybot2 hotpath live --sport soccer --execution-mode live # all soccer leagues in one process
 polybot2 hotpath live --league epl laliga ucl --execution-mode live  # explicit multi-league
+polybot2 hotpath live --league cs2 --execution-mode live  # CS2 esports
 polybot2 hotpath observe --log-file path/to/hotpath_42_*.jsonl   # live terminal scoreboard
 polybot2 hotpath observe --run-id 42 --link-run-id N --db path.sqlite  # auto-discover log, resolve team names
 ```
@@ -305,7 +313,7 @@ The prerequisite pipeline: market sync → provider sync → link build → hotp
 
 ### Multiplexed Concurrent Providers
 
-Soccer leagues can use multiple providers simultaneously ("fastest wins"). Configured via `LEAGUES[league]["provider"]` as a list (e.g., `["kalstrop_v2", "kalstrop_v1"]`). The Rust multiplexed worker (`ws_multiplexed.rs`) manages all connections in one `tokio::select!` loop with three branches: V1 (Kalstrop WS), V2 (BetGenius Socket.IO), and BoltOdds (plain WS):
+Soccer and baseball leagues can use multiple providers simultaneously ("fastest wins"). Configured via `LEAGUES[league]["provider"]` as a list (e.g., `["kalstrop_v2", "kalstrop_v1"]`). The Rust multiplexed worker (`ws_multiplexed.rs`) manages all connections in one `tokio::select!` loop with three branches: V1 (Kalstrop WS), V2 (BetGenius Socket.IO), and BoltOdds (plain WS). BoltOdds frame dispatch branches on `SportEngine::Baseball` (via `process_boltodds_baseball_frame_sync`) vs `SportEngine::Soccer` (via `process_boltodds_frame_sync`):
 
 - V2 is ~1.5s faster for goals → fires totals, exact score, BTTS first
 - V1 is faster for halftime/match-end → fires halftime result, moneyline, spreads first
@@ -356,7 +364,7 @@ Key features:
 - **Single run_id for the session** — no link rebuild, no run_id incrementing, observer keeps working
 - **No blind windows** — hotpath processes frames continuously during refresh
 - **`.env` auto-loading** — reads `.env` from the working directory at startup
-- **No fired-key tracking needed** — the presign pool's one-shot gate (`Option::take`) prevents any target from firing twice within a session, and `merge_plan` deduplicates by strategy_key via `HashSet`.
+- **No fired-key tracking needed** — the presign pool's one-shot gate (`std::mem::take`) prevents any target from firing twice within a session, and `merge_plan` deduplicates by strategy_key via `HashSet`.
 
 ## Kalstrop Providers (Score Data)
 
@@ -381,6 +389,7 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 - **WS streaming:** `wss://spro.agency/api/livescores?key=TOKEN` — delivers `match_update` frames with `designation: {"A":"home","B":"away"}`. The `/livescores` path is required (not `/api` alone).
 - **Team names are abbreviated** (e.g., `"ATL Braves"` for baseball, `"Chelsea"` for soccer). Provider aliases needed in mappings.
 - **Duplicate entries:** BoltOdds sometimes publishes two entries for the same game with flipped home/away (e.g., "Sunderland vs Man Utd" and "Man Utd vs Sunderland"). The linker's strict home/away ordering check (soccer only) rejects the flipped duplicate by comparing against the Polymarket event's team ordering.
+- **Esports support:** `_ESPORTS_SPORTS` frozenset in `boltodds.py` identifies esports titles (CS2, Dota, LoL, Valorant). Esports use different labels from `/api/playbyplay/esports` (not `/api/get_games`). WS frames use `"event"` field instead of `"game"` for the game label. The Python provider's `load_game_catalog()` replaces standard esports labels with PBP labels automatically.
 
 **Kalstrop Opta** — `stats.kalstropservice.com/api/v2/opta`. Same HMAC auth. Opta/Sportradar-backed. Covers football (EPL, La Liga, Bundesliga, UCL, MLS, World Cup) + baseball (MLB, NPB, KBO). Currently catalog-only for live streaming (pending World Cup activation).
 - **REST catalog:** `/sports` → `/sports/{sport}/competitions` (numeric IDs) → `/sports/{sport}/competitions/{category_id}/{tournament_id}/fixtures`
@@ -391,6 +400,17 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 - **Currently inactive for streaming** — Kalstrop confirmed Opta streaming only supports World Cup games for now.
 
 Documentation: `docs/providers/kalstrop_v2/` covers auth, genius, and opta APIs. V1 docs: `docs/kalstrop_odds_v1.md`.
+
+### Provider Latency Hierarchy (Empirical)
+
+Measured from dual-capture recordings (same machine, simultaneous connections):
+
+| Sport | Fastest | Edge vs runner-up | Notes |
+|-------|---------|-------------------|-------|
+| **Soccer (goals)** | V2 (BetGenius) | ~1.5s faster than V1 | V2 fires totals, exact score, BTTS first |
+| **Soccer (halftime/end)** | V1 (Sportradar) | faster than V2 | V1 fires halftime result, moneyline, spreads first |
+| **Tennis** | V1 (Sportradar) | ~14s faster than V2, ~50ms faster than BoltOdds | V2 uses a significantly delayed secondary feed; BoltOdds relays the same Sportradar feed with ~50ms hop |
+| **CS2** | V1 (Sportradar) | 30–100s edge for map completion (round-level detection vs maps-won counter) | BoltOdds provides maps-won only, not round-level |
 
 ## Environment Variables
 
@@ -411,13 +431,15 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). Logs are
 - Gamma API caps results at 100 per request regardless of `limit` parameter. `batch_size` in `sync_config.py` is set to 100 to match.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
 - The field name is `amount_usdc` everywhere (not `notional_usdc` — that was the legacy name, fully removed).
-- The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`, schema V2) shared via `Arc<Mutex<>>`. The `polybot2 hotpath observe` command reads the JSONL log file via `live_observer.py` and renders an in-place terminal scoreboard. Sport-aware: baseball shows `AWAY-HOME` with inning (`T3`, `B7`); soccer shows `HOME-AWAY` with half (`1H`, `HT`, `2H`, `FT`); tennis shows `HOME-AWAY` with set (`SET`). Team abbreviations use Polymarket codes from `config/mappings.py`. Tick events carry per-side corners (`corners_home`/`corners_away`) for soccer and per-game league (`lg`) for all sports.
+- The old telemetry system (Unix DGRAM socket) was removed. Replaced by a structured JSONL log file (`log_writer.rs`, schema V2) shared via `Arc<Mutex<>>`. The `polybot2 hotpath observe` command reads the JSONL log file via `live_observer.py` and renders an in-place terminal scoreboard. Sport-aware: baseball shows `AWAY-HOME` with inning (`T3`, `B7`); soccer shows `HOME-AWAY` with half (`1H`, `HT`, `2H`, `FT`); tennis shows `HOME-AWAY` with set (`SET`); CS2 shows `HOME-AWAY` with map (`MAP`). Team abbreviations use Polymarket codes from `config/mappings.py`. Tick events carry per-side corners (`corners_home`/`corners_away`) for soccer and per-game league (`lg`) for all sports.
 - Python canonical form for BTTS is `"btts"` (not `"both_teams_to_score"`). Must match the Rust `canonical_soccer_market_type` which also normalizes to `"btts"`.
 - SDK config uses `use_server_time(false)` to avoid a `GET /time` round-trip before every order POST. Host clock must be disciplined with chrono/NTP on the deployment target.
 - Multi-intent frames batch in `process_decoded_frame_sync` (one Batch per frame). The submitter processes batches inline (no spawn) via 3-tier dispatch: single order → `POST /order` (bare `.await`), 2–15 orders → one `POST /orders` batch (1 HMAC, 1 HTTP), >15 → chunked concurrent `join_all`. No semaphore. Empty `order_id` with `success: true` is treated as failure (`map_post_response`). Batch tradeoff: a deactivated token poisons its batch, but the dual-order case saves ~8ms vs individual submission.
 - Parsing uses zero-allocation byte-level scanning (`eq_ignore_ascii_case`, byte accumulator for numbers) — no `to_lowercase()`/`to_uppercase()` heap allocations on the tick path.
 - Final-game cleanup (`cleanup_completed_game_idx`) is deferred until after intents are selected, not during `evaluate_final`. `final_resolved_games[gi] = true` blocks re-evaluation immediately; cleanup runs in `process_tick` before returning. Cleanup clears only lightweight row data (`rows`, `game_states`, `nrfi_first_inning_observed`); completion tombstones (`totals_final_under_emitted`, `nrfi_resolved_games`) are preserved for the session to prevent duplicate emission from repeated final frames.
 - Tests use temp-path `LogWriter`s (no actual log inspection in non-live tests).
+- CS2 compiler error messages say "baseball/soccer/tennis" but accept "cs2" — cosmetic inconsistency, not a correctness bug.
+- CS2 match completion uses `freeText = "Closed"` (not `"Ended"` like other sports). Each sport's frame pipeline owns its own completion keyword.
 
 ## Latency Optimization Roadmap
 
@@ -429,7 +451,7 @@ Target: single-digit microsecond end-to-end on the WS thread (frame available �
 
 3. **Frame-preserving batch — DONE.** `process_decoded_frame_sync` builds one `SubmitWork::Batch(SmallVec<[(TargetIdx, Box<PreparedOrderPayload>); 32]>)` per material frame. With dual-order presign, a frame with N intents produces up to 2N batch entries. Multi-intent frames always reach the CLOB as one logical group. Submitter processes batches inline — no cross-frame coalescing, no head-of-line blocking.
 
-4. **Index-keyed payload + Arc<TargetRegistry> — DONE.** Pool indexed by `TokenIdx` (`Vec<Option<Box<SdkSignedOrder>>>`, depth=1, boxed: `Option::take()` moves 8 bytes). Channel payload is `(TargetIdx, Box<SdkSignedOrder>)` — no string allocation on the WS success path. Strings reconstructed via the registry only at log time.
+4. **Index-keyed payload + Arc<TargetRegistry> — DONE.** Pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`, depth 0–2, `std::mem::take()` drains all orders). Channel payload is `(TargetIdx, Box<PreparedOrderPayload>)` — no string allocation on the WS success path. Strings reconstructed via the registry only at log time.
 
 5. **Logging swap — DONE.** Tick logging happens after dispatch in `process_decoded_frame_sync`. Success path holds zero log locks before the channel send.
 
@@ -534,7 +556,7 @@ The `map_sdk_signature_type` function in `dispatch/mod.rs` maps integer 3 to `Sd
 
 ## Tennis Integration
 
-Third sport alongside baseball and soccer. Currently supports French Open men's singles (`rolgar` league, BO5). Documentation in `docs/tennis/`.
+Third sport alongside baseball and soccer. Currently supports French Open men's singles (`rolgar` league, BO5) and French Open women's singles (`garros` league, BO3). Documentation in `docs/tennis/`.
 
 ### Scoring Hierarchy
 
@@ -575,7 +597,51 @@ Tennis uses player names instead of team names. `config/tennis_mappings.py` cont
 
 ### Sport Isolation
 
-Each sport's frame pipeline owns its own completion detection — inlined `free_text.trim().eq_ignore_ascii_case("Ended")` per pipeline. No shared `parse_common.rs`. No cross-sport type imports. Each sport's engine, types, and frame pipeline are fully self-contained. Adding or modifying one sport cannot silently affect another.
+Each sport's frame pipeline owns its own completion detection — inlined `free_text.trim().eq_ignore_ascii_case("Ended")` per pipeline (CS2 uses `"Closed"` instead). No shared `parse_common.rs`. No cross-sport type imports. Each sport's engine, types, and frame pipeline are fully self-contained. Adding or modifying one sport cannot silently affect another.
+
+## CS2 Integration
+
+Fourth sport alongside baseball, soccer, and tennis. Full Rust hotpath with closed-form map winner detection. Currently supports CS2 (`cs2` league, BO3/BO5). Documentation in `docs/cs_map_win_condition.md`.
+
+### Scoring Hierarchy
+
+Round → Map → Match. **MR12 format:** 13 rounds to win regulation (first half 12 rounds, sides swap, second half until one team reaches 13). Overtime uses MR3: 3 rounds per OT half, first to 4 OT rounds wins. If OT ties at 3-3, another OT set begins. Winning totals form the sequence {13, 16, 19, 22, ...} (≡ 1 mod 3).
+
+### Match Format
+
+Per-game `maps_to_win` (from `(BON)` in PM event title): 2 for BO3, 3 for BO5. Missing BO format is a hard error — no silent default. Stored as `sets_to_win` in the compiled plan JSON (reusing the tennis field). Flows through `CompiledGamePlan.sets_to_win` → Rust `NativeCs2Engine.maps_to_win[GameIdx]`.
+
+### Market Types
+
+4 CS2 market types: `moneyline` (match winner — fires when `maps_home >= maps_to_win || maps_away >= maps_to_win`), `child_moneyline` (per-map winner with dual-signal detection), `totals` (maps played — progressive over, under at match end), `map_handicap` (map spread — covers at match end, not_covers fires mid-match when mathematically eliminated).
+
+### Closed-Form Map Winner Condition
+
+`map_winner()` in `cs2/eval.rs` detects regulation AND overtime wins from round scores alone — no state tracking needed:
+
+```
+let decided =
+    (big == 13 && small <= 11)                            // regulation
+    || (big >= 16 && big % 3 == 1 && d >= 2 && d <= 4);  // overtime
+```
+
+Why each clause is load-bearing: `big % 3 == 1` kills 17-15 (OT2 at 2-0, undecided); `d >= 2` kills 13-12 and 16-15 (1-0 in OT set); `d <= 4` caps OT margin (4-0 sweep max); `small <= 11` makes the regulation branch self-documenting. Verified against all 1,054 reachable scores with zero false positives.
+
+### Dual-Signal Child Moneyline
+
+Two detection signals for per-map winners:
+- **Signal 1 (primary):** Round-level scores from `currentPhase` detect map winner via `map_winner()`. Fires 30–100s before the maps-won counter updates in `homeScore`/`awayScore`.
+- **Signal 2 (fallback):** Maps-won increment in top-level scores. Catches cases where V1 skips the winning round frame entirely (jumps from pre-win to post-map state).
+
+Both signals resolve to the same `GameIdx` and are gated by the presign pool — whichever fires first consumes the order.
+
+### CS2-Specific Frame Extraction
+
+`fast_extract_cs2_v1` in `fast_extract.rs`: extracts fixture_id, maps_home/away (from top-level `homeScore`/`awayScore`), rounds_home/away (from `currentPhase`), free_text, current_phase number. No phases array scanning (unlike tennis — CS2 doesn't need per-map round history). Match completion detected via `free_text = "Closed"` (not `"Ended"` like other sports). Dedup at round-level granularity (maps + rounds + freeText).
+
+### Outcome Label Resolution
+
+PM outcome_index 0/1 ordering is **inconsistent** across CS2 events — home is not always index 0. Resolved by label matching against team names from `TEAM_MAP_CS2`, cross-validated against the market's question text. For map handicap, `"home"` in the slug refers to the underdog (+1.5), not the favorite — the favored side is determined once from the question text and applied to both outcomes.
 
 ## Python Cleanup Audit
 
