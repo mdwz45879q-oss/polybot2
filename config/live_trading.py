@@ -230,7 +230,7 @@ HOTPATH_RUNTIME_POLICY = {
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 1800,
 	    "ws_core_idx": 3,
-	    "submitter_code_idx": 4,
+	    "submitter_core_idx": 4,
     },
     "rgw": {
         "plan_horizon_hours": 12,
@@ -239,7 +239,7 @@ HOTPATH_RUNTIME_POLICY = {
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 1800,
 	    "ws_core_idx": 3,
-	    "submitter_code_idx": 4,
+	    "submitter_core_idx": 4,
     },
     "cs2": {
         "plan_horizon_hours": 12,
@@ -248,7 +248,7 @@ HOTPATH_RUNTIME_POLICY = {
         "provider_catalog_max_age_seconds": 43200,
         "refresh_interval_seconds": 1800,
 	    "ws_core_idx": 1,
-	    "submitter_code_idx": 2,
+	    "submitter_core_idx": 2,
     },
     "lol": {
         "plan_horizon_hours": 12,
