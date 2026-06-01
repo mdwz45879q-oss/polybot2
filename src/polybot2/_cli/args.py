@@ -21,7 +21,7 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     provider_sub = provider_p.add_subparsers(dest="provider_command", required=True)
     provider_sync = provider_sub.add_parser("sync", help="Sync provider games")
     provider_sync.add_argument("--db", type=str, default="", help="Override SQLite DB path")
-    provider_sync.add_argument("--provider", type=str, choices=["boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"], default="")
+    provider_sync.add_argument("--provider", type=str, nargs="+", choices=["boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"], default=[])
     link_p = sub.add_parser("link", help="Deterministic linking commands")
     link_sub = link_p.add_subparsers(dest="link_command", required=True)
 
@@ -70,7 +70,7 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_observe.add_argument("--log-dir", type=str, default="", help="Directory to search for log files")
     hotpath_observe.add_argument("--run-id", type=int, default=None, help="Filter log files by run ID")
     hotpath_observe.add_argument("--db", type=str, default="")
-    hotpath_observe.add_argument("--league", type=str, default="mlb")
+    hotpath_observe.add_argument("--league", type=str, nargs="+", default=["mlb"])
     hotpath_observe.add_argument("--link-run-id", type=int, default=None)
 
     hotpath_compile = hotpath_sub.add_parser("compile", help="Compile hotpath plan and print summary (dry run)")

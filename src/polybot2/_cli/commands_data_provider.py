@@ -59,10 +59,11 @@ async def run_market_sync(args: Any, *, logger: logging.Logger) -> int:
 
 def run_provider_sync(args: Any, *, logger: logging.Logger) -> int:
     runtime = _runtime_from_args(args)
-    explicit = str(getattr(args, "provider", "")).strip().lower()
+    explicit_list = getattr(args, "provider", []) or []
+    explicit = [str(p).strip().lower() for p in explicit_list if str(p).strip()]
 
     if explicit:
-        providers = [explicit]
+        providers = explicit
     else:
         from polybot2.linking import load_mapping
         mapping = load_mapping()

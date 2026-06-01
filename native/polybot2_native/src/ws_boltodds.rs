@@ -431,6 +431,11 @@ pub(crate) async fn run_boltodds_worker_async(
             g.log_ws_disconnect("boltodds", &reconn_reason, reconnects);
         }
 
+        // Send a clean WebSocket close frame so BoltOdds releases the session.
+        // Without this, BoltOdds may keep the old session alive and refuse
+        // or throttle the next connection with the same API key.
+        let _ = ws.close(None).await;
+
         if running {
             let backoff_ms = std::cmp::min(2000u64 * (1u64 << reconnect_count.min(5)), 60_000);
             tokio_sleep(Duration::from_millis(backoff_ms)).await;

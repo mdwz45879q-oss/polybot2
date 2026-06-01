@@ -64,7 +64,8 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
         compiled_plan = None
         try:
             link_run_id = getattr(args, "link_run_id", None)
-            league_key = str(getattr(args, "league", "mlb") or "mlb").strip().lower()
+            _league_arg = getattr(args, "league", ["mlb"]) or ["mlb"]
+            league_key = (str(_league_arg[0]) if isinstance(_league_arg, list) else str(_league_arg)).strip().lower()
             if link_run_id is not None:
                 from polybot2.hotpath.compiler import compile_hotpath_plan
                 from polybot2.linking import load_mapping as _load_mapping_obs
