@@ -67,6 +67,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["AM Gaming"],
     },
+    # ARCH
+    "arch":{
+        "polymarket_code": "arch", 
+         "provider_aliases": {
+            "kalstrop_v1": ["arch"],
+        },
+    },
     # ASTRAL Esports
     "astral esports": {
         "polymarket_code": "ast",
@@ -345,6 +352,14 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["OG"],
     },
+    #OLDBOYS 
+    "oldboys":{
+        "polymarket_code": "old",
+        "provider_aliases": {
+            "kalstrop_v1": ["OLDBOYS (PL)"],
+        },
+        "pm_aliases": ["OLDBOYS PL", "OLDBOYS-"],
+    },
     # Phantom Esports
     "phantom esports": {
         "polymarket_code": "pha",
@@ -392,6 +407,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Team UNiTY"],
         },
         "pm_aliases": ["UNiTY esports"],
+    },
+    "ursa":{
+        "polymarket_code": "ursa", 
+        "provider_aliases":{
+            "kalstrop_v1": [""],
+        },
+        "pm_aliases": "ursa"
     },
     # Tricked Esport
     "tricked esport": {
