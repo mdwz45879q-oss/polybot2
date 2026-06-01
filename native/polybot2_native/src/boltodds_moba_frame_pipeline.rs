@@ -38,9 +38,20 @@ pub(crate) fn process_boltodds_moba_frame_sync(
             maps_home: owned.maps_home,
             maps_away: owned.maps_away,
         };
+        eprintln!(
+            "[mux-bo-moba] serde fallback used (fast extract failed): {}",
+            &frame_text[..frame_text.len().min(150)]
+        );
         return process_extract(engine, &extract, recv_monotonic_ns, dispatch_handle, log);
     }
     // Neither path could extract — not a new_play or missing required fields.
+    // Only log for frames that look like they SHOULD be data (contain "new_play").
+    if frame_text.contains("new_play") {
+        eprintln!(
+            "[mux-bo-moba] extract failed (both paths): {}",
+            &frame_text[..frame_text.len().min(200)]
+        );
+    }
     None
 }
 
@@ -53,7 +64,17 @@ fn process_extract(
 ) -> Option<BoltOddsMobaPendingLog> {
     let maps_home_str = itoa::Buffer::new().format(extract.maps_home).to_string();
     let maps_away_str = itoa::Buffer::new().format(extract.maps_away).to_string();
-    let gidx = engine.check_duplicate(extract.game_label, &maps_home_str, &maps_away_str)?;
+    let gidx = match engine.check_duplicate(extract.game_label, &maps_home_str, &maps_away_str) {
+        Some(g) => g,
+        None => {
+            // Silent None means either: unknown game label, or duplicate tick.
+            // Log unknown labels (first occurrence only — duplicates are expected).
+            if engine.game_id_to_idx.get(extract.game_label).is_none() {
+                eprintln!("[mux-bo-moba] unknown game label: '{}'", extract.game_label);
+            }
+            return None;
+        }
+    };
 
     let result = engine.process_tick_live(
         gidx,
