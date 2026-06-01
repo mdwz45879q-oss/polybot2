@@ -2,6 +2,8 @@ from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA
 from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES
 from cs2_mappings import TEAM_MAP_CS2
+from lol_mappings import TEAM_MAP_LOL
+from dota2_mappings import TEAM_MAP_DOTA2
 
 MAPPING_VERSION = "v1"
 STRICT_FAIL_CLOSED = True  # never guess
@@ -45,13 +47,13 @@ LEAGUES = {
         "sport_family": "soccer",
         "provider": ["boltodds", "kalstrop_v2", "kalstrop_v1"],
     },
-    "rolgar": {
+    "rgm": {
         "polymarket_league_code": "atp",
         "sport_family": "tennis",
         "provider": "kalstrop_v1",
         "sets_to_win": 3,
     },
-    "garros":
+    "rgw":
     {
         "polymarket_league_code":"wta", 
         "sport_family": "tennis", 
@@ -61,17 +63,17 @@ LEAGUES = {
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
-        "provider": ["kalstrop_v1", "boltodds"],
+        "provider": "kalstrop_v1",
     },
     "dota2":{
         "polymarket_league_code": "dota2",
-        "sport_family": "dota2",
-        "provider": ["kalstrop_v1", "boltodds"],
+        "sport_family": "moba",
+        "provider": "boltodds",
     },
     "lol":{
         "polymarket_league_code": "lol",
-        "sport_family": "lol",
-        "provider": ["kalstrop_v1", "boltodds"],
+        "sport_family": "moba",
+        "provider": "boltodds",
     }
 
 
@@ -84,18 +86,17 @@ PROVIDER_LEAGUE_ALIASES = {
         "mlb": "mlb",
         "bundesliga": "bundesliga",
         "laliga": "laliga",
-        "french open men singles": "rolgar",
+        "french open men singles": "rgm",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
-        "french open women singles": "garros",
+        "french open women singles": "rgw",
         "uefa champions league": "ucl",
     },
     "kalstrop_v2":{
         "uefa-champions-league": "ucl",
         "english-premier-league": "epl",
         "spanish-la-liga-primera": "laliga",
-        "french-open-mens-singles": "rolgar",
     },
     "kalstrop_opta": {
         "premier league": "epl",
@@ -113,7 +114,7 @@ PROVIDER_LEAGUE_ALIASES = {
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
-        "roland garros (m) - tennis": "rolgar",
+        "league of legends": "lol",
     },
 }
 
@@ -124,8 +125,8 @@ PROVIDER_LEAGUE_COUNTRY = {
     "kalstrop_v1": {
         "england|premier league": "epl",
         "spain|laliga": "laliga",
-        "atp|french open men singles": "rolgar",
-        "wta|french open women singles": "garros",
+        "atp|french open men singles": "rgm",
+        "wta|french open women singles": "rgw",
         "international clubs|uefa champions league": "ucl",
     },
 }
@@ -153,9 +154,11 @@ TEAM_MAP = {
     "epl": TEAM_MAP_EPL,
     "ucl": TEAM_MAP_UCL,
     "laliga": TEAM_MAP_LALIGA,
-    "rolgar": PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES,
-    "garros": PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES,
+    "rgm": PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES,
+    "rgw": PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES,
     "cs2": TEAM_MAP_CS2,
+    "lol": TEAM_MAP_LOL,
+    "dota2": TEAM_MAP_DOTA2,
 }
 
 # =============================================================================
@@ -165,9 +168,11 @@ PM_LEAGUE_ORDERINGS = {
     "mlb": "away",
     "epl": "home", 
     "ucl": "home", 
-    "rolgar": "home",
-    "garros": "home",
+    "rgm": "home",
+    "rgw": "home",
     "cs2": "home",
+    "lol": "home",
+    "dota2": "home",
 }
 
 # =============================================================================

@@ -56,7 +56,7 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_live.add_argument("--league", type=str, nargs="+", default=None,
                               help="One or more league keys (e.g., epl laliga ucl)")
     hotpath_live.add_argument("--sport", type=str, default=None,
-                              choices=["soccer", "baseball", "tennis"],
+                              choices=["soccer", "baseball", "tennis", "cs2", "moba"],
                               help="Run all live leagues for a sport")
     hotpath_live.add_argument("--link-run-id", type=int, default=None,
                               help="Link run ID (default: latest for the league)")

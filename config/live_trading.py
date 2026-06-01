@@ -9,9 +9,11 @@ LIVE_BETTING_LEAGUES = {
     "epl",
     "ucl",
     "laliga",
-    "rolgar",
-    "garros",
+    "rgm",
+    "rgw",
     "cs2",
+    "lol",
+    "dota2",
 }
 LIVE_BETTING_MARKET_TYPES = {
     "mlb": ["nrfi", 
@@ -35,11 +37,11 @@ LIVE_BETTING_MARKET_TYPES = {
             "both_teams_to_score",
             "spreads",
             "soccer_halftime_result",],
-    "rolgar": ["moneyline",
+    "rgm": ["moneyline",
             "tennis_first_set_winner",
             "tennis_set_totals",
             "tennis_set_handicap",],
-    "garros":["moneyline",
+    "rgw":["moneyline",
             "tennis_first_set_winner",
             "tennis_set_totals",
             "tennis_set_handicap",],
@@ -47,6 +49,14 @@ LIVE_BETTING_MARKET_TYPES = {
             "child_moneyline",
             "totals",
             "map_handicap",],
+    "lol": ["moneyline",
+            "child_moneyline",
+            "totals",
+            "map_handicap",],
+    "dota2": ["moneyline",
+              "child_moneyline",
+              "totals",
+              "map_handicap",],
 }
 
 # Centralized hotpath execution profile used by league runtime plugins.
@@ -126,7 +136,7 @@ HOTPATH_EXECUTION_POLICY = {
                     "secondary_amount_usdc": 150.0, "secondary_size_shares": 150.0, "secondary_limit_price": 0.99,},
                     },
     },
-    "rolgar": {
+    "rgm": {
         "amount_usdc": 150.0,
         "size_shares": 150.0,
         "time_in_force": "GTC",
@@ -137,24 +147,42 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
     },
-    "garros": {
-        "amount_usdc": 75.0,
-        "size_shares": 75.0,
+    "rgw": {
+        "amount_usdc": 100.0,
+        "size_shares": 100.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
-        "secondary_amount_usdc": 75.0,
-        "secondary_size_shares": 75.0, 
+        "secondary_amount_usdc": 100.0,
+        "secondary_size_shares": 100.0, 
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
     },
     "cs2":{
+        "amount_usdc": 25.0,
+        "size_shares": 25.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+        "secondary_amount_usdc": 50.0,
+        "secondary_size_shares": 50.0, 
+        "secondary_time_in_force": "FAK",
+        "secondary_limit_price": 0.99,
+    },
+    "lol":{
         "amount_usdc": 5.0,
         "size_shares": 5.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
-    }
+    },
+    "dota2":{
+        "amount_usdc": 5.0,
+        "size_shares": 5.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+    },
 }
 
 # Runtime timing controls for live snapshot refresh and subscription windows.
@@ -195,7 +223,7 @@ HOTPATH_RUNTIME_POLICY = {
         "ws_core_idx": 7,
         "submitter_core_idx": 8,
     },
-    "rolgar": {
+    "rgm": {
         "plan_horizon_hours": 12,
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
@@ -204,14 +232,14 @@ HOTPATH_RUNTIME_POLICY = {
 	    "ws_core_idx": 3,
 	    "submitter_code_idx": 4,
     },
-    "garros": {
+    "rgw": {
         "plan_horizon_hours": 12,
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 20000,
         "refresh_interval_seconds": 1800,
-	    "ws_core_idx": 1,
-	    "submitter_code_idx": 2,
+	    "ws_core_idx": 3,
+	    "submitter_code_idx": 4,
     },
     "cs2": {
         "plan_horizon_hours": 12,
@@ -219,7 +247,25 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 43200,
         "refresh_interval_seconds": 1800,
-	    "ws_core_idx": 0,
-	    "submitter_code_idx": 7,
+	    "ws_core_idx": 1,
+	    "submitter_code_idx": 2,
+    },
+    "lol": {
+        "plan_horizon_hours": 12,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 43200,
+        "refresh_interval_seconds": 1800,
+        "ws_core_idx": 0,
+        "submitter_core_idx": 7,
+    },
+    "dota2": {
+        "plan_horizon_hours": 12,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 43200,
+        "refresh_interval_seconds": 1800,
+        "ws_core_idx": 0,
+        "submitter_core_idx": 7,
     },
 }

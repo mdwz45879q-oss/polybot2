@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball), soccer (EPL, La Liga, Bundesliga, UCL), tennis (ATP, WTA, ITF — French Open men's and women's singles), and CS2 esports (full Rust hotpath with closed-form map winner detection). Dota2 and LoL are catalog-only (provider sync + linking — no Rust engine yet). Four score data providers: Kalstrop V1 (Sportradar, WS, baseball + soccer + tennis + CS2), Kalstrop V2 (BetGenius, Socket.IO, soccer + tennis), BoltOdds (WS, broad coverage including esports), Kalstrop Opta (REST catalog, football + baseball — streaming pending for non-World-Cup). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
+polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball), soccer (EPL, La Liga, Bundesliga, UCL), tennis (ATP, WTA, ITF — French Open men's and women's singles), CS2 esports (full Rust hotpath with closed-form map winner detection), and MOBA esports (LoL + Dota2 — shared `NativeMobaEngine`, BoltOdds-only, maps-won evaluation). Five sports, four score data providers: Kalstrop V1 (Sportradar, WS, baseball + soccer + tennis + CS2), Kalstrop V2 (BetGenius, Socket.IO, soccer + tennis), BoltOdds (WS, broad coverage including esports — primary for MOBA), Kalstrop Opta (REST catalog, football + baseball — streaming pending for non-World-Cup). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
 
 ## Build & Test
 
@@ -57,7 +57,8 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `baseball/` | Sport-specific: `engine.rs` (NativeMlbEngine, process_tick_live, merge_plan), `eval.rs` (totals, NRFI, walkoff, moneyline, spreads), `parse.rs` (inning parsing), `frame_pipeline.rs` (zero-alloc live path), `types.rs` (GameState, GameTargets, etc.) |
 | `soccer/` | Sport-specific: `engine.rs` (NativeSoccerEngine), `eval.rs` (totals, three-way moneyline, BTTS, spreads, corners, halftime result, exact score with early NO), `parse.rs` (half parsing), `frame_pipeline.rs`, `types.rs` |
 | `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 6 evaluators: match totals, first-set totals, set totals, moneyline, first-set winner, set handicap), `frame_pipeline.rs`, `types.rs`. Per-game `sets_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-module dependency on soccer). |
-| `cs2/` | Sport-specific: `engine.rs` (NativeCs2Engine, process_tick_live, merge_plan), `eval.rs` (closed-form map winner via `map_winner()`, child moneyline with dual-signal detection, match moneyline, totals, map handicap — 27 tests), `frame_pipeline.rs` (uses `"Closed"` not `"Ended"` for match completion), `types.rs` (Cs2GameTargets, Cs2GameState, SpreadSlot). Per-game `maps_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-sport imports). |
+| `cs2/` | Sport-specific: `engine.rs` (NativeCs2Engine, process_tick_live, merge_plan), `eval.rs` (closed-form map winner via `map_winner()`, child moneyline with dual-signal detection, match moneyline, totals with guaranteed-certainty, map handicap with early not_covers — 40 tests), `frame_pipeline.rs` (uses `"Closed"` not `"Ended"` for match completion), `types.rs` (Cs2GameTargets, Cs2GameState, SpreadSlot). Per-game `maps_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-sport imports). Effective-maps optimization: fires match-end bets on round-13 tick without waiting for V1 maps counter. |
+| `moba/` | Sport-specific: `engine.rs` (NativeMobaEngine — shared by LoL + Dota2), `eval.rs` (child moneyline via maps-won only, moneyline, totals with guaranteed-certainty, map handicap with early not_covers — 11 tests), `types.rs` (MobaGameTargets, MobaGameState, SpreadSlot). Simplified CS2 engine: no round-level data, no `map_winner()`, no effective_state. BoltOdds-only (no V1). |
 | `kalstrop_v2_sio.rs` | Socket.IO/Engine.IO client for Kalstrop V2 (`SioConnection`, handshake, `subscribe`/`unsubscribe`, frame classification) |
 | `kalstrop_v2_types.rs` | V2 frame extractor (`fast_extract_v2`): fixture_id, home/away scores, currentPhase. Prebuilt finders. |
 | `kalstrop_v2_frame_pipeline.rs` | V2 soccer frame pipeline: extract → dedup → phase map → engine → dispatch |
@@ -65,9 +66,11 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `ws_multiplexed.rs` | Multiplexed WS worker: manages V1+V2+BoltOdds connections in one `tokio::select!` loop. "Fastest wins" — whichever provider delivers a score change first triggers evaluation. Independent reconnection per provider. BoltOdds dispatch branches on `SportEngine::Baseball` vs `SportEngine::Soccer` for sport-specific frame processing. |
 | `boltodds_types.rs` | Byte-level extractor for BoltOdds frames (`fast_extract_boltodds`). Extracts `game_label`, goals, corners, match period from raw JSON without serde. |
 | `boltodds_frame_pipeline.rs` | BoltOdds soccer frame pipeline: extract → dedup → eval → dispatch. Uses integer-based dedup (goals + corners + period). |
-| `boltodds_baseball_frame_pipeline.rs` | BoltOdds baseball frame pipeline: extract → engine tick → dispatch. Thin glue layer called per-frame from the multiplexed WS worker. |
-| `boltodds_baseball_types.rs` | Byte-level extractor for BoltOdds baseball frames (`BoltOddsBaseballExtract`). Scans raw JSON for fields needed by the baseball engine. |
-| `ws_boltodds.rs` | BoltOdds WS worker: plain WS connection (`?key=TOKEN`), subscribe by game labels, frame drain loop. Simpler protocol than V1 (no GraphQL). |
+| `boltodds_baseball_frame_pipeline.rs` | BoltOdds baseball frame pipeline: extract → serde fallback → engine tick → dispatch. Thin glue layer called per-frame from the WS worker. |
+| `boltodds_baseball_types.rs` | Byte-level extractor for BoltOdds baseball frames (`BoltOddsBaseballExtract`) + serde fallback (`serde_extract_boltodds_baseball`). Resilient to field-reordering changes. |
+| `boltodds_moba_frame_pipeline.rs` | BoltOdds MOBA (LoL/Dota2) frame pipeline: extract → serde fallback → engine tick → dispatch. Always passes `match_completed=false` (MOBA detects match end via `maps >= mtw`). |
+| `boltodds_moba_types.rs` | Byte-level extractor for BoltOdds MOBA frames (`BoltOddsMobaExtract`) + serde fallback. Extracts `event` (game label), `teams.home.score`, `teams.away.score` from `new_play` frames. |
+| `ws_boltodds.rs` | BoltOdds WS worker: plain WS connection (`?key=TOKEN`), subscribe by game labels, frame drain loop. Dispatches to `SportEngine::Soccer`, `Baseball`, or `Moba` per-frame. Simpler protocol than V1 (no GraphQL). Per-provider reconnection timers with exponential backoff. |
 | `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames. `fast_extract_v1` (soccer/baseball): fixtureId, homeScore, awayScore, freeText, corners. `fast_extract_tennis_v1` (tennis): adds nested currentPhase fields (games_home/away, phase number) and phases array scan for total_games/first_set_games. `fast_extract_cs2_v1` (CS2): extracts fixture_id, maps_home/away, rounds_home/away, free_text, current_phase. No phases array scanning (unlike tennis). |
 | `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by baseball, soccer (V1, BoltOdds, V2), tennis, and CS2 frame pipelines. |
 | `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`). Depth is 1-2 per token (primary + optional secondary order). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes orders per token at startup. |
@@ -75,9 +78,9 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `dispatch/sdk_exec.rs` | `OrderSubmitter::new`, `ensure_sdk_runtime_async`, `sdk_client_ref`, `signer_ref` (SDK init for presign signing). `sign_order_batch` (presign warmup). `map_post_response` helper. The SDK client is used only for order signing at startup/patch — not for HTTP submission. |
 | `dispatch/submitter.rs` | `run_submitter_async`: spin-loop that pops from SPSC ring and calls `submit_batch_task` inline (no `tokio::spawn`). 3-tier dispatch: `len==1` (single `POST /order`, bare `.await`), `2..=15` (one `POST /orders` batch — 1 HMAC, 1 HTTP request), `>15` (chunked into groups of `MAX_CLOB_BATCH=15`, concurrent `join_all`). Uses `ChunkScratch` for reusable body/index buffers. No semaphore. Keeps CLOB connection warm via `CLOB_KEEPALIVE_INTERVAL` (120s) pings during idle — no order ever pays cold-start TLS. |
 | `dispatch/types.rs` | `DispatchHandle`, `OrderSubmitter`, `SubmitWork`, `SubmitBatch`, `PreparedOrderPayload`, `SharedRegistry` (ArcSwap). `PreparedOrderPayload` stores pre-serialized order JSON bytes + `time_in_force: OrderTimeInForce` (carried through to log output). |
-| `ws.rs` | Kalstrop V1 live worker: GraphQL WS connect, subscription management, frame drain loop. Uses `worker_clock_origin: Instant` for monotonic timestamps. Dispatches to sport-specific frame pipeline via `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2` variants). Drains `patch_rx` at quiescent points for hot-patch application. |
-| `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), `ws_boltodds.rs` (BoltOdds), or `ws_multiplexed.rs` (multi-provider) based on `provider`/`providers` in config. Sport engine selected from explicit `sport` field in plan JSON via `detect_sport_from_plan()` (accepts `"baseball"`/`"soccer"`/`"tennis"`/`"cs2"`) — returns `Result`, crashes on unknown sport (no silent fallback). CPU core pinning via `core_affinity` for WS + submitter threads (`ws_core_idx`/`submitter_core_idx` in config). `health_snapshot()` exposes WS + submitter health. |
-| `lib.rs` | Shared types (`GameIdx`, `TargetIdx`, `TokenIdx`, `OverLine`, `SpreadSide`, `Intent`, `RawIntent`), `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2`), `PatchPayload`, `NativeHotPathRuntime`, config structs. Sport-specific types live in `baseball/types.rs`, `soccer/types.rs`, `tennis/types.rs`, `cs2/types.rs`. |
+| `ws.rs` | Kalstrop V1 live worker: GraphQL WS connect, subscription management, frame drain loop. Uses `worker_clock_origin: Instant` for monotonic timestamps. Dispatches to sport-specific frame pipeline via `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2`/`Moba` variants — Moba is a no-op since it uses BoltOdds only). Drains `patch_rx` at quiescent points for hot-patch application. |
+| `runtime.rs` | PyO3 `NativeHotPathRuntime`: builds both halves at startup with shared `Arc<TargetRegistry>`, runs presign warmup, spawns submitter and WS threads, lifecycle (`start`/`stop`/`patch_plan`). Provider-based worker dispatch: spawns `ws.rs` (Kalstrop V1), `ws_kalstrop_v2.rs` (Kalstrop V2), `ws_boltodds.rs` (BoltOdds), or `ws_multiplexed.rs` (multi-provider) based on `provider`/`providers` in config. Sport engine selected from explicit `sport` field in plan JSON via `detect_sport_from_plan()` (accepts `"baseball"`/`"soccer"`/`"tennis"`/`"cs2"`/`"moba"`) — returns `Result`, crashes on unknown sport (no silent fallback). CPU core pinning via `core_affinity` for WS + submitter threads (`ws_core_idx`/`submitter_core_idx` in config). `health_snapshot()` exposes WS + submitter health. |
+| `lib.rs` | Shared types (`GameIdx`, `TargetIdx`, `TokenIdx`, `OverLine`, `SpreadSide`, `Intent`, `RawIntent`), `SportEngine` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2`/`Moba`), `PatchPayload`, `NativeHotPathRuntime`, config structs. Sport-specific types live in `baseball/types.rs`, `soccer/types.rs`, `tennis/types.rs`, `cs2/types.rs`, `moba/types.rs`. |
 | `log_writer.rs` | Structured JSONL log (schema V2). Wrapped in `Arc<Mutex<LogWriter>>` and shared by WS thread (logs ticks) and submitter thread (logs order outcomes). `LogWriter` stores `sport: &'static str` set at construction. `log_tick` takes `gid: &str` + `&TickPayload` enum (`Baseball`/`Soccer`/`Tennis`/`Cs2`) — each variant carries sport-specific named score fields (`runs_home`/`goals_home`/`sets_home`/`maps_home`), league (`lg`), game state, and source provider (`src`). CS2 variant includes `maps_home`/`maps_away`, `rounds_home`/`rounds_away`, `current_map`. Order events include `gid`, `tif` ("FAK"/"GTC"/"FOK"), and are keyed via `gid_from_sk(sk)`. Startup event emits `v:2`, `sport`, `leagues` array. Connection events carry `src` (provider name). |
 
 ### Hot Path Pipeline
@@ -299,6 +302,7 @@ polybot2 hotpath live --league epl --execution-mode live  # single league
 polybot2 hotpath live --sport soccer --execution-mode live # all soccer leagues in one process
 polybot2 hotpath live --league epl laliga ucl --execution-mode live  # explicit multi-league
 polybot2 hotpath live --league cs2 --execution-mode live  # CS2 esports
+polybot2 hotpath live --sport moba --execution-mode live  # LoL + Dota2 in one process
 polybot2 hotpath observe --log-file path/to/hotpath_42_*.jsonl   # live terminal scoreboard
 polybot2 hotpath observe --run-id 42 --link-run-id N --db path.sqlite  # auto-discover log, resolve team names
 ```
@@ -410,7 +414,8 @@ Measured from dual-capture recordings (same machine, simultaneous connections):
 | **Soccer (goals)** | V2 (BetGenius) | ~1.5s faster than V1 | V2 fires totals, exact score, BTTS first |
 | **Soccer (halftime/end)** | V1 (Sportradar) | faster than V2 | V1 fires halftime result, moneyline, spreads first |
 | **Tennis** | V1 (Sportradar) | ~14s faster than V2, ~50ms faster than BoltOdds | V2 uses a significantly delayed secondary feed; BoltOdds relays the same Sportradar feed with ~50ms hop |
-| **CS2** | V1 (Sportradar) | 30–100s edge for map completion (round-level detection vs maps-won counter) | BoltOdds provides maps-won only, not round-level |
+| **CS2** | V1 (Sportradar) | 15–24s edge for map completion (round-level detection) | BoltOdds has round-level data too but relays ~15-24s later |
+| **MOBA (LoL/Dota2)** | BoltOdds | 30–547s faster than V1 | V1 delays deciding map score until `freeText="Closed"`. BoltOdds reports immediately. |
 
 ## Environment Variables
 
@@ -642,6 +647,26 @@ Both signals resolve to the same `GameIdx` and are gated by the presign pool —
 ### Outcome Label Resolution
 
 PM outcome_index 0/1 ordering is **inconsistent** across CS2 events — home is not always index 0. Resolved by label matching against team names from `TEAM_MAP_CS2`, cross-validated against the market's question text. For map handicap, `"home"` in the slug refers to the underdog (+1.5), not the favorite — the favored side is determined once from the question text and applied to both outcomes.
+
+## MOBA Integration (LoL + Dota2)
+
+Fifth sport family. LoL and Dota2 are both MOBA (multiplayer online battle arena) games with identical match structures — they share a single Rust engine (`NativeMobaEngine`). Uses BoltOdds as the sole provider (30-547s faster than V1 for map-won detection). Documentation in `lol_dota2_design_document.md`.
+
+### Key Differences from CS2
+
+- **No round-level data** — map winners come only from the `teams.home/away.score` counter in BoltOdds `new_play` frames. No `map_winner()` condition, no Signal 1, no effective_state.
+- **BoltOdds-only** — V1 is too slow (delays deciding map until `"Closed"`). Single provider, standalone `ws_boltodds.rs` worker (not multiplexed).
+- **`sport = "moba"`** — both LoL and Dota2 are leagues within the "moba" sport. `--sport moba` runs both in one process.
+- **Child moneyline for all maps** — PM lists markets for maps 1-5 in BO5 (unlike CS2 which omits the deciding map). Unreached maps are never fired.
+- **BoltOdds uses `"event"` field** (not `"game"`) for esports game labels.
+
+### Market Types (same 4 as CS2)
+
+`moneyline`, `child_moneyline`, `totals` (guaranteed-certainty for over), `map_handicap` (early not_covers). Strategy keys: `{gid}:MONEYLINE:HOME`, `{gid}:CHILD_MONEYLINE:MAP1:AWAY`, `{gid}:TOTAL:OVER:2.5`, `{gid}:MAP_HANDICAP:HOME_COVERS:-1.5`.
+
+### Configuration
+
+Leagues `"lol"` and `"dota2"` in `config/mappings.py` with `sport_family: "moba"`, `provider: "boltodds"`. Team mappings in `config/lol_mappings.py` and `config/dota2_mappings.py` (populated progressively). `(BON)` format parsed from PM event title (same as CS2).
 
 ## Python Cleanup Audit
 

@@ -545,8 +545,8 @@ def compile_hotpath_plan(
     exclude_strategy_keys: set[str] | None = None,
     include_inactive: bool = False,
 ) -> CompiledPlan:
-    if sport not in {"baseball", "soccer", "tennis", "cs2"}:
-        raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis, got: {sport!r}")
+    if sport not in {"baseball", "soccer", "tennis", "cs2", "moba"}:
+        raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis/cs2/moba, got: {sport!r}")
     policy = live_policy or load_live_trading_policy()
     scope = evaluate_hotpath_scope(
         db=db,
@@ -947,10 +947,10 @@ def compile_hotpath_plan(
             if pid and pid != str(meta.provider_game_id)
         )
 
-        # For CS2: parse maps_to_win from market question (BON format).
+        # For esports: parse maps_to_win from market question (BON format).
         # Overrides the league-level sets_to_win with per-game value.
         game_sets_to_win = int(sets_to_win)
-        if sport == "cs2":
+        if sport in {"cs2", "moba"}:
             bo_match = None
             for m in market_values:
                 q = str(m.get("question") or "")
@@ -1059,8 +1059,8 @@ def compile_multi_league_plan(
     Skips leagues that have no in-scope games (HotPathPlanError with
     code 'scope_blocked'). Raises only if ALL leagues fail.
     """
-    if sport not in {"baseball", "soccer", "tennis", "cs2"}:
-        raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis, got: {sport!r}")
+    if sport not in {"baseball", "soccer", "tennis", "cs2", "moba"}:
+        raise HotPathPlanError("invalid_sport", f"sport must be baseball/soccer/tennis/cs2/moba, got: {sport!r}")
     all_games: list[CompiledGamePlan] = []
     seen_game_ids: set[str] = set()
     successes = 0

@@ -6,6 +6,9 @@ use crate::boltodds_baseball_frame_pipeline::{
     process_boltodds_baseball_frame_sync, BoltOddsBaseballPendingLog,
 };
 use crate::boltodds_frame_pipeline::{process_boltodds_frame_sync, BoltOddsPendingLog};
+use crate::boltodds_moba_frame_pipeline::{
+    process_boltodds_moba_frame_sync, BoltOddsMobaPendingLog,
+};
 use crate::dispatch::DispatchHandle;
 use crate::log_writer::LogWriter;
 use crate::ws::{apply_pending_patches, with_health};
@@ -187,6 +190,8 @@ pub(crate) async fn run_boltodds_worker_async(
             let mut pending_soccer_logs = smallvec::SmallVec::<[BoltOddsPendingLog; 4]>::new();
             let mut pending_baseball_logs =
                 smallvec::SmallVec::<[BoltOddsBaseballPendingLog; 4]>::new();
+            let mut pending_moba_logs =
+                smallvec::SmallVec::<[BoltOddsMobaPendingLog; 4]>::new();
             let mut first_read = true;
             loop {
                 let next = if first_read {
@@ -246,6 +251,17 @@ pub(crate) async fn run_boltodds_worker_async(
                                 pending_baseball_logs.push(tl);
                             }
                         }
+                        SportEngine::Moba(ref mut e) => {
+                            if let Some(tl) = process_boltodds_moba_frame_sync(
+                                e,
+                                text.as_ref(),
+                                source_recv_ns,
+                                &mut dispatch_handle,
+                                &log,
+                            ) {
+                                pending_moba_logs.push(tl);
+                            }
+                        }
                         _ => {}
                     },
                     Message::Binary(bytes) => {
@@ -271,6 +287,17 @@ pub(crate) async fn run_boltodds_worker_async(
                                         &log,
                                     ) {
                                         pending_baseball_logs.push(tl);
+                                    }
+                                }
+                                SportEngine::Moba(ref mut e) => {
+                                    if let Some(tl) = process_boltodds_moba_frame_sync(
+                                        e,
+                                        text,
+                                        source_recv_ns,
+                                        &mut dispatch_handle,
+                                        &log,
+                                    ) {
+                                        pending_moba_logs.push(tl);
                                     }
                                 }
                                 _ => {}
@@ -357,6 +384,35 @@ pub(crate) async fn run_boltodds_worker_async(
                     }
                 }
                 pending_baseball_logs.clear();
+            }
+            if !pending_moba_logs.is_empty() {
+                if let SportEngine::Moba(ref e) = engine {
+                    if let Ok(mut g) = log.lock() {
+                        for tl in &pending_moba_logs {
+                            let gid = e
+                                .game_ids
+                                .get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_str())
+                                .unwrap_or("_");
+                            let lg = e
+                                .game_leagues
+                                .get(tl.game_idx.0 as usize)
+                                .map(|s| s.as_ref())
+                                .unwrap_or("");
+                            g.log_tick(
+                                gid,
+                                &crate::log_writer::TickPayload::Moba {
+                                    lg,
+                                    maps_home: tl.state.maps_home.unwrap_or(0),
+                                    maps_away: tl.state.maps_away.unwrap_or(0),
+                                    gs: tl.state.game_state,
+                                    src: "boltodds",
+                                },
+                            );
+                        }
+                    }
+                }
+                pending_moba_logs.clear();
             }
 
             // Flush log buffer

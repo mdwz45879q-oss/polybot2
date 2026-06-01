@@ -274,6 +274,81 @@ pub(crate) fn fast_extract_boltodds_baseball(json: &str) -> Option<BoltOddsBaseb
     })
 }
 
+// ─── Serde fallback for resilience against field-ordering changes ────
+
+/// Owned extraction result (allocated by serde fallback).
+pub(crate) struct BoltOddsBaseballExtractOwned {
+    pub game_label: String,
+    pub outs: u8,
+    pub strikes: u8,
+    pub inning: i64,
+    pub top_of_inning: bool,
+    pub home_score: i64,
+    pub away_score: i64,
+    pub period_detail: String,
+    pub base1: bool,
+    pub base2: bool,
+    pub base3: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[allow(dead_code)]
+struct BoBaseballFrame {
+    action: String,
+    game: Option<String>,
+    state: Option<BoBaseballState>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct BoBaseballState {
+    out: Option<i64>,
+    inning: Option<i64>,
+    strike: Option<i64>,
+    base1: Option<bool>,
+    base2: Option<bool>,
+    base3: Option<bool>,
+    top_of_inning: Option<bool>,
+    match_period: Option<Vec<String>>,
+    total_runs_for_team_a: Option<i64>,
+    total_runs_for_team_b: Option<i64>,
+}
+
+/// Serde-based extraction fallback. Only called when the byte-level
+/// extractor fails. Allocates but is resilient to field reordering,
+/// new fields, whitespace changes, etc.
+pub(crate) fn serde_extract_boltodds_baseball(json: &str) -> Option<BoltOddsBaseballExtractOwned> {
+    let frame: BoBaseballFrame = serde_json::from_str(json).ok()?;
+    if frame.action != "match_update" {
+        return None;
+    }
+    let game_label = frame.game?;
+    if game_label.is_empty() {
+        return None;
+    }
+    let state = frame.state?;
+    let period_detail = state
+        .match_period
+        .as_ref()
+        .and_then(|v| v.get(1))
+        .cloned()
+        .unwrap_or_default();
+    Some(BoltOddsBaseballExtractOwned {
+        game_label,
+        outs: state.out? as u8,
+        strikes: state.strike? as u8,
+        inning: state.inning?,
+        top_of_inning: state.top_of_inning?,
+        home_score: state.total_runs_for_team_a?,
+        away_score: state.total_runs_for_team_b?,
+        period_detail,
+        base1: state.base1.unwrap_or(false),
+        base2: state.base2.unwrap_or(false),
+        base3: state.base3.unwrap_or(false),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,5 +443,34 @@ mod tests {
     fn test_missing_total_runs_b() {
         let frame = r#"{"action":"match_update","game":"Test Game, 2026-05-21, 01","universal_id":"abc","home":"A","away":"B","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":false,"out":1,"inning":2,"runs":{"A":0,"B":0},"strike":1,"ball":0,"base1":false,"base2":false,"base3":false,"topOfInning":true,"extraInningsRuns":{"A":0,"B":0},"inningScores":{"1":{"A":0,"B":0}},"matchPeriod":["BaseballMatchPeriod","AT_TOP_2ND_INNING"],"matchNumberOfInnings":0,"clockStatus":"SET_PERIOD_END","totalRunsForTeamA":0,"clockRunning":false}}"#;
         assert!(fast_extract_boltodds_baseball(frame).is_none());
+    }
+
+    #[test]
+    fn test_serde_fallback_b_before_a() {
+        // BoltOdds now sends totalRunsForTeamB before totalRunsForTeamA.
+        // The byte-level extractor handles this via order-independent search,
+        // but the serde fallback should also work for any ordering.
+        let frame = r#"{"timestamp":"2026-05-31T21:55:46.464220+00:00","action":"match_update","game":"Colorado Rockies vs San Francisco Giants, 2026-05-31, 03","universal_id":"f6b91f77ec16","home":"Colorado Rockies","away":"San Francisco Giants","designation":{"A":"home","B":"away"},"state":{"preMatch":false,"matchCompleted":false,"out":2,"inning":7,"runs":{"A":5,"B":14},"strike":2,"ball":1,"base1":true,"base2":false,"base3":false,"topOfInning":true,"extraInningsRuns":{"A":0,"B":0},"inningScores":{},"matchPeriod":["BaseballMatchPeriod","AT_TOP_7TH_INNING"],"matchNumberOfInnings":0,"clockStatus":"SET_PERIOD_END","totalRunsForTeamB":14,"totalRunsForTeamA":5,"clockRunning":false}}"#;
+        // Fast extractor should work (order-independent fix)
+        let r = fast_extract_boltodds_baseball(frame).unwrap();
+        assert_eq!(r.home_score, 5);
+        assert_eq!(r.away_score, 14);
+        assert_eq!(r.inning, 7);
+        assert!(r.top_of_inning);
+        assert!(r.base1);
+        // Serde fallback should also work
+        let owned = serde_extract_boltodds_baseball(frame).unwrap();
+        assert_eq!(owned.home_score, 5);
+        assert_eq!(owned.away_score, 14);
+        assert_eq!(owned.inning, 7);
+        assert!(owned.top_of_inning);
+        assert!(owned.base1);
+        assert_eq!(owned.period_detail, "AT_TOP_7TH_INNING");
+    }
+
+    #[test]
+    fn test_serde_fallback_rejects_non_match_update() {
+        let frame = r#"{"action":"connected","event":"Test, 2026-05-31, 01","universal_id":"abc"}"#;
+        assert!(serde_extract_boltodds_baseball(frame).is_none());
     }
 }

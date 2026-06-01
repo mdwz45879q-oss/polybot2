@@ -3,7 +3,9 @@
 //! dispatch modules. Called per-frame from the WS worker.
 
 use crate::baseball::types::{GameState, NativeMlbEngine};
-use crate::boltodds_baseball_types::fast_extract_boltodds_baseball;
+use crate::boltodds_baseball_types::{
+    fast_extract_boltodds_baseball, serde_extract_boltodds_baseball, BoltOddsBaseballExtract,
+};
 use crate::dispatch::{dispatch_intents, DispatchHandle};
 use crate::log_writer::LogWriter;
 use crate::{GameIdx, InlineStr};
@@ -26,23 +28,39 @@ pub(crate) fn process_boltodds_baseball_frame_sync(
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
 ) -> Option<BoltOddsBaseballPendingLog> {
-    let extract = match fast_extract_boltodds_baseball(frame_text) {
-        Some(e) => e,
-        None => {
-            eprintln!(
-                "[mux-bo] baseball extract failed: {}",
-                &frame_text[..frame_text.len().min(200)]
-            );
-            return None;
-        }
-    };
-    let gidx = match engine.check_boltodds_game(extract.game_label) {
-        Some(g) => g,
-        None => {
-            eprintln!("[mux-bo] unknown game_label: '{}'", extract.game_label);
-            return None;
-        }
-    };
+    // Try fast byte-level extraction; fall back to serde on failure.
+    if let Some(extract) = fast_extract_boltodds_baseball(frame_text) {
+        return process_extract(engine, &extract, recv_monotonic_ns, dispatch_handle, log);
+    }
+    // Serde fallback — resilient to field reordering and structural changes.
+    if let Some(owned) = serde_extract_boltodds_baseball(frame_text) {
+        let extract = BoltOddsBaseballExtract {
+            game_label: &owned.game_label,
+            outs: owned.outs,
+            strikes: owned.strikes,
+            inning: owned.inning,
+            top_of_inning: owned.top_of_inning,
+            home_score: owned.home_score,
+            away_score: owned.away_score,
+            period_detail: &owned.period_detail,
+            base1: owned.base1,
+            base2: owned.base2,
+            base3: owned.base3,
+        };
+        return process_extract(engine, &extract, recv_monotonic_ns, dispatch_handle, log);
+    }
+    // Neither path could extract — not a match_update or missing required fields.
+    None
+}
+
+fn process_extract(
+    engine: &mut NativeMlbEngine,
+    extract: &BoltOddsBaseballExtract<'_>,
+    recv_monotonic_ns: i64,
+    dispatch_handle: &mut DispatchHandle,
+    log: &Arc<Mutex<LogWriter>>,
+) -> Option<BoltOddsBaseballPendingLog> {
+    let gidx = engine.check_boltodds_game(extract.game_label)?;
     let result = engine.process_boltodds_tick_live(
         gidx,
         extract.outs,

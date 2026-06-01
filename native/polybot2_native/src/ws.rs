@@ -515,6 +515,9 @@ pub(crate) async fn run_live_worker_async(
                             &log,
                         );
                     }
+                    SportEngine::Moba(_) => {
+                        // MOBA uses BoltOdds only — no V1 frame processing.
+                    }
                 }
             }
             if let Ok(mut g) = log.lock() {
