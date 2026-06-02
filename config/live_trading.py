@@ -14,6 +14,7 @@ LIVE_BETTING_LEAGUES = {
     "cs2",
     "lol",
     "dota2",
+    "fifa_friendly",
 }
 LIVE_BETTING_MARKET_TYPES = {
     "mlb": ["nrfi", 
@@ -57,6 +58,12 @@ LIVE_BETTING_MARKET_TYPES = {
               "child_moneyline",
               "totals",
               "map_handicap",],
+    "fifa_friendly": ["moneyline",
+                      "totals",
+                      "both_teams_to_score",
+                      "spreads",
+                      "soccer_halftime_result",
+                      "total_corners",],
 }
 
 # Centralized hotpath execution profile used by league runtime plugins.
@@ -183,6 +190,13 @@ HOTPATH_EXECUTION_POLICY = {
         "require_presign": True,
         "limit_price": 0.99,
     },
+    "fifa_friendly": {
+        "amount_usdc": 5.0,
+        "size_shares": 5.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+    },
 }
 
 # Runtime timing controls for live snapshot refresh and subscription windows.
@@ -267,5 +281,14 @@ HOTPATH_RUNTIME_POLICY = {
         "refresh_interval_seconds": 1800,
         "ws_core_idx": 0,
         "submitter_core_idx": 7,
+    },
+    "fifa_friendly": {
+        "plan_horizon_hours": 12,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 20000,
+        "refresh_interval_seconds": 300,
+        "ws_core_idx": 3,
+        "submitter_core_idx": 4,
     },
 }

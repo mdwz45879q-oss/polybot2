@@ -10,12 +10,16 @@ use crate::soccer::types::{NativeSoccerEngine, SoccerGameState};
 use crate::GameIdx;
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone, Copy)]
+use crate::InlineStr;
+
+#[derive(Clone)]
 pub(crate) struct V2PendingLog {
     pub(crate) game_idx: GameIdx,
     pub(crate) state: SoccerGameState,
     pub(crate) half: &'static str,
     pub(crate) game_state: &'static str,
+    pub(crate) var_action_type: InlineStr<16>,
+    pub(crate) var_action_subtype: InlineStr<24>,
 }
 
 pub(crate) fn process_v2_frame_sync(
@@ -76,5 +80,7 @@ pub(crate) fn process_v2_frame_sync(
         state: result.state,
         half,
         game_state,
+        var_action_type: InlineStr::from_str(extract.var_action_type),
+        var_action_subtype: InlineStr::from_str(extract.var_action_subtype),
     })
 }

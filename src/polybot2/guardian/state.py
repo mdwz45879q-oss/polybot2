@@ -20,6 +20,8 @@ class ScoreEvent:
     game_state: str
     prev_home: int | None = None
     prev_away: int | None = None
+    var_type: str = ""     # V2 match action: "Var", "VarEnded", "Goal", "DangerStateChanged", or ""
+    var_subtype: str = ""  # V2 match action: "Goal", "GoalAwarded", "GoalNotAwarded", etc.
 
 
 @dataclass

@@ -67,6 +67,8 @@ fn flush_tick_logs(
                     corners_away: tl.state.corners_away,
                     gs: tl.state.game_state,
                     src: "kalstrop_v1",
+                    var_action_type: "",
+                    var_action_subtype: "",
                 },
             );
         }

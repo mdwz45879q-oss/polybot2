@@ -57,9 +57,11 @@ class PolymarketMarketWS:
             try:
                 msg = self._build_subscription_msg(list(self._token_ids))
                 await self._ws.send(msg)
-                logger.debug("market WS: subscribed to %d total tokens", len(self._token_ids))
+                logger.info("market WS: subscribed to %d total tokens (+%d new)", len(self._token_ids), len(new_ids))
             except Exception as exc:
                 logger.warning("market WS subscribe failed: %s", exc)
+        else:
+            logger.info("market WS: queued %d tokens (connection pending)", len(new_ids))
 
     async def run(
         self,
@@ -99,10 +101,8 @@ class PolymarketMarketWS:
         on_best_bid_ask: OnBestBidAsk | None = None,
         on_last_trade: OnLastTrade | None = None,
     ) -> None:
-        if not self._token_ids:
-            await asyncio.sleep(1.0)
-            return
-
+        # Connect immediately — even with no tokens. Tokens arrive later
+        # via subscribe() and are sent on this live connection.
         async with websockets.connect(
             MARKET_WS_URL,
             ping_interval=None,
@@ -112,9 +112,12 @@ class PolymarketMarketWS:
             self._ws = ws
             self._connected = True
 
-            sub_msg = self._build_subscription_msg(list(self._token_ids))
-            await ws.send(sub_msg)
-            logger.info("market WS connected, monitoring %d tokens", len(self._token_ids))
+            if self._token_ids:
+                sub_msg = self._build_subscription_msg(list(self._token_ids))
+                await ws.send(sub_msg)
+                logger.info("market WS connected, monitoring %d tokens", len(self._token_ids))
+            else:
+                logger.info("market WS connected, waiting for token subscriptions")
 
             heartbeat_task = asyncio.create_task(self._heartbeat_loop(ws))
 

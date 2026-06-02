@@ -1,5 +1,5 @@
 from baseball_mappings import TEAM_MAP_MLB
-from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA
+from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
 from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -74,9 +74,12 @@ LEAGUES = {
         "polymarket_league_code": "lol",
         "sport_family": "moba",
         "provider": "boltodds",
-    }
-
-
+    },
+    "fifa_friendly": {
+        "polymarket_league_code": "fif",
+        "sport_family": "soccer",
+        "provider": "kalstrop_v2",
+    },
 }
 
 # Unambiguous provider league name → canonical league key.
@@ -97,6 +100,7 @@ PROVIDER_LEAGUE_ALIASES = {
         "uefa-champions-league": "ucl",
         "english-premier-league": "epl",
         "spanish-la-liga-primera": "laliga",
+        "international-friendlies": "fifa_friendly",
     },
     "kalstrop_opta": {
         "premier league": "epl",
@@ -144,6 +148,10 @@ KALSTROP_V2_SLUGS = {
         "category_slug": "europe",
         "tournament_slug": "uefa-champions-league",
     },
+    "fifa_friendly": {
+        "category_slug": "international",
+        "tournament_slug": "international-friendlies",
+    },
 }
 # =============================================================================
 # TEAM ABBREVIATIONS - LEAGUE SPECIFIC
@@ -159,6 +167,7 @@ TEAM_MAP = {
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
+    "fifa_friendly": TEAM_MAP_FIFA_FRIENDLY,
 }
 
 # =============================================================================
@@ -173,6 +182,7 @@ PM_LEAGUE_ORDERINGS = {
     "cs2": "home",
     "lol": "home",
     "dota2": "home",
+    "fifa_friendly": "home",
 }
 
 # =============================================================================
@@ -190,5 +200,25 @@ LEAGUE_MATCH_RULES = {
         "kickoff_tolerance_minutes": 30,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
-    }
+    },
+    # Esports: PM uses coarse tournament-level timestamps (e.g., 10:30 for all
+    # matches in a day), while V1 has per-match times. Need wider tolerance.
+    "cs2": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 360,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
+    "lol": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 360,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
+    "dota2": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 360,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
 }

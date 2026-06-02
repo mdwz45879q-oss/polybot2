@@ -119,6 +119,8 @@ class OrderStateTracker:
         half = str(ev.get("half", ""))
         gs = str(ev.get("gs", ""))
         ts = int(ev.get("ts", 0))
+        var_type = str(ev.get("var_type", ""))
+        var_subtype = str(ev.get("var_sub", ""))
 
         if home is None or away is None:
             return
@@ -138,6 +140,7 @@ class OrderStateTracker:
             score_event = ScoreEvent(
                 ts=ts, home=home, away=away, half=half, game_state=gs,
                 prev_home=prev_home, prev_away=prev_away,
+                var_type=var_type, var_subtype=var_subtype,
             )
             game.score_timeline.append(score_event)
             self._prev_scores[gid] = (home, away)
@@ -147,6 +150,10 @@ class OrderStateTracker:
                 self.detector.on_score_change(
                     game, prev_home, prev_away, home, away, ts,
                 )
+
+        # Notify detector of VAR events (even without score change)
+        if var_type and self.detector:
+            self.detector.on_var_action(game, var_type, var_subtype, ts)
 
     def _on_order(self, ev: dict[str, Any]) -> None:
         """Process an order event from the log."""

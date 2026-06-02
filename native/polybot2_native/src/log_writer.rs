@@ -27,6 +27,8 @@ pub(crate) enum TickPayload<'a> {
         corners_away: Option<i64>,
         gs: &'a str,
         src: &'static str,
+        var_action_type: &'a str,
+        var_action_subtype: &'a str,
     },
     Tennis {
         lg: &'a str,
@@ -200,6 +202,8 @@ impl LogWriter {
                 corners_away,
                 gs,
                 src,
+                var_action_type,
+                var_action_subtype,
                 ..
             } => {
                 self.buf.push_str(r#","goals_home":"#);
@@ -221,6 +225,13 @@ impl LogWriter {
                 if !src.is_empty() {
                     self.buf.push_str(r#","src":""#);
                     self.buf.push_str(src);
+                    self.buf.push('"');
+                }
+                if !var_action_type.is_empty() {
+                    self.buf.push_str(r#","var_type":""#);
+                    write_json_escape(&mut self.buf, var_action_type);
+                    self.buf.push_str(r#"","var_sub":""#);
+                    write_json_escape(&mut self.buf, var_action_subtype);
                     self.buf.push('"');
                 }
             }

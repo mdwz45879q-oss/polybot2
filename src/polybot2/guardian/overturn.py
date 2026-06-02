@@ -145,11 +145,15 @@ class OverturnDetector:
         bid = data.get("best_bid")
         if bid is not None:
             try:
-                self._best_bids[token_id] = float(bid)
+                bid_val = float(bid)
+                self._best_bids[token_id] = bid_val
             except (TypeError, ValueError):
                 return
         else:
             return
+
+        # Diagnostic: log all bid updates at debug level to verify data flow
+        logger.debug("market bid: token=%s… bid=%.4f", token_id[:16], bid_val)
 
         # Check if this token belongs to an armed alert
         game_id = self._token_to_game.get(token_id)
@@ -175,6 +179,29 @@ class OverturnDetector:
                     game_id, token_id[:20] + "...", bid_val, self._bid_threshold,
                 )
                 self._check_and_trigger(alert)
+
+    def on_var_action(self, game: Any, var_type: str, var_subtype: str, ts: int) -> None:
+        """Called when a V2 VAR match action is detected in the log tick.
+
+        Provides early warning (VAR review started) and definitive confirmation
+        (GoalAwarded/GoalNotAwarded) without relying on score reversal timing.
+        """
+        game_id = game.game_id
+        if var_type == "Var" and var_subtype == "Goal":
+            logger.warning(
+                "🔍 VAR review started for %s (goal under review)", game_id,
+            )
+        elif var_type == "VarEnded":
+            if "NotAwarded" in var_subtype:
+                logger.warning(
+                    "🚨 VAR: GOAL OVERTURNED for %s (%s)", game_id, var_subtype,
+                )
+                # TODO: this is a definitive overturn signal — can trigger
+                # sell/buy immediately without waiting for score reversal.
+            elif "Awarded" in var_subtype:
+                logger.info(
+                    "✅ VAR: goal confirmed for %s (%s)", game_id, var_subtype,
+                )
 
     def check_confirmations(self) -> list[OverturnAlert]:
         """Check if any armed alerts have passed the confirmation window (Signal 1).

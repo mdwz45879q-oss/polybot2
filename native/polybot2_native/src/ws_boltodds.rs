@@ -341,6 +341,8 @@ pub(crate) async fn run_boltodds_worker_async(
                                     corners_away: tl.state.corners_away,
                                     gs: tl.game_state,
                                     src: "boltodds",
+                                    var_action_type: "",
+                                    var_action_subtype: "",
                                 },
                             );
                         }

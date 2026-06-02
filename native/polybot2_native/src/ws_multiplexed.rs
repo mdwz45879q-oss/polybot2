@@ -744,6 +744,8 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 corners_away: tl.state.corners_away,
                                 gs: tl.game_state,
                                 src: "kalstrop_v2",
+                                var_action_type: tl.var_action_type.as_str(),
+                                var_action_subtype: tl.var_action_subtype.as_str(),
                             });
                         }
                         for tl in &pending_bo_logs {
@@ -760,6 +762,8 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 corners_away: tl.state.corners_away,
                                 gs: tl.game_state,
                                 src: "boltodds",
+                                var_action_type: "",
+                                var_action_subtype: "",
                             });
                         }
                     }
