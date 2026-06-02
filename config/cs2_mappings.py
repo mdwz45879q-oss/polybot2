@@ -411,13 +411,12 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["NIP"],
     },
-    "nrg":{
-        "polymarket_code": "nrg", 
-        "provider_aliases": {
-            "kalstrop_v1": ["NRG"],
-        },
-        "pm_aliases": ["nrg"],
-
+    "nrg": {
+    "polymarket_code": "nrg",
+    "provider_aliases": {
+        "kalstrop_v1": ["NRG", "NRG Esports"],  # ← add "NRG Esports"
+    },
+    "pm_aliases": ["nrg"],
     },
     # ODDIK Academy
     "oddik academy": {
