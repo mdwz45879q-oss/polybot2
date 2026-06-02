@@ -304,7 +304,10 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
 
     try:
         from urllib.parse import urlencode as _ue
-        _sio_qs = _ue({"product": "genius-stats", **v2_auth_headers()})
+        # Socket.IO auth uses raw signature (no "Bearer" prefix)
+        _sio_auth = v2_auth_headers()
+        _sio_auth["Authorization"] = _sio_auth["Authorization"].removeprefix("Bearer ")
+        _sio_qs = _ue({"product": "genius-stats", **_sio_auth})
         sio.connect(f"{V2_BASE}?{_sio_qs}", socketio_path=V2_SIO_PATH, transports=["websocket"])
         while not stop_flag[0]:
             sio.sleep(1)
@@ -769,15 +772,13 @@ def main():
                                cat_slug=v2_category_slug, tourn_slug=v2_tournament_slug,
                                home=v2_home_team, away=v2_away_team, sdate=v2_scheduled_date,
                                v2_slug=v2_sport_slug, v2_sport=sport):
-                    # Wait until kickoff for tennis (fixture_id unavailable before match starts),
-                    # or V2_LEAD_MINUTES before kickoff for soccer (prematch resolution works).
+                    # Wait until kickoff — V2 fixture IDs are typically unavailable
+                    # before the match starts across all sports.
                     if kts is not None:
-                        lead = 0 if v2_sport == "tennis" else V2_LEAD_MINUTES * 60
-                        start_resolve_at = kts - lead
+                        start_resolve_at = kts
                         wait_seconds = start_resolve_at - time.time()
                         if wait_seconds > 0:
-                            label = "kickoff" if lead == 0 else f"{V2_LEAD_MINUTES}min before kickoff"
-                            print(f"  [v2/{gname}] waiting {wait_seconds:.0f}s until {label}")
+                            print(f"  [v2/{gname}] waiting {wait_seconds:.0f}s until kickoff")
                             while wait_seconds > 0 and not stop_flag[0]:
                                 time.sleep(min(wait_seconds, 5.0))
                                 wait_seconds = start_resolve_at - time.time()

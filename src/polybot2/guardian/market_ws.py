@@ -101,8 +101,13 @@ class PolymarketMarketWS:
         on_best_bid_ask: OnBestBidAsk | None = None,
         on_last_trade: OnLastTrade | None = None,
     ) -> None:
-        # Connect immediately — even with no tokens. Tokens arrive later
-        # via subscribe() and are sent on this live connection.
+        # Wait for at least one token before connecting — Polymarket's market
+        # channel disconnects after ~10s if no tokens are subscribed.
+        while not self._token_ids and not self._stop:
+            await asyncio.sleep(2.0)
+        if self._stop:
+            return
+
         async with websockets.connect(
             MARKET_WS_URL,
             ping_interval=None,
@@ -112,12 +117,9 @@ class PolymarketMarketWS:
             self._ws = ws
             self._connected = True
 
-            if self._token_ids:
-                sub_msg = self._build_subscription_msg(list(self._token_ids))
-                await ws.send(sub_msg)
-                logger.info("market WS connected, monitoring %d tokens", len(self._token_ids))
-            else:
-                logger.info("market WS connected, waiting for token subscriptions")
+            sub_msg = self._build_subscription_msg(list(self._token_ids))
+            await ws.send(sub_msg)
+            logger.info("market WS connected, monitoring %d tokens", len(self._token_ids))
 
             heartbeat_task = asyncio.create_task(self._heartbeat_loop(ws))
 
