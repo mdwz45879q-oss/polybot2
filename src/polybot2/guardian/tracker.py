@@ -47,14 +47,16 @@ class OrderStateTracker:
         token_to_condition: dict[str, str] | None = None,
         game_id_map: dict[str, str] | None = None,
         startup_token_ids: list[str] | None = None,
-        executor: Any = None,
+        guardian_logger: Any = None,
+        session_header: dict[str, Any] | None = None,
     ):
         self.log_path = log_path
         self.clob = clob
         self.ws = ws
         self.market_ws = market_ws
         self.detector = detector
-        self.executor = executor
+        self.glog = guardian_logger
+        self._session_header = session_header
         self.state = TrackerState()
         self._prev_scores: dict[str, tuple[int, int]] = {}
         self._last_gtc_poll: float = 0.0
@@ -149,9 +151,12 @@ class OrderStateTracker:
             game.score_timeline.append(score_event)
             self._prev_scores[gid] = (home, away)
 
-            # Log immediate price snapshot on score change
-            if prev is not None:
-                self._log_price_snapshot_on_score_change(gid, prev_home, prev_away, home, away)
+            # Log score change with prices
+            if prev is not None and self.glog:
+                self.glog.log_score_change(
+                    gid, home, away, prev_home, prev_away,
+                    half, var_type, var_subtype, self._get_prices(),
+                )
 
             # Overturn detection: check for score reversal
             if self.detector and prev is not None:
@@ -162,6 +167,8 @@ class OrderStateTracker:
         # Notify detector of VAR events (even without score change)
         if var_type and self.detector:
             self.detector.on_var_action(game, var_type, var_subtype, ts)
+        if var_type and self.glog:
+            self.glog.log_var_action(gid, var_type, var_subtype)
 
     def _on_order(self, ev: dict[str, Any]) -> None:
         """Process an order event from the log."""
@@ -193,6 +200,12 @@ class OrderStateTracker:
             triggered_by=triggered_by,
         )
         game.orders.append(order)
+
+        # Log the order attempt with its trigger context
+        if self.glog:
+            trigger_score = (triggered_by.home, triggered_by.away) if triggered_by else None
+            trigger_prev = (triggered_by.prev_home, triggered_by.prev_away) if triggered_by and triggered_by.prev_home is not None else None
+            self.glog.log_order_attempted(gid, sk, tok, eid, ok, tif, trigger_score, trigger_prev)
 
         if ok and eid and eid != "noop":
             self.state.orders_by_eid[eid] = order
@@ -251,6 +264,12 @@ class OrderStateTracker:
             # Remove from REST polling queues
             self.state.pending_gtc_ids.discard(taker_order_id)
             logger.debug("WS trade: eid=%s size=%s price=%s status=%s", taker_order_id, size, price, status)
+            # Log the fill
+            if self.glog and order.fill_amount and order.fill_amount > 0:
+                self.glog.log_order_filled(
+                    order.token_id, taker_order_id,
+                    order.fill_price or 0.0, order.fill_amount, status,
+                )
 
     def _on_ws_order(self, data: dict[str, Any]) -> None:
         """Handle an order event from the Polymarket user WS."""
@@ -353,45 +372,25 @@ class OrderStateTracker:
         await self.ws.subscribe(new_ids)
         self._subscribed_conditions.update(new_ids)
 
+    def _get_prices(self) -> dict[str, dict[str, float]]:
+        """Build a prices dict from detector's best bids/asks."""
+        if not self.detector:
+            return {}
+        prices: dict[str, dict[str, float]] = {}
+        for tok, bid in self.detector._best_bids.items():
+            if bid > 0:
+                prices.setdefault(tok, {})["bid"] = round(bid, 4)
+        for tok, ask in self.detector._best_asks.items():
+            if ask > 0:
+                prices.setdefault(tok, {})["ask"] = round(ask, 4)
+        return prices
+
     async def _price_snapshot_loop(self) -> None:
-        """Log a price snapshot every ~15 seconds for market dynamics analysis."""
+        """Log a price snapshot every second for market dynamics analysis."""
         while not self._stop_requested:
-            await asyncio.sleep(15.0)
-            self._log_price_snapshot()
-
-    def _log_price_snapshot(self) -> None:
-        if not self.executor or not self.detector or not self.detector._best_bids:
-            return
-        import json as _json
-        snapshot = {
-            "ev": "price_snapshot",
-            "ts": int(time.time() * 1000),
-            "bids": {
-                tok: round(bid, 4)
-                for tok, bid in self.detector._best_bids.items()
-                if bid > 0
-            },
-        }
-        self.executor._log_action(snapshot)
-
-    def _log_price_snapshot_on_score_change(
-        self, gid: str, prev_home: int, prev_away: int, home: int, away: int,
-    ) -> None:
-        if not self.executor or not self.detector:
-            return
-        snapshot = {
-            "ev": "score_change_prices",
-            "ts": int(time.time() * 1000),
-            "gid": gid,
-            "score": f"{home}-{away}",
-            "prev_score": f"{prev_home}-{prev_away}",
-            "bids": {
-                tok: round(bid, 4)
-                for tok, bid in self.detector._best_bids.items()
-                if bid > 0
-            },
-        }
-        self.executor._log_action(snapshot)
+            await asyncio.sleep(1.0)
+            if self.glog:
+                self.glog.log_price_snapshot(self._get_prices())
 
     async def run_watch(self) -> None:
         """Tail the log file and continuously update state. Blocks forever."""
@@ -419,8 +418,12 @@ class OrderStateTracker:
         if self.detector:
             tasks.append(asyncio.create_task(self._confirmation_check_loop()))
 
+        # Emit session_start header
+        if self.glog and self._session_header:
+            self.glog.log_session_start(self._session_header)
+
         # Periodic price snapshot logging
-        if self.detector and self.executor:
+        if self.detector and self.glog:
             tasks.append(asyncio.create_task(self._price_snapshot_loop()))
 
         try:

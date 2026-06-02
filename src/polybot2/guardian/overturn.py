@@ -36,16 +36,19 @@ class OverturnDetector:
         confirmation_window_s: float = DEFAULT_CONFIRMATION_WINDOW_S,
         bid_threshold: float = DEFAULT_BID_THRESHOLD,
         on_overturn_triggered: Callable[[OverturnAlert], Awaitable[None] | None] | None = None,
+        guardian_logger: Any = None,
     ):
         self._confirmation_window_s = confirmation_window_s
         self._bid_threshold = bid_threshold
         self._on_overturn_triggered = on_overturn_triggered
+        self.glog = guardian_logger
 
         # Active alerts keyed by game_id
         self.alerts: dict[str, OverturnAlert] = {}
 
         # Best bid per token_id (updated from market WS)
         self._best_bids: dict[str, float] = {}
+        self._best_asks: dict[str, float] = {}
 
         # Map token_id → game_id for quick alert lookup from market events
         self._token_to_game: dict[str, str] = {}
@@ -112,6 +115,14 @@ class OverturnDetector:
                 original_event.home, original_event.away,
                 len(affected),
             )
+            if self.glog:
+                self.glog.log_overturn_armed(
+                    game_id,
+                    (original_event.home, original_event.away),
+                    (new_home, new_away),
+                    list(affected_tokens),
+                    [{"sk": o.strategy_key, "eid": o.exchange_id, "tif": o.time_in_force, "fill_amount": o.fill_amount} for o in affected],
+                )
             return alert
 
         # Check if score went back UP — disarm alert (wobble resolved)
@@ -143,6 +154,7 @@ class OverturnDetector:
             return
 
         bid = data.get("best_bid")
+        ask = data.get("best_ask")
         if bid is not None:
             try:
                 bid_val = float(bid)
@@ -151,8 +163,12 @@ class OverturnDetector:
                 return
         else:
             return
+        if ask is not None:
+            try:
+                self._best_asks[token_id] = float(ask)
+            except (TypeError, ValueError):
+                pass
 
-        # Diagnostic: log all bid updates at debug level to verify data flow
         logger.debug("market bid: token=%s… bid=%.4f", token_id[:16], bid_val)
 
         # Check if this token belongs to an armed alert
@@ -237,6 +253,19 @@ class OverturnDetector:
                 "🚨 OVERTURN CONFIRMED for %s — TRIGGERING sell/cancel for %d orders",
                 alert.game_id, len(alert.affected_orders),
             )
+            if self.glog:
+                prices: dict[str, dict[str, float]] = {}
+                for tok in alert.affected_token_ids:
+                    p: dict[str, float] = {}
+                    if tok in self._best_bids:
+                        p["bid"] = round(self._best_bids[tok], 4)
+                    if tok in self._best_asks:
+                        p["ask"] = round(self._best_asks[tok], 4)
+                    if p:
+                        prices[tok] = p
+                self.glog.log_overturn_confirmed(
+                    alert.game_id, alert.signal1_confirmed, alert.signal2_confirmed, prices,
+                )
             if self._on_overturn_triggered:
                 result = self._on_overturn_triggered(alert)
                 if asyncio.iscoroutine(result):
