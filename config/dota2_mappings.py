@@ -55,4 +55,39 @@ TEAM_MAP_DOTA2 = {
         },
         "pm_aliases": ["Aurora", "AUR"],
     },
+    "amaru":{
+        "polymarket_code": "amaru",
+        "provider_aliases": {
+            "boltodds": ["Amaru Gaming"],
+        },
+        "pm_aliases": ["Amaru Gaming", "Amaru"],
+    },
+    "two move":{
+         "polymarket_code": "tm6",
+        "provider_aliases": {
+            "boltodds": ["Two Move"],
+        },
+        "pm_aliases": ["Two Move", "TM6"],
+    },
+    "modus":{
+        "polymarket_code": "modus",
+        "provider_aliases": {
+            "boltodds": ["Modus"],
+        },
+        "pm_aliases": ["Modus",],
+    },
+    "lgd gaming": {
+        "polymarket_code": "lgd",
+        "provider_aliases": {
+            "boltodds": ["LGD Gaming"],
+        },
+        "pm_aliases": ["LGD Gaming", "LGD"],
+    },
+    "natus":{
+         "polymarket_code": "navi",
+        "provider_aliases": {
+            "boltodds": ["Natus Vincere"],
+        },
+        "pm_aliases": ["Navi", "Natus Vincere"],
+    }
 }

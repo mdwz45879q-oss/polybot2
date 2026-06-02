@@ -73,6 +73,7 @@ TEAM_MAP_CS2 = {
          "provider_aliases": {
             "kalstrop_v1": ["arch"],
         },
+        "pm_aliases": ["arch"],
     },
     # ASTRAL Esports
     "astral esports": {
@@ -82,6 +83,14 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["ASTRAL"],
     },
+    #B8
+    "b8":{
+        "polymarket_code": "b8", 
+        "provider_aliases": {
+            "kalstrop_v1": ["B8"],
+        },
+        "pm_aliases": ["B8"],     
+    },
     # BESTIA
     "bestia": {
         "polymarket_code": "bst",
@@ -89,6 +98,20 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["BESTIA"],
         },
         "pm_aliases": ["BESTIA"],
+    },
+    "betboom":{
+        "polymarket_code": "bb3", 
+        "provider_aliases": {
+            "kalstrop_v1": ["BetBoom Team"],
+        },
+        "pm_aliases": ["BetBoom"],
+    },
+    "big":{
+        "polymarket_code":"big5" ,
+        "provider_aliases": {
+            "kalstrop_v1": ["BIG"],
+        },
+        "pm_aliases": ["BIG"],
     },
     # Bounty Hunters Esports
     "bounty hunters esports": {
@@ -185,6 +208,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["FX", "Fluxo",],
     },
+    "flyquest":{
+        "polymarket_code": "fly",
+        "provider_aliases": {
+            "kalstrop_v1": ["FlyQuest"],
+        },
+        "pm_aliases": ["fly", "flyquest",],
+    },
     # FURIA Esports Female / FURIA fe
     "furia fe": {
         "polymarket_code": "furiaf",
@@ -224,6 +254,22 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Game Hunters"],
     },
+    "gamerlegion":{
+        "polymarket_code": "gl1", 
+        "provider_aliases": {
+            "kalstrop_v1": ["GamerLegion"],
+        },
+        "pm_aliases": ["GamerLegion"],
+
+    },
+    "gaimin":{
+        "polymarket_code": "gg5", 
+        "provider_aliases": {
+            "kalstrop_v1": ["Gaimin Gladiators"],
+        },
+        "pm_aliases": ["Gaimin"],
+
+    },
     # GenOne
     "genone": {
         "polymarket_code": "g1",
@@ -247,6 +293,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Heroic Academy"],
         },
         "pm_aliases": ["HEROIC Academy"],
+    },
+    "heroic":{
+         "polymarket_code": "hero",
+        "provider_aliases": {
+            "kalstrop_v1": ["Heroic"],
+        },
+        "pm_aliases": ["Heroic"],
     },
     # HyperSpirit
     "hyperspirit": {
@@ -304,6 +357,20 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Lavked"],
     },
+    "lynn vision":{
+        "polymarket_code":"lvg" ,
+        "provider_aliases": {
+            "kalstrop_v1": ["Lynn Vision"],
+        },
+        "pm_aliases": [],
+    },
+    "m80":{
+        "polymarket_code":"m80" ,
+        "provider_aliases": {
+            "kalstrop_v1": ["M80"],
+        },
+        "pm_aliases": [],
+    },
     # Magic
     "magic": {
         "polymarket_code": "mgc",
@@ -320,6 +387,14 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["MIBR Academy"],
     },
+    "mibr":{
+        "polymarket_code": "mibr", 
+         "provider_aliases": {
+            "kalstrop_v1": ["MIBR"],
+        },
+        "pm_aliases": [],
+
+    },
     # Nemiga Gaming
     "nemiga gaming": {
         "polymarket_code": "nemi1",
@@ -335,6 +410,14 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Ninjas in Pyjamas"],
         },
         "pm_aliases": ["NIP"],
+    },
+    "nrg":{
+        "polymarket_code": "nrg", 
+        "provider_aliases": {
+            "kalstrop_v1": ["NRG"],
+        },
+        "pm_aliases": ["nrg"],
+
     },
     # ODDIK Academy
     "oddik academy": {
@@ -384,6 +467,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Sharks"],
     },
+    "sinner":{
+        "polymarket_code": "sin2", 
+        "provider_aliases": {
+            "kalstrop_v1": ["Sinners Esports"],
+        },
+        "pm_aliases": ["Sinner"],
+    },
     # Team Nemesis
     "team nemesis": {
         "polymarket_code": "nem",
@@ -400,6 +490,27 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["TDK"],
     },
+    "team liquid":{
+         "polymarket_code": "tl1",
+        "provider_aliases": {
+            "kalstrop_v1": ["Team Liquid"],
+        },
+        "pm_aliases": ["Liquid"],
+    },
+    "thunder downunder": {
+        "polymarket_code": "thunde", 
+        "provider_aliases":{
+            "kalstrop_v1": ["THUNDERdOWNUNDER"]
+        },
+        "pm_aliases": ["thunde"],
+    },
+    "tyloo":{
+      "polymarket_code": "tyloo", 
+        "provider_aliases":{
+            "kalstrop_v1": ["TYLOO"]
+        },
+        "pm_aliases": ["tyloo"],  
+    },
     # Team UNiTY / UNiTY esports
     "unity esports": {
         "polymarket_code": "unity",
@@ -411,9 +522,9 @@ TEAM_MAP_CS2 = {
     "ursa":{
         "polymarket_code": "ursa", 
         "provider_aliases":{
-            "kalstrop_v1": [""],
+            "kalstrop_v1": ["ursa"],
         },
-        "pm_aliases": "ursa"
+        "pm_aliases": ["ursa"]
     },
     # Tricked Esport
     "tricked esport": {
