@@ -404,7 +404,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             rust_started = True
 
         # --- Guardian (soccer only, dry-run) ---
-        if is_soccer and rust_started:
+        _guardian_mode_arg = str(getattr(args, "guardian_mode", "") or "").strip().lower()
+        if is_soccer and rust_started and _guardian_mode_arg != "off":
             try:
                 from polybot2.guardian.manager import GuardianManager
                 from polybot2.hotpath.live_observer import find_latest_log as _find_guardian_log
@@ -412,13 +413,17 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                 _guardian_log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
                 _guardian_log = _find_guardian_log(_guardian_log_dir, run_id=run_id)
                 if _guardian_log:
+                    _gm = str(getattr(args, "guardian_mode", "") or "").strip().lower()
+                    _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"
                     guardian = GuardianManager(
                         log_path=_guardian_log,
                         compiled_plan=compiled_plan,
                         order_policy_config=order_policies,
+                        dry_run=_guardian_dry_run,
                     )
                     guardian.start()
-                    logger.info("guardian started (dry-run): %s", _guardian_log)
+                    _guardian_mode_label = "dry-run" if _guardian_dry_run else "LIVE"
+                    logger.info("guardian started (%s): %s", _guardian_mode_label, _guardian_log)
                 else:
                     logger.warning("guardian: no log file found for run_id=%d — skipping", run_id)
             except Exception as exc:
@@ -525,7 +530,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 hotpath.start()
                                 rust_started = True
                                 # Start guardian for V2-only soccer leagues
-                                if guardian is None and is_soccer:
+                                if guardian is None and is_soccer and _guardian_mode_arg != "off":
                                     try:
                                         from polybot2.guardian.manager import GuardianManager
                                         from polybot2.hotpath.live_observer import find_latest_log as _find_guardian_log
@@ -533,13 +538,17 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                         _guardian_log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
                                         _guardian_log = _find_guardian_log(_guardian_log_dir, run_id=run_id)
                                         if _guardian_log:
+                                            _gm = _guardian_mode_arg
+                                            _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"
                                             guardian = GuardianManager(
                                                 log_path=_guardian_log,
                                                 compiled_plan=game_plan,
                                                 order_policy_config=order_policies,
+                                                dry_run=_guardian_dry_run,
                                             )
                                             guardian.start()
-                                            logger.info("guardian started (dry-run, V2): %s", _guardian_log)
+                                            _guardian_mode_label = "dry-run" if _guardian_dry_run else "LIVE"
+                                            logger.info("guardian started (%s, V2): %s", _guardian_mode_label, _guardian_log)
                                     except Exception as exc:
                                         logger.warning("guardian start failed (continuing without): %s", exc)
                             else:

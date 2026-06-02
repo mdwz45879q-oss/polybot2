@@ -34,8 +34,10 @@ class OverturnExecutor:
         self.clob = clob
         self.dry_run = dry_run
         self.actions: list[dict[str, Any]] = []
+        guardian_log_dir = os.path.join(log_dir, "guardian_logs")
+        os.makedirs(guardian_log_dir, exist_ok=True)
         self._log_path = os.path.join(
-            log_dir,
+            guardian_log_dir,
             f"guardian_actions_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.jsonl",
         )
         self._log_file = open(self._log_path, "a")

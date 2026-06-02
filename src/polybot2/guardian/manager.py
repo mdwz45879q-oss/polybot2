@@ -104,6 +104,9 @@ class GuardianManager:
             on_overturn_triggered=_on_overturn,
         )
 
+        # All plan tokens are goal-sensitive in soccer — subscribe at startup
+        all_startup_tokens = list(token_to_condition.keys())
+
         # Build tracker with all dependencies
         self._tracker = OrderStateTracker(
             log_path=log_path,
@@ -114,6 +117,8 @@ class GuardianManager:
             order_policy_config=order_policy_config or {},
             token_to_condition=token_to_condition,
             game_id_map=game_id_map,
+            startup_token_ids=all_startup_tokens,
+            executor=executor,
         )
         self._executor = executor
         self._clob = clob

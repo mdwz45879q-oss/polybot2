@@ -46,18 +46,22 @@ class OrderStateTracker:
         order_policy_config: dict[str, Any] | None = None,
         token_to_condition: dict[str, str] | None = None,
         game_id_map: dict[str, str] | None = None,
+        startup_token_ids: list[str] | None = None,
+        executor: Any = None,
     ):
         self.log_path = log_path
         self.clob = clob
         self.ws = ws
         self.market_ws = market_ws
         self.detector = detector
+        self.executor = executor
         self.state = TrackerState()
         self._prev_scores: dict[str, tuple[int, int]] = {}
         self._last_gtc_poll: float = 0.0
         self._order_policy = order_policy_config or {}
         self._token_to_condition = token_to_condition or {}
         self._game_id_map: dict[str, str] = game_id_map or {}
+        self._startup_token_ids: set[str] = set(startup_token_ids or [])
         self._subscribed_conditions: set[str] = set()
         self._subscribed_market_tokens: set[str] = set()
         self._on_update_callback: Any = None
@@ -144,6 +148,10 @@ class OrderStateTracker:
             )
             game.score_timeline.append(score_event)
             self._prev_scores[gid] = (home, away)
+
+            # Log immediate price snapshot on score change
+            if prev is not None:
+                self._log_price_snapshot_on_score_change(gid, prev_home, prev_away, home, away)
 
             # Overturn detection: check for score reversal
             if self.detector and prev is not None:
@@ -345,9 +353,55 @@ class OrderStateTracker:
         await self.ws.subscribe(new_ids)
         self._subscribed_conditions.update(new_ids)
 
+    async def _price_snapshot_loop(self) -> None:
+        """Log a price snapshot every ~15 seconds for market dynamics analysis."""
+        while not self._stop_requested:
+            await asyncio.sleep(15.0)
+            self._log_price_snapshot()
+
+    def _log_price_snapshot(self) -> None:
+        if not self.executor or not self.detector or not self.detector._best_bids:
+            return
+        import json as _json
+        snapshot = {
+            "ev": "price_snapshot",
+            "ts": int(time.time() * 1000),
+            "bids": {
+                tok: round(bid, 4)
+                for tok, bid in self.detector._best_bids.items()
+                if bid > 0
+            },
+        }
+        self.executor._log_action(snapshot)
+
+    def _log_price_snapshot_on_score_change(
+        self, gid: str, prev_home: int, prev_away: int, home: int, away: int,
+    ) -> None:
+        if not self.executor or not self.detector:
+            return
+        snapshot = {
+            "ev": "score_change_prices",
+            "ts": int(time.time() * 1000),
+            "gid": gid,
+            "score": f"{home}-{away}",
+            "prev_score": f"{prev_home}-{prev_away}",
+            "bids": {
+                tok: round(bid, 4)
+                for tok, bid in self.detector._best_bids.items()
+                if bid > 0
+            },
+        }
+        self.executor._log_action(snapshot)
+
     async def run_watch(self) -> None:
         """Tail the log file and continuously update state. Blocks forever."""
         tasks: list[asyncio.Task] = []
+
+        # Subscribe to all plan tokens at startup (before WS connects)
+        if self._startup_token_ids and self.market_ws:
+            await self.market_ws.subscribe(list(self._startup_token_ids))
+            self._subscribed_market_tokens.update(self._startup_token_ids)
+            logger.info("guardian: subscribed %d startup tokens to market WS", len(self._startup_token_ids))
 
         # Start user WS in background if available
         if self.ws:
@@ -364,6 +418,10 @@ class OrderStateTracker:
         # Periodic confirmation check for overturn alerts
         if self.detector:
             tasks.append(asyncio.create_task(self._confirmation_check_loop()))
+
+        # Periodic price snapshot logging
+        if self.detector and self.executor:
+            tasks.append(asyncio.create_task(self._price_snapshot_loop()))
 
         try:
             async for event in tail_log_async(self.log_path):

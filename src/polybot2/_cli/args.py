@@ -61,6 +61,8 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_live.add_argument("--link-run-id", type=int, default=None,
                               help="Link run ID (default: latest for the league)")
     hotpath_live.add_argument("--execution-mode", type=str, choices=["live", "paper"], required=True)
+    hotpath_live.add_argument("--guardian-mode", type=str, choices=["live", "dry-run", "off"], default=None,
+                              help="Guardian mode (default: follows --execution-mode; 'off' disables guardian)")
     hotpath_live.add_argument("--refresh-interval", type=int, default=None,
                               help="Seconds between plan refreshes (default: from config/live_trading.py, or 300)")
     hotpath_live.add_argument("--db", type=str, default="")
