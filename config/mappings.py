@@ -1,6 +1,7 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
 from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES
+from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
 from dota2_mappings import TEAM_MAP_DOTA2
@@ -55,10 +56,22 @@ LEAGUES = {
     },
     "rgw":
     {
-        "polymarket_league_code":"wta", 
-        "sport_family": "tennis", 
+        "polymarket_league_code":"wta",
+        "sport_family": "tennis",
         "provider": "kalstrop_v1",
-        "sets_to_win": 2, 
+        "sets_to_win": 2,
+    },
+    "birmm": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "birmw": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
     },
     "cs2":{
         "polymarket_league_code": "cs2",
@@ -90,10 +103,12 @@ PROVIDER_LEAGUE_ALIASES = {
         "bundesliga": "bundesliga",
         "laliga": "laliga",
         "french open men singles": "rgm",
+        "french open women singles": "rgw",
+        "atp challenger birmingham": "birmm",
+        "wta 125k birmingham": "birmw",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
-        "french open women singles": "rgw",
         "uefa champions league": "ucl",
     },
     "kalstrop_v2":{
@@ -117,7 +132,6 @@ PROVIDER_LEAGUE_ALIASES = {
         "la liga": "laliga",
         "cs2": "cs2",
         "dota": "dota2",
-        "league of legends": "lol",
         "league of legends": "lol",
     },
 }
@@ -164,6 +178,8 @@ TEAM_MAP = {
     "laliga": TEAM_MAP_LALIGA,
     "rgm": PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES,
     "rgw": PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES,
+    "birmm": PLAYER_MAP_BIRMINGHAM_MEN,
+    "birmw": PLAYER_MAP_BIRMINGHAM_WOMEN,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
@@ -179,6 +195,8 @@ PM_LEAGUE_ORDERINGS = {
     "ucl": "home", 
     "rgm": "home",
     "rgw": "home",
+    "birmm": "home",
+    "birmw": "home",
     "cs2": "home",
     "lol": "home",
     "dota2": "home",
