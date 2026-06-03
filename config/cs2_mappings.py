@@ -111,7 +111,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["BetBoom Team"],
         },
-        "pm_aliases": ["BetBoom"],
+        "pm_aliases": ["BetBoom", "BB",],
     },
     "big":{
         "polymarket_code":"big5" ,
