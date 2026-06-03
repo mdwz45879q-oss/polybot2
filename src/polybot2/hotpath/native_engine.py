@@ -118,6 +118,10 @@ class NativeHotPathRuntimeBridge:
         out = self._runtime.health_snapshot()
         return dict(out) if isinstance(out, dict) else {}
 
+    def log_path(self) -> str | None:
+        """Return the hotpath JSONL log file path (set after start())."""
+        return self._runtime.log_path()
+
     def prewarm_presign(self, template_orders: list[dict[str, Any]]) -> int:
         out = self._runtime.prewarm_presign(
             json.dumps(
