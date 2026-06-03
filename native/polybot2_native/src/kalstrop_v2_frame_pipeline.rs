@@ -18,7 +18,7 @@ pub(crate) struct V2PendingLog {
     pub(crate) state: SoccerGameState,
     pub(crate) half: &'static str,
     pub(crate) game_state: &'static str,
-    pub(crate) var_action_type: InlineStr<16>,
+    pub(crate) var_action_type: InlineStr<24>,
     pub(crate) var_action_subtype: InlineStr<24>,
 }
 

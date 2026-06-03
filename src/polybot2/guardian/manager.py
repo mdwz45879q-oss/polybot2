@@ -193,6 +193,16 @@ class GuardianManager:
             len(new_tok), len(new_gid),
         )
 
+    def add_game_id_alias(self, alias_id: str, canonical_id: str) -> None:
+        """Register an alternate game ID mapping (e.g., pre-resolution → fixture ID).
+
+        Used after V2 resolution so the guardian connects order events
+        (which use strategy key prefix = prematch ID) with tick events
+        (which use the resolved fixture ID).
+        """
+        self._tracker._game_id_map[alias_id] = canonical_id
+        logger.debug("guardian game-id alias: %s → %s", alias_id, canonical_id)
+
     def stop(self) -> None:
         self._tracker.request_stop()
         if self._glog:

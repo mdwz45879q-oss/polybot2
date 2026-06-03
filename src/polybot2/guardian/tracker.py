@@ -70,6 +70,13 @@ class OrderStateTracker:
         self._on_overturn_callback: Any = None
         self._pending_ws_subscribe: set[str] = set()
         self._stop_requested = False
+        # Map token_id → strategy_key for readable price dicts
+        self._token_to_sk: dict[str, str] = {}
+        if session_header:
+            for tok, info in session_header.get("tokens", {}).items():
+                sk = info.get("sk", "")
+                if sk:
+                    self._token_to_sk[tok] = sk
 
     def set_on_update(self, callback: Any) -> None:
         """Set a callback invoked after each event is processed."""
@@ -373,16 +380,22 @@ class OrderStateTracker:
         self._subscribed_conditions.update(new_ids)
 
     def _get_prices(self) -> dict[str, dict[str, float]]:
-        """Build a prices dict from detector's best bids/asks."""
+        """Build a prices dict from detector's best bids/asks.
+
+        Uses strategy keys (e.g., '7708075:TOTAL:OVER:1.5') instead of raw
+        token IDs for readability. Falls back to token ID if no mapping.
+        """
         if not self.detector:
             return {}
         prices: dict[str, dict[str, float]] = {}
         for tok, bid in self.detector._best_bids.items():
+            key = self._token_to_sk.get(tok, tok)
             if bid > 0:
-                prices.setdefault(tok, {})["bid"] = round(bid, 4)
+                prices.setdefault(key, {})["bid"] = round(bid, 4)
         for tok, ask in self.detector._best_asks.items():
+            key = self._token_to_sk.get(tok, tok)
             if ask > 0:
-                prices.setdefault(tok, {})["ask"] = round(ask, 4)
+                prices.setdefault(key, {})["ask"] = round(ask, 4)
         return prices
 
     async def _price_snapshot_loop(self) -> None:
@@ -396,11 +409,21 @@ class OrderStateTracker:
         """Tail the log file and continuously update state. Blocks forever."""
         tasks: list[asyncio.Task] = []
 
-        # Subscribe to all plan tokens at startup (before WS connects)
+        # Subscribe to all plan tokens/conditions at startup (before WS connects)
         if self._startup_token_ids and self.market_ws:
             await self.market_ws.subscribe(list(self._startup_token_ids))
             self._subscribed_market_tokens.update(self._startup_token_ids)
             logger.info("guardian: subscribed %d startup tokens to market WS", len(self._startup_token_ids))
+
+        if self._startup_token_ids and self.ws:
+            startup_cids = sorted(set(
+                self._token_to_condition.get(tok, "")
+                for tok in self._startup_token_ids
+            ) - {""})
+            if startup_cids:
+                await self.ws.subscribe(startup_cids)
+                self._subscribed_conditions.update(startup_cids)
+                logger.info("guardian: subscribed %d startup condition IDs to user WS", len(startup_cids))
 
         # Start user WS in background if available
         if self.ws:

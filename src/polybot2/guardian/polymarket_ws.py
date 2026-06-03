@@ -127,9 +127,11 @@ class PolymarketUserWS:
         on_order: OnOrder | None = None,
     ) -> None:
         """Single WS session: connect, subscribe, receive loop with heartbeat."""
-        if not self._condition_ids:
-            # Nothing to subscribe to yet — wait and retry
-            await asyncio.sleep(1.0)
+        # Wait for condition IDs before connecting — Polymarket requires
+        # at least one market subscription for the connection to be useful.
+        while not self._condition_ids and not self._stop:
+            await asyncio.sleep(2.0)
+        if self._stop:
             return
 
         async with websockets.connect(

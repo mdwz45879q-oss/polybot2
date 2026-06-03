@@ -506,13 +506,14 @@ See `latency_audit.md` for the source-level audit, `latency_improvements.md` for
 
 ## Guardian (Overturn Detection)
 
-Python system that monitors the hotpath's positions and detects VAR goal overturns in soccer. Integrated into the hotpath orchestrator via `GuardianManager` — launches automatically for soccer leagues as a daemon thread (dry-run by default). The standalone `polybot2 guardian watch --snapshot` CLI remains for one-shot log inspection.
+Python system that monitors the hotpath's positions and detects VAR goal overturns in soccer. Integrated into the hotpath orchestrator via `GuardianManager` — launches automatically for soccer leagues as a daemon thread. Mode follows `--execution-mode` by default, overridable with `--guardian-mode live|dry-run|off`. The standalone `polybot2 guardian watch --snapshot` CLI remains for one-shot log inspection.
 
 ### Architecture
 
 ```
 guardian/
 ├── manager.py         # GuardianManager: orchestrator integration, daemon thread lifecycle
+├── guardian_logger.py  # Self-contained JSONL logger (event log + price log, two files)
 ├── log_tailer.py      # JSONL log tail-follow (yields parsed events)
 ├── state.py           # In-memory state: TrackedOrder, GameState, ScoreEvent, OverturnAlert
 ├── tracker.py         # Main loop: tails log + WebSocket events + overturn detection
@@ -520,29 +521,38 @@ guardian/
 ├── clob_client.py     # Authenticated CLOB REST client (order queries, cancellation, sell orders)
 ├── polymarket_ws.py   # Polymarket user channel WS (real-time fill notifications)
 ├── market_ws.py       # Polymarket market channel WS (orderbook monitoring, no auth)
-├── overturn.py        # Dual-signal overturn detector
-├── executor.py        # Automated sell/cancel execution (dry-run by default)
+├── overturn.py        # Dual-signal overturn detector + VAR action detection
+├── executor.py        # Automated sell/cancel execution
 └── cli.py             # CLI: polybot2 guardian watch --snapshot (snapshot mode only)
 ```
+
+### Guardian Logging
+
+Self-contained JSONL logs in `guardian_logs/` directory (two files per session):
+- `guardian_{ts}.jsonl` — events: session_start (full token→game/market mapping), score_change, order_attempted, order_filled, var_action, overturn_armed, overturn_confirmed, order_cancelled, position_sold. Low volume, human-scannable.
+- `guardian_prices_{ts}.jsonl` — price snapshots every 1 second with best bid/ask for all tracked tokens. High volume, for programmatic analysis. Both files include the `session_start` header so each is self-contained.
 
 ### Orchestrator Integration
 
 The `GuardianManager` (in `manager.py`) is created by the hotpath orchestrator after plan compilation for soccer leagues only. It:
 - Requires `POLY_EXEC_*` credentials — raises `RuntimeError` on missing credentials (single log line, hotpath continues without guardian)
-- Builds all dependencies (ClobClient, WS clients, OverturnDetector, OverturnExecutor) from env
+- Builds all dependencies (ClobClient, WS clients, OverturnDetector, OverturnExecutor, GuardianLogger) from env
 - Computes `token_to_condition` and `game_id_map` from the compiled plan
+- Subscribes to ALL plan tokens on the market WS at startup (not reactively on order fills)
 - Runs `tracker.run_watch()` in a daemon thread with its own asyncio event loop
 - Receives `update_plan(compiled_plan)` calls after incremental refresh or V2 resolution
 - Stopped cleanly in the orchestrator's finally block
 
 Game-ID normalization (`_game_id_map`) maps alternate provider game IDs (e.g., V2 fixture IDs) to the canonical game ID (used in strategy keys), fixing the V2 fixture-ID ↔ event-ID mismatch that caused orders to be orphaned from score data.
 
-### Overturn Detection (Dual-Signal)
+### Overturn Detection (Dual-Signal + VAR)
 
 Two mandatory signals must BOTH confirm before acting:
 
 1. **Score reversal** (from hotpath log ticks): score decreased and held for >10s. Disarms automatically if score restores within the window (wobble).
 2. **Market activity resumption** (from Polymarket market channel WS): best bid on affected tokens drops below threshold (default $0.80).
+
+**VAR detection** (from V2 `court.matchActions[]`): The Rust V2 extractor extracts `type`/`subType` from the first match action. `type: "Var", subType: "Goal"` = review started. `type: "VarEnded", subType: "GoalNotAwarded"` = goal overturned (definitive signal). Logged as `var_action` events in the guardian log and passed to the detector via `on_var_action()`.
 
 When both signals confirm: cancel all resting GTC orders triggered by the overturned goal, sell filled positions at current best bid.
 
@@ -561,7 +571,7 @@ The `map_sdk_signature_type` function in `dispatch/mod.rs` maps integer 3 to `Sd
 
 ## Tennis Integration
 
-Third sport alongside baseball and soccer. Currently supports French Open men's singles (`rolgar` league, BO5) and French Open women's singles (`garros` league, BO3). Documentation in `docs/tennis/`.
+Third sport alongside baseball and soccer. Currently supports French Open men's singles (`rgm` league, BO5) and French Open women's singles (`rgw` league, BO3). Documentation in `docs/tennis/`.
 
 ### Scoring Hierarchy
 

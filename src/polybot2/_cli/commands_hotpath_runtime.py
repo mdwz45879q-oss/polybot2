@@ -578,6 +578,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 )
                                 if guardian is not None:
                                     guardian.update_plan(game_plan)
+                                    guardian.add_game_id_alias(
+                                        resolved.pending.prematch_event_id,
+                                        resolved.fixture_id,
+                                    )
                     elif pending and not rust_started:
                         due_times = [g.start_ts_utc for g in pending if g.start_ts_utc is not None]
                         if due_times:
