@@ -223,6 +223,17 @@ class NativeHotPathService:
             self._runtime_bridge = bridge
             self._running = True
 
+    def log_path(self) -> str | None:
+        """Return the hotpath JSONL log file path (set after start())."""
+        with self._lock:
+            bridge = self._runtime_bridge
+        if bridge is not None:
+            try:
+                return bridge.log_path()
+            except Exception:
+                return None
+        return None
+
     def stop(self) -> None:
         with self._lock:
             bridge = self._runtime_bridge
