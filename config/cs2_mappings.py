@@ -19,6 +19,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["100T"],
     },
+    "1win":{
+        "polymarket_code": "1win",
+        "provider_aliases": {
+            "kalstrop_v1": ["1win"],
+        },
+        "pm_aliases": ["1win"],
+    },
     # 9z Team
     "9z team": {
         "polymarket_code": "9z",
@@ -184,6 +191,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["eternal premium"],
         },
         "pm_aliases": ["eternal premium", "EP"],
+    },
+    "exRuby": {
+        "polymarket_code": "ruby1",
+        "provider_aliases": {
+            "kalstrop_v1": ["Ex-RUBY"],
+        },
+        "pm_aliases": ["RUBY1", "Ex-RUBY"],
     },
     # FaZe
     "faze": {
