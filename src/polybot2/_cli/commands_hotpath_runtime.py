@@ -408,10 +408,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         if is_soccer and rust_started and _guardian_mode_arg != "off":
             try:
                 from polybot2.guardian.manager import GuardianManager
-                from polybot2.hotpath.live_observer import find_latest_log as _find_guardian_log
 
-                _guardian_log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
-                _guardian_log = _find_guardian_log(_guardian_log_dir, run_id=run_id)
+                _guardian_log = hotpath.log_path() if hotpath else None
                 if _guardian_log:
                     _gm = str(getattr(args, "guardian_mode", "") or "").strip().lower()
                     _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"
@@ -533,10 +531,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 if guardian is None and is_soccer and _guardian_mode_arg != "off":
                                     try:
                                         from polybot2.guardian.manager import GuardianManager
-                                        from polybot2.hotpath.live_observer import find_latest_log as _find_guardian_log
 
-                                        _guardian_log_dir = os.environ.get("POLYBOT2_LOG_DIR", ".")
-                                        _guardian_log = _find_guardian_log(_guardian_log_dir, run_id=run_id)
+                                        _guardian_log = hotpath.log_path() if hotpath else None
                                         if _guardian_log:
                                             _gm = _guardian_mode_arg
                                             _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"

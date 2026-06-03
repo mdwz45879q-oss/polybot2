@@ -191,6 +191,8 @@ class OrderStateTracker:
 
         # V2 logs include gid directly; fall back to extracting from sk
         gid = str(ev.get("gid", "")) or self._extract_game_id_from_sk(sk)
+        # Normalize alternate provider ID → canonical game ID
+        gid = self._game_id_map.get(gid, gid)
         tif = str(ev.get("tif", "")).upper() or self._determine_tif(sk)
         cid = self._resolve_condition_id(tok)
 

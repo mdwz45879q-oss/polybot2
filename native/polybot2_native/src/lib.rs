@@ -450,6 +450,7 @@ struct NativeHotPathRuntime {
     submitter: Option<SubmitterHandle>,
     cached_sdk_client: Option<SdkClient<SdkAuthenticatedState<SdkAuthNormal>>>,
     cached_signer: Option<CachedSigner>,
+    log_path: Option<String>,
 }
 
 pub(crate) struct MergePlanResult {

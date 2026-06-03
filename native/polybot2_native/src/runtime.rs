@@ -52,7 +52,12 @@ impl NativeHotPathRuntime {
             submitter: None,
             cached_sdk_client: None,
             cached_signer: None,
+            log_path: None,
         }
+    }
+
+    fn log_path(&self) -> Option<String> {
+        self.log_path.clone()
     }
 
     fn start(
@@ -177,6 +182,7 @@ impl NativeHotPathRuntime {
             let log_path = format!("{}/hotpath_{}_{}.jsonl", log_subdir, sport, log_ts);
             let log_writer = LogWriter::open(&log_path, sport)
                 .map_err(|e| PyValueError::new_err(format!("log_writer_open_failed:{}", e)))?;
+            self.log_path = Some(log_path.clone());
             let log_arc = Arc::new(Mutex::new(log_writer));
             let dispatch_mode_label = dispatch_handle.mode_label();
             let games_count = self
