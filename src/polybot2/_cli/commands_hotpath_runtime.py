@@ -533,6 +533,9 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                         from polybot2.guardian.manager import GuardianManager
 
                                         _guardian_log = hotpath.log_path() if hotpath else None
+                                        logger.info("guardian: log_path=%s, is_soccer=%s, mode_arg=%s", _guardian_log, is_soccer, _guardian_mode_arg)
+                                        if not _guardian_log:
+                                            logger.warning("guardian: hotpath.log_path() returned None — skipping")
                                         if _guardian_log:
                                             _gm = _guardian_mode_arg
                                             _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"
