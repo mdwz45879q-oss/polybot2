@@ -299,6 +299,10 @@ pub(crate) async fn run_multiplexed_worker_async(
         });
 
         // Log connection state
+        eprintln!("[mux] entering event loop: v1={}, v2={}, bo={}",
+            if v1_ws.is_some() { "up" } else { "down" },
+            if v2_conn.is_some() { "up" } else { "down" },
+            if bo_ws.is_some() { "up" } else { "down" });
         {
             let all_subs: Vec<String> = candidate_subs.values().flatten().cloned().collect();
             if let Ok(mut g) = log.lock() {
@@ -310,6 +314,7 @@ pub(crate) async fn run_multiplexed_worker_async(
         let mut reconn_v1 = false;
         let mut reconn_v2 = false;
         let mut reconn_bo = false;
+        let mut bo_last_ping = Instant::now();
 
         'event_loop: loop {
             // Drain commands
@@ -802,6 +807,22 @@ pub(crate) async fn run_multiplexed_worker_async(
                 g.flush();
             }
 
+            // BoltOdds keepalive: send a WS ping every ~60s to detect dead
+            // connections. BoltOdds has no protocol-level keepalive (unlike
+            // V1 GraphQL pings and V2 Engine.IO pings). If the server
+            // silently drops the TCP connection, ws.next() blocks forever
+            // without this.
+            if let Some(ref mut ws) = bo_ws {
+                if bo_last_ping.elapsed() >= Duration::from_secs(60) {
+                    if let Err(e) = ws.send(Message::Ping(vec![].into())).await {
+                        eprintln!("[mux] BoltOdds ping failed: {} — marking dead", e);
+                        bo_ws = None;
+                        reconn_bo = true;
+                    }
+                    bo_last_ping = Instant::now();
+                }
+            }
+
             // Check reconnection timers: if a dead connection's backoff has
             // expired, schedule a reconnection by setting its flag. Without
             // this, a connection that fails to reconnect would stay dead
@@ -838,19 +859,33 @@ pub(crate) async fn run_multiplexed_worker_async(
 
             // If any connection died or needs reconnection, break to outer loop
             if reconn_v1 || reconn_v2 || reconn_bo {
+                let mut reasons = Vec::new();
+                if reconn_v1 { reasons.push("v1"); }
+                if reconn_v2 { reasons.push("v2"); }
+                if reconn_bo { reasons.push("bo"); }
+                let reason = format!("disconnected:{} (v1={}, v2={}, bo={})",
+                    reasons.join("+"),
+                    if v1_ws.is_some() { "up" } else { "down" },
+                    if v2_conn.is_some() { "up" } else { "down" },
+                    if bo_ws.is_some() { "up" } else { "down" },
+                );
+                eprintln!("[mux] {}", reason);
                 with_health(&health, |h| {
                     h.reconnects += 1;
-                    if reconn_v1 { h.last_error = "v1_disconnected".to_string(); }
-                    if reconn_v2 { h.last_error = "v2_disconnected".to_string(); }
-                    if reconn_bo { h.last_error = "bo_disconnected".to_string(); }
+                    h.last_error = reason.clone();
                 });
+                if let Ok(mut g) = log.lock() {
+                    g.log_ws_disconnect("multiplexed", &reason, 0);
+                }
                 break 'event_loop;
             }
         }
 
-        // Disconnect logging
-        if let Ok(mut g) = log.lock() {
-            g.log_ws_disconnect("multiplexed", "", 0);
+        // Clean shutdown (Stop command or channel closed)
+        if !reconn_v1 && !reconn_v2 && !reconn_bo {
+            if let Ok(mut g) = log.lock() {
+                g.log_ws_disconnect("multiplexed", "stopped", 0);
+            }
         }
     }
 
