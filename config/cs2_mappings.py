@@ -192,7 +192,7 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["eternal premium", "EP"],
     },
-    "exRuby": {
+    "ex ruby": {
         "polymarket_code": "ruby1",
         "provider_aliases": {
             "kalstrop_v1": ["Ex-RUBY"],
@@ -431,6 +431,15 @@ TEAM_MAP_CS2 = {
         "kalstrop_v1": ["NRG", "NRG Esports"],  # ← add "NRG Esports"
     },
     "pm_aliases": ["nrg"],
+    },
+    "nuclear tigres":{
+        "polymarket_code": "ntr", 
+        "provider_aliases": {
+        "kalstrop_v1": ["Nuclear TigeRES",],  # ← add "NRG Esports"
+    },
+    "pm_aliases": ["NTR"],
+
+
     },
     # ODDIK Academy
     "oddik academy": {
