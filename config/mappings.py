@@ -219,6 +219,30 @@ LEAGUE_MATCH_RULES = {
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
+    "rgm": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 120,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
+    "rgw": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 120,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
+    "birmm": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 120,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
+    "birmw": {
+        "date_tolerance_days": 0,
+        "kickoff_tolerance_minutes": 120,
+        "provider_order_reliable": False,
+        "pm_order_reliable": True,
+    },
     # Esports: PM uses coarse tournament-level timestamps (e.g., 10:30 for all
     # matches in a day), while V1 has per-match times. Need wider tolerance.
     "cs2": {
