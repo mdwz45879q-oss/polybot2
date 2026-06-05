@@ -197,14 +197,16 @@ def _build_retirement_template_orders(
     out: list[OrderRequest] = []
     seen: set[str] = set()
     _fallback_policy = next(iter(order_policies.values()))
+    import sys
+    _market_types_seen: set[str] = set()
     for game in tuple(compiled_plan.games):
         base_policy = order_policies.get(game.canonical_league, _fallback_policy)
         ret_policy = base_policy.retirement_policy()
         if ret_policy is None:
-            import sys
             print(f"[retirement-debug] league={game.canonical_league!r} retirement={base_policy.retirement!r} → None", file=sys.stderr)
             continue
         for market in tuple(game.markets):
+            _market_types_seen.add(market.sports_market_type)
             if market.sports_market_type not in RETIREMENT_ELIGIBLE_TYPES:
                 continue
             for target in tuple(market.targets):
@@ -224,6 +226,7 @@ def _build_retirement_template_orders(
                         size_shares=float(ret_policy.size_shares),
                     )
                 )
+    print(f"[retirement-debug] market_types_in_plan={sorted(_market_types_seen)} eligible={sorted(RETIREMENT_ELIGIBLE_TYPES)} templates_built={len(out)}", file=sys.stderr)
     return out
 
 
