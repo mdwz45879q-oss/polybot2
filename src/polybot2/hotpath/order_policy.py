@@ -27,10 +27,26 @@ class OrderPolicy:
     secondary_limit_price: float = 0.0
     secondary_time_in_force: str = ""
     market_overrides: dict[str, dict[str, float | str]] = field(default_factory=dict)
+    retirement: dict[str, float | str] = field(default_factory=dict)
 
     @property
     def has_secondary(self) -> bool:
         return bool(self.secondary_time_in_force) and self.secondary_amount_usdc > 0
+
+    def retirement_policy(self) -> OrderPolicy | None:
+        """Build an OrderPolicy from the retirement dict, or None if unconfigured."""
+        if not self.retirement:
+            return None
+        r = self.retirement
+        size = float(r.get("size_shares", 0.0))
+        if size <= 0:
+            return None
+        return OrderPolicy(
+            amount_usdc=float(r.get("amount_usdc", size)),
+            size_shares=size,
+            limit_price=float(r.get("limit_price", 0.49)),
+            time_in_force=str(r.get("time_in_force", "GTC")),
+        )
 
     def for_market_type(self, sports_market_type: str) -> OrderPolicy:
         """Return a policy with overrides applied for this market type."""

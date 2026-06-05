@@ -11,6 +11,7 @@ from typing import Any
 
 from polybot2._cli.common import _apply_env_uid_filter
 from polybot2._cli.common import _build_hotpath_template_orders
+from polybot2._cli.common import _build_retirement_template_orders
 from polybot2._cli.common import _hotpath_order_policy_for_league as _common_hotpath_order_policy_for_league
 from polybot2._cli.common import _hotpath_runtime_policy_for_league as _common_hotpath_runtime_policy_for_league
 from polybot2._cli.common import _int_or_none
@@ -395,6 +396,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             if template_orders and hasattr(hotpath, "prewarm_presign"):
                 hotpath.prewarm_presign(template_orders)
 
+            retirement_templates = _build_retirement_template_orders(
+                compiled_plan=compiled_plan, order_policies=order_policies,
+            )
+            if retirement_templates and hasattr(hotpath, "prewarm_presign_retirement"):
+                hotpath.prewarm_presign_retirement(retirement_templates)
+
             n_targets = sum(len(m.targets) for g in compiled_plan.games for m in g.markets)
             logger.info(
                 "hotpath starting: run_id=%d games=%d targets=%d subs=%d refresh=%ds",
@@ -521,6 +528,11 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 )
                                 if template_orders and hasattr(hotpath, "prewarm_presign"):
                                     hotpath.prewarm_presign(template_orders)
+                                retirement_templates = _build_retirement_template_orders(
+                                    compiled_plan=game_plan, order_policies=order_policies,
+                                )
+                                if retirement_templates and hasattr(hotpath, "prewarm_presign_retirement"):
+                                    hotpath.prewarm_presign_retirement(retirement_templates)
                                 logger.info(
                                     "hotpath starting (V2 first game): run_id=%d targets=%d fixture_id=%s",
                                     run_id, n_tgt, resolved.fixture_id,

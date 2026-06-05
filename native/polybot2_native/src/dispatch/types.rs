@@ -63,6 +63,15 @@ pub(crate) struct DispatchHandle {
     /// Presign pool, indexed by `TokenIdx`. Each slot holds 0-2 pre-signed
     /// orders. `std::mem::take()` drains all orders for that token at once.
     pub(super) presign_pool: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>>,
+    /// Retirement presign template catalog — parallel to `presign_template_catalog`.
+    /// Populated by Python with 50/50 retirement orders for tennis markets.
+    pub(super) presign_template_catalog_retirement: HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
+    /// Retirement templates resolved against the current registry, indexed by
+    /// `TokenIdx`. Parallel to `presign_templates`.
+    pub(super) presign_templates_retirement: Vec<smallvec::SmallVec<[OrderRequestData; 2]>>,
+    /// Retirement presign pool, indexed by `TokenIdx`. Parallel to `presign_pool`.
+    /// Used for 50/50 retirement orders in tennis.
+    pub(super) presign_pool_retirement: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>>,
     pub(super) submit_tx: Option<rtrb::Producer<SubmitWork>>,
 }
 

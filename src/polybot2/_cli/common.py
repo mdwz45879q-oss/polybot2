@@ -72,6 +72,7 @@ def _resolve_provider_name(
 def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tuple[OrderPolicy, bool, bool]:
     cfg = dict((getattr(live_policy, "hotpath_execution_by_league", {}) or {}).get(str(league_key), {}) or {})
     market_overrides = dict(cfg.get("market_overrides", {}) or {})
+    retirement = dict(cfg.get("retirement", {}) or {})
     return (
         OrderPolicy(
             amount_usdc=float(cfg.get("amount_usdc", 5.0)),
@@ -83,6 +84,7 @@ def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tu
             secondary_limit_price=float(cfg.get("secondary_limit_price", 0.0)),
             secondary_time_in_force=str(cfg.get("secondary_time_in_force", "") or ""),
             market_overrides=market_overrides,
+            retirement=retirement,
         ),
         bool(cfg.get("require_presign", True)),
         bool(cfg.get("presign_fallback_on_miss", False)),
@@ -176,6 +178,53 @@ def _build_hotpath_template_orders(
     return out
 
 
+RETIREMENT_ELIGIBLE_TYPES = {
+    "tennis_set_handicap", "tennis_set_totals",
+    "tennis_match_totals", "tennis_first_set_totals",
+    "tennis_first_set_winner",
+}
+
+
+def _build_retirement_template_orders(
+    *, compiled_plan: Any, order_policies: dict[str, OrderPolicy],
+) -> list[OrderRequest]:
+    """Build presign template orders for the retirement pool (tennis only).
+
+    Iterates over the compiled plan's games and markets, filters for
+    retirement-eligible market types, and builds OrderRequest objects
+    using each league's retirement policy.
+    """
+    out: list[OrderRequest] = []
+    seen: set[str] = set()
+    _fallback_policy = next(iter(order_policies.values()))
+    for game in tuple(compiled_plan.games):
+        base_policy = order_policies.get(game.canonical_league, _fallback_policy)
+        ret_policy = base_policy.retirement_policy()
+        if ret_policy is None:
+            continue
+        for market in tuple(game.markets):
+            if market.sports_market_type not in RETIREMENT_ELIGIBLE_TYPES:
+                continue
+            for target in tuple(market.targets):
+                token_id = str(target.token_id or "").strip()
+                if not token_id or token_id in seen:
+                    continue
+                seen.add(token_id)
+                out.append(
+                    OrderRequest(
+                        token_id=token_id,
+                        side="buy_yes",
+                        amount_usdc=float(ret_policy.amount_usdc),
+                        limit_price=float(ret_policy.limit_price),
+                        time_in_force=str(ret_policy.time_in_force),
+                        client_order_id=f"hp_ret_template_{len(out) + 1}",
+                        condition_id=str(target.condition_id or ""),
+                        size_shares=float(ret_policy.size_shares),
+                    )
+                )
+    return out
+
+
 def _scope_provider_catalog_to_league(*, provider: Any, provider_name: str, league_key: str) -> None:
     if str(provider_name or "").strip().lower() not in ("kalstrop_v1", "kalstrop_v2"):
         return
@@ -243,6 +292,7 @@ __all__ = [
     "_hotpath_runtime_policy_for_league",
     "_apply_env_uid_filter",
     "_build_hotpath_template_orders",
+    "_build_retirement_template_orders",
     "_scope_provider_catalog_to_league",
     "_render_table",
 ]

@@ -22,14 +22,6 @@ pub(crate) struct SpreadSlot {
 
 #[derive(Clone, Default)]
 pub(crate) struct TennisGameTargets {
-    // Match totals (total games across all sets) — progressive over/under
-    pub(crate) match_total_over_lines: Vec<OverLine>,
-    pub(crate) match_total_under_lines: Vec<OverLine>,
-
-    // First-set totals (games in set 1) — progressive over, under at set 1 end
-    pub(crate) first_set_total_over_lines: Vec<OverLine>,
-    pub(crate) first_set_total_under_lines: Vec<OverLine>,
-
     // Set totals (total sets played) — over/under
     pub(crate) set_total_over_lines: Vec<OverLine>,
     pub(crate) set_total_under_lines: Vec<OverLine>,
@@ -80,7 +72,7 @@ pub(crate) struct TennisStateRow {
     pub(crate) sets_away: InlineStr<2>,
     pub(crate) games_home: InlineStr<2>,
     pub(crate) games_away: InlineStr<2>,
-    pub(crate) free_text_raw: InlineStr<16>,
+    pub(crate) free_text_raw: InlineStr<32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -107,8 +99,6 @@ pub(crate) struct NativeTennisEngine {
     pub(crate) token_ids_by_game: Vec<Vec<String>>,
 
     // Market type flags (per-game)
-    pub(crate) has_match_totals: Vec<bool>,
-    pub(crate) has_first_set_totals: Vec<bool>,
     pub(crate) has_set_totals: Vec<bool>,
     pub(crate) has_moneyline: Vec<bool>,
     pub(crate) has_first_set_winner: Vec<bool>,
@@ -122,11 +112,27 @@ pub(crate) struct NativeTennisEngine {
     pub(crate) sets_to_win: Vec<i64>,
 
     // Resolution tracking (per-game)
-    pub(crate) match_total_under_emitted: Vec<bool>,
-    pub(crate) first_set_total_under_emitted: Vec<bool>,
     pub(crate) set_total_under_emitted: Vec<bool>,
     pub(crate) first_set_winner_resolved: Vec<bool>,
     pub(crate) final_resolved_games: Vec<bool>,
+
+    // Retirement targets: per-game list of tokens eligible for 50/50 orders
+    pub(crate) retirement_targets: Vec<Vec<RetirementTarget>>,
+}
+
+// ---------------------------------------------------------------------------
+// Retirement target — a token that resolves 50/50 on retirement
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub(crate) struct RetirementTarget {
+    pub(crate) target_idx: TargetIdx,
+    /// True for first_set_winner and first_set_totals — only fire if
+    /// retirement happens during set 1 (before set 1 completes).
+    pub(crate) first_set_only: bool,
+    /// True for set_totals with line 3.5 (half_int == 3) — skip in BO5
+    /// set 5 where the resolution rule is ambiguous.
+    pub(crate) is_set_total_3_5: bool,
 }
 
 /// Stack-only result from the live WS tick path.
@@ -134,4 +140,18 @@ pub(crate) struct TennisLiveTickResult {
     pub(crate) game_idx: GameIdx,
     pub(crate) state: TennisGameState,
     pub(crate) intents: smallvec::SmallVec<[Intent; 32]>,
+    /// Number of intents at the start that use the NORMAL presign pool.
+    /// Remaining intents use the RETIREMENT pool. Equal to `intents.len()`
+    /// when all intents are normal (no retirement).
+    pub(crate) normal_intent_count: usize,
+}
+
+/// Retirement dispatch result — two separate intent lists for different pools.
+pub(crate) struct RetirementResult {
+    pub(crate) game_idx: GameIdx,
+    pub(crate) state: TennisGameState,
+    /// Moneyline intent for the winner → dispatched from NORMAL presign pool.
+    pub(crate) moneyline_intents: smallvec::SmallVec<[Intent; 2]>,
+    /// 50/50 retirement intents → dispatched from RETIREMENT presign pool.
+    pub(crate) retirement_intents: smallvec::SmallVec<[Intent; 32]>,
 }

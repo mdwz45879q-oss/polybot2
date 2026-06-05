@@ -136,6 +136,20 @@ class NativeHotPathRuntimeBridge:
         except Exception:
             return 0
 
+    def prewarm_presign_retirement(self, template_orders: list[dict[str, Any]]) -> int:
+        out = self._runtime.prewarm_presign_retirement(
+            json.dumps(
+                list(template_orders),
+                separators=(",", ":"),
+                sort_keys=True,
+                default=str,
+            )
+        )
+        try:
+            return int(out)
+        except Exception:
+            return 0
+
     def patch_plan(
         self,
         *,

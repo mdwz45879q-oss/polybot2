@@ -265,7 +265,7 @@ fn tennis_v1_tick(
         extract.free_text,
         sets_home, sets_away, games_home, games_away,
         total_games, first_set_games, total_sets, current_set,
-        match_completed, first_set_completed, game_state, ns,
+        match_completed, first_set_completed, None, game_state, ns,
     )?;
     Some(result.intents.to_vec())
 }
@@ -482,24 +482,23 @@ fn integration_soccer_v2_completion() {
 // ── Tennis V1 ───────────────────────────────────────────────────────────
 
 #[test]
-fn integration_tennis_v1_over_crossing() {
+fn integration_tennis_v1_moneyline() {
     let mut engine = NativeTennisEngine::new();
-    let t = target_json("tok_over", "over", "g1:TENNIS_MATCH_TOTAL:OVER:45.5");
-    let m = market_json("tennis_match_totals", Some(45.5), &[t]);
+    let t = target_json("tok_ml_home", "home", "g1:MONEYLINE:HOME");
+    let m = market_json("moneyline", None, &[t]);
     let plan = plan_json_one_game_tennis(
         "85282be8-635b-4c12-90b0-f8eea1237b4e", &m, 3,
     );
     engine.load_plan_from_json(&plan).unwrap();
 
-    // Baseline: mid-game (total_games=44, establishes prev)
+    // Baseline: mid-game (sets 2-2, establishes prev)
     let _ = tennis_v1_tick(&mut engine, TENNIS_V1_MID_GAME, 1000);
-    // Ended frame: total_games=50, crosses 45.5 (and 46.5, 47.5, 48.5, 49.5)
-    // We only have the over 45.5 target, so 1 intent.
+    // Ended frame: sets 3-2 (home wins → moneyline fires)
     let intents = tennis_v1_tick(&mut engine, TENNIS_V1_ENDED, 2000)
         .expect("should produce intents");
     assert!(
         intents.iter().any(|i| i.target_idx.0 == 0),
-        "over 45.5 should fire (total_games went from 44 to 50)"
+        "moneyline_home should fire (sets went from 2-2 to 3-2)"
     );
 }
 
@@ -507,9 +506,9 @@ fn integration_tennis_v1_over_crossing() {
 fn integration_tennis_v1_completion() {
     let mut engine = NativeTennisEngine::new();
     let t_ml = target_json("tok_ml_home", "home", "g1:MONEYLINE:HOME");
-    let t_under = target_json("tok_under", "under", "g1:TENNIS_MATCH_TOTAL:UNDER:50.5");
+    let t_under = target_json("tok_under", "under", "g1:SET_TOTAL:UNDER:5.5");
     let m_ml = market_json("moneyline", None, &[t_ml]);
-    let m_totals = market_json("tennis_match_totals", Some(50.5), &[t_under]);
+    let m_totals = market_json("tennis_set_totals", Some(5.5), &[t_under]);
     let plan = plan_json_one_game_tennis(
         "85282be8-635b-4c12-90b0-f8eea1237b4e",
         &format!("{},{}", m_ml, m_totals),
@@ -519,8 +518,8 @@ fn integration_tennis_v1_completion() {
 
     // Baseline: mid-game (sets 2-2, establishes prev)
     let _ = tennis_v1_tick(&mut engine, TENNIS_V1_MID_GAME, 1000);
-    // Ended: sets 3-2 (home wins → moneyline; total=50 < 50.5 → under fires)
+    // Ended: sets 3-2 (home wins → moneyline; total_sets=5 < 5.5 → under fires)
     let intents = tennis_v1_tick(&mut engine, TENNIS_V1_ENDED, 2000)
         .expect("should produce intents");
-    assert_eq!(intents.len(), 2, "moneyline_home + under 50.5 should fire");
+    assert_eq!(intents.len(), 2, "moneyline_home + set total under 5.5 should fire");
 }

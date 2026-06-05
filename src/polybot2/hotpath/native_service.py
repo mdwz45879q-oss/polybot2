@@ -126,6 +126,21 @@ class NativeHotPathService:
                 self._append_error(f"runtime_prewarm_presign:{type(exc).__name__}:{exc}")
         return int(len(self._pending_presign_templates))
 
+    def prewarm_presign_retirement(self, template_orders: list[OrderRequest]) -> int:
+        templates: list[dict[str, Any]] = []
+        for req in tuple(template_orders or ()):
+            try:
+                templates.append(self._serialize_template_order(req))
+            except Exception:
+                continue
+        bridge = self._runtime_bridge
+        if bridge is not None:
+            try:
+                bridge.prewarm_presign_retirement(list(templates))
+            except Exception as exc:
+                self._append_error(f"runtime_prewarm_presign_retirement:{type(exc).__name__}:{exc}")
+        return int(len(templates))
+
     def _runtime_config_payload(self) -> dict[str, Any]:
         provider_cfg = getattr(self._provider, "config", None)
         plan = self._compiled_plan

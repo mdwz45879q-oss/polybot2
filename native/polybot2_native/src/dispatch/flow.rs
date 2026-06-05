@@ -57,6 +57,38 @@ impl DispatchHandle {
         Ok(std::mem::take(slot))
     }
 
+    /// Pop a presigned order for the given target from the per-token retirement pool.
+    /// Same logic as `pop_for_target` but reads/drains from `presign_pool_retirement`.
+    /// Synchronous; runs on the WS thread.
+    pub(crate) fn pop_for_target_retirement(
+        &mut self,
+        target_idx: crate::TargetIdx,
+    ) -> Result<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>, String> {
+        let target = self
+            .registry
+            .targets
+            .get(target_idx.0 as usize)
+            .ok_or_else(|| "dispatch_invalid_target_idx".to_string())?;
+        let token_idx = target.token_idx.0 as usize;
+        let slot = self
+            .presign_pool_retirement
+            .get_mut(token_idx)
+            .ok_or_else(|| "dispatch_invalid_token_idx_retirement".to_string())?;
+        if slot.is_empty() {
+            let token_id = self
+                .registry
+                .tokens
+                .get(token_idx)
+                .map(|t| &*t.token_id)
+                .unwrap_or("_");
+            return Err(format!(
+                "submit_presigned_miss_retirement:token_id={}",
+                redact_token_id(token_id)
+            ));
+        }
+        Ok(std::mem::take(slot))
+    }
+
     /// Send a frame-batch to the submitter via the lock-free SPSC ring.
     /// On failure (ring full or not installed), logs an error per item.
     pub(crate) fn send_batch(&mut self, batch: SubmitBatch, log: &Arc<Mutex<LogWriter>>) {

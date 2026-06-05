@@ -97,28 +97,28 @@ class MarketSync:
             return payload
         return []
 
-    async def _fetch_page_closed(self, client: httpx.AsyncClient, page_offset: int) -> list[dict[str, Any]]:
-        return await self._fetch_page_with_retry(
-            client,
-            {
-                "closed": "true",
-                "order": "updatedAt",
-                "ascending": "true",
-                "limit": self._batch_size,
-                "offset": page_offset,
-            },
-        )
+    async def _fetch_page_closed(self, client: httpx.AsyncClient, page_offset: int, extra_params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "closed": "true",
+            "order": "updatedAt",
+            "ascending": "true",
+            "limit": self._batch_size,
+            "offset": page_offset,
+        }
+        if extra_params:
+            params.update(extra_params)
+        return await self._fetch_page_with_retry(client, params)
 
-    async def _fetch_page_open(self, client: httpx.AsyncClient, page_offset: int) -> list[dict[str, Any]]:
-        return await self._fetch_page_with_retry(
-            client,
-            {
-                "active": "true",
-                "closed": "false",
-                "limit": self._batch_size,
-                "offset": page_offset,
-            },
-        )
+    async def _fetch_page_open(self, client: httpx.AsyncClient, page_offset: int, extra_params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "active": "true",
+            "closed": "false",
+            "limit": self._batch_size,
+            "offset": page_offset,
+        }
+        if extra_params:
+            params.update(extra_params)
+        return await self._fetch_page_with_retry(client, params)
 
     async def _run_pass(
         self,
@@ -137,6 +137,11 @@ class MarketSync:
         total_rows_advanced = 0
         end_reached = False
         limit_pages = None if max_pages is None else max(1, int(max_pages))
+        # Cursor-based pagination: when the API caps offset at ~10k, restart
+        # with start_date_min = last event's updatedAt and offset = 0.
+        extra_params: dict[str, Any] = {}
+        last_updated_at = ""
+        prev_cursor = ""
         progress = tqdm(
             desc=f"Markets [{label}]",
             unit="page",
@@ -148,7 +153,7 @@ class MarketSync:
             while not end_reached:
                 if limit_pages is not None and total_pages_processed >= limit_pages:
                     break
-                tasks = [fetch_fn(client, offset + i * self._batch_size) for i in range(self._concurrency)]
+                tasks = [fetch_fn(client, offset + i * self._batch_size, extra_params) for i in range(self._concurrency)]
                 fetch_started = time.perf_counter()
                 results = await asyncio.gather(*tasks)
                 if stage_metrics is not None:
@@ -158,12 +163,13 @@ class MarketSync:
                 pages_processed = 0
                 rows_advanced = 0
                 ingest_events: list[dict[str, Any]] = []
+                hit_api_cap = False
                 for data in results:
                     if limit_pages is not None and total_pages_processed + pages_processed >= limit_pages:
                         end_reached = True
                         break
                     if not data:
-                        end_reached = True
+                        hit_api_cap = True
                         break
                     pages_processed += 1
                     rows_advanced += len(data)
@@ -171,6 +177,11 @@ class MarketSync:
                     if len(data) < self._batch_size:
                         end_reached = True
                         break
+                # Track last updatedAt for cursor
+                for ev in ingest_events:
+                    ts = str(ev.get("updatedAt", ""))
+                    if ts and ts > last_updated_at:
+                        last_updated_at = ts
                 if ingest_events:
                     db_started = time.perf_counter()
                     _, market_n, _, _ = self._db.markets.upsert_from_gamma_events(
@@ -190,6 +201,19 @@ class MarketSync:
                 if pages_processed > 0:
                     progress.update(pages_processed)
                     progress.set_postfix(markets=total_markets, offset=offset, refresh=False)
+                # API offset cap: restart with cursor if we have events but
+                # hit an empty page (cap is ~10,100 events per query window).
+                if hit_api_cap and not end_reached and last_updated_at:
+                    if last_updated_at == prev_cursor:
+                        # Cursor didn't advance — no more events
+                        end_reached = True
+                    else:
+                        log.info("%s: offset cap at %d, restarting with start_date_min=%s", label, offset, last_updated_at[:20])
+                        prev_cursor = last_updated_at
+                        extra_params = {"start_date_min": last_updated_at}
+                        offset = 0
+                elif hit_api_cap:
+                    end_reached = True
         finally:
             progress.close()
         return (int(total_markets), int(total_pages_processed), int(total_rows_advanced))

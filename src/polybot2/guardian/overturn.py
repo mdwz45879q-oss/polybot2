@@ -243,6 +243,10 @@ class OverturnDetector:
                     result = self._check_and_trigger(alert)
                     if result:
                         triggered.append(alert)
+            elif alert.signal1_confirmed and alert.signal2_confirmed:
+                result = self._check_and_trigger(alert)
+                if result:
+                    triggered.append(alert)
 
         return triggered
 
@@ -288,15 +292,10 @@ class OverturnDetector:
             alert.acted = True
             logger.info("overturn execution completed for %s", alert.game_id)
         else:
-            # Execution failed — do NOT mark acted, allow retry on next check
             logger.error(
                 "🚨 OVERTURN EXECUTION FAILED for %s: %s — will retry on next confirmation check",
                 alert.game_id, exc,
             )
-            # Reset both signals so check_confirmations re-evaluates
-            # (signals are still true from the data, so it will re-trigger immediately)
-            alert.signal1_confirmed = True
-            alert.signal2_confirmed = True
 
     def _find_original_goal_event(
         self,
@@ -308,24 +307,21 @@ class OverturnDetector:
     ) -> ScoreEvent | None:
         """Find the ScoreEvent that produced the goal that was just reversed.
 
-        E.g., if score went 2-0 → 1-0 (home goal overturned), find the event
-        where score went from X-0 → 2-0 (the original home goal).
+        Searches for the most recent event where the *overturned side's* score
+        increased, regardless of the other side's score at that time.  This
+        handles the case where the opposing team scores between the original
+        goal and the VAR overturn (e.g., 0-0 → 1-0 → 1-1 → 0-1).
         """
-        # The reversed goal is the difference between prev and new scores
-        # Home goal reversed: prev_home > new_home → look for event where home increased to prev_home
-        # Away goal reversed: prev_away > new_away → look for event where away increased to prev_away
+        home_reversed = prev_home > new_home
+        away_reversed = prev_away > new_away
 
         for event in reversed(game.score_timeline):
             if event.prev_home is None or event.prev_away is None:
                 continue
-            # Match: this event's result equals the pre-reversal score,
-            # and the change direction matches what was reversed
-            if event.home == prev_home and event.away == prev_away:
-                # This is the goal that produced the score we just lost
-                if prev_home > new_home and event.home > event.prev_home:
-                    return event  # home goal that was overturned
-                if prev_away > new_away and event.away > event.prev_away:
-                    return event  # away goal that was overturned
+            if home_reversed and event.home > event.prev_home:
+                return event
+            if away_reversed and event.away > event.prev_away:
+                return event
         return None
 
     def _find_affected_orders(

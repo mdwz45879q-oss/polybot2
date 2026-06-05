@@ -20,8 +20,6 @@ impl NativeTennisEngine {
             registry: None,
             kickoff_ts: Vec::new(),
             token_ids_by_game: Vec::new(),
-            has_match_totals: Vec::new(),
-            has_first_set_totals: Vec::new(),
             has_set_totals: Vec::new(),
             has_moneyline: Vec::new(),
             has_first_set_winner: Vec::new(),
@@ -29,11 +27,10 @@ impl NativeTennisEngine {
             sets_to_win: Vec::new(),
             rows: Vec::new(),
             game_states: Vec::new(),
-            match_total_under_emitted: Vec::new(),
-            first_set_total_under_emitted: Vec::new(),
             set_total_under_emitted: Vec::new(),
             first_set_winner_resolved: Vec::new(),
             final_resolved_games: Vec::new(),
+            retirement_targets: Vec::new(),
         }
     }
 
@@ -42,8 +39,6 @@ impl NativeTennisEngine {
         for gs in &mut self.game_states {
             *gs = TennisGameState::default();
         }
-        self.match_total_under_emitted.fill(false);
-        self.first_set_total_under_emitted.fill(false);
         self.set_total_under_emitted.fill(false);
         self.first_set_winner_resolved.fill(false);
         self.final_resolved_games.fill(false);
@@ -127,8 +122,6 @@ impl NativeTennisEngine {
         self.kickoff_ts.clear();
         self.token_ids_by_game.clear();
         self.sets_to_win.clear();
-        self.has_match_totals.clear();
-        self.has_first_set_totals.clear();
         self.has_set_totals.clear();
         self.has_moneyline.clear();
         self.has_first_set_winner.clear();
@@ -179,24 +172,22 @@ impl NativeTennisEngine {
                 Some(m) => m,
                 None => {
                     self.game_targets.push(TennisGameTargets::default());
-                    self.has_match_totals.push(false);
-                    self.has_first_set_totals.push(false);
                     self.has_set_totals.push(false);
                     self.has_moneyline.push(false);
                     self.has_first_set_winner.push(false);
                     self.has_set_handicap.push(false);
+                    self.retirement_targets.push(Vec::new());
                     self.token_ids_by_game.push(Vec::new());
                     continue;
                 }
             };
 
             let mut game_tgt = TennisGameTargets::default();
-            let mut game_has_match_totals = false;
-            let mut game_has_first_set_totals = false;
             let mut game_has_set_totals = false;
             let mut game_has_moneyline = false;
             let mut game_has_first_set_winner = false;
             let mut game_has_set_handicap = false;
+            let mut game_retirement_targets: Vec<RetirementTarget> = Vec::new();
             let mut token_ids: HashSet<String> = HashSet::new();
             let game_id_ref = self.game_ids[gidx.0 as usize].as_str();
 
@@ -267,44 +258,6 @@ impl NativeTennisEngine {
                     });
 
                     match sports_market_type.as_str() {
-                        "tennis_match_totals" => {
-                            game_has_match_totals = true;
-                            if let Some(l) = effective_line {
-                                let half = l.floor() as u16;
-                                match semantic.as_str() {
-                                    "over" => game_tgt.match_total_over_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    "under" => game_tgt.match_total_under_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    other => {
-                                        eprintln!("[polybot2] WARN: unhandled tennis_match_totals semantic '{}' for game {}", other, game_id_ref);
-                                    }
-                                }
-                            }
-                        }
-                        "tennis_first_set_totals" => {
-                            game_has_first_set_totals = true;
-                            if let Some(l) = effective_line {
-                                let half = l.floor() as u16;
-                                match semantic.as_str() {
-                                    "over" => game_tgt.first_set_total_over_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    "under" => game_tgt.first_set_total_under_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    other => {
-                                        eprintln!("[polybot2] WARN: unhandled tennis_first_set_totals semantic '{}' for game {}", other, game_id_ref);
-                                    }
-                                }
-                            }
-                        }
                         "tennis_set_totals" => {
                             game_has_set_totals = true;
                             if let Some(l) = effective_line {
@@ -322,6 +275,12 @@ impl NativeTennisEngine {
                                         eprintln!("[polybot2] WARN: unhandled tennis_set_totals semantic '{}' for game {}", other, game_id_ref);
                                     }
                                 }
+                                // Retirement: both over and under resolve 50/50
+                                game_retirement_targets.push(RetirementTarget {
+                                    target_idx: tidx,
+                                    first_set_only: false,
+                                    is_set_total_3_5: half == 3,
+                                });
                             }
                         }
                         "moneyline" => {
@@ -333,6 +292,8 @@ impl NativeTennisEngine {
                                     eprintln!("[polybot2] WARN: unhandled moneyline semantic '{}' for game {}", other, game_id_ref);
                                 }
                             }
+                            // Moneyline does NOT go in retirement pool —
+                            // it fires from the normal pool.
                         }
                         "tennis_first_set_winner" => {
                             game_has_first_set_winner = true;
@@ -343,6 +304,12 @@ impl NativeTennisEngine {
                                     eprintln!("[polybot2] WARN: unhandled tennis_first_set_winner semantic '{}' for game {}", other, game_id_ref);
                                 }
                             }
+                            // Retirement: 50/50 only if retirement during set 1
+                            game_retirement_targets.push(RetirementTarget {
+                                target_idx: tidx,
+                                first_set_only: true,
+                                is_set_total_3_5: false,
+                            });
                         }
                         "tennis_set_handicap" => {
                             game_has_set_handicap = true;
@@ -381,7 +348,23 @@ impl NativeTennisEngine {
                                     }
                                     game_tgt.set_handicaps.push(slot);
                                 }
+                                // Retirement: always 50/50
+                                game_retirement_targets.push(RetirementTarget {
+                                    target_idx: tidx,
+                                    first_set_only: false,
+                                    is_set_total_3_5: false,
+                                });
                             }
+                        }
+                        // Retirement-only market types: tokens registered for the
+                        // retirement presign pool but NOT for normal evaluation.
+                        "tennis_match_totals" | "tennis_first_set_totals" => {
+                            let is_first_set = sports_market_type == "tennis_first_set_totals";
+                            game_retirement_targets.push(RetirementTarget {
+                                target_idx: tidx,
+                                first_set_only: is_first_set,
+                                is_set_total_3_5: false,
+                            });
                         }
                         other => {
                             eprintln!("[polybot2] WARN: unhandled tennis market type '{}' for game {}", other, game_id_ref);
@@ -391,19 +374,14 @@ impl NativeTennisEngine {
             }
 
             // Sort all over/under lines by half_int for correct crossing iteration.
-            game_tgt.match_total_over_lines.sort_by_key(|ol| ol.half_int);
-            game_tgt.match_total_under_lines.sort_by_key(|ol| ol.half_int);
-            game_tgt.first_set_total_over_lines.sort_by_key(|ol| ol.half_int);
-            game_tgt.first_set_total_under_lines.sort_by_key(|ol| ol.half_int);
             game_tgt.set_total_over_lines.sort_by_key(|ol| ol.half_int);
             game_tgt.set_total_under_lines.sort_by_key(|ol| ol.half_int);
             self.game_targets.push(game_tgt);
-            self.has_match_totals.push(game_has_match_totals);
-            self.has_first_set_totals.push(game_has_first_set_totals);
             self.has_set_totals.push(game_has_set_totals);
             self.has_moneyline.push(game_has_moneyline);
             self.has_first_set_winner.push(game_has_first_set_winner);
             self.has_set_handicap.push(game_has_set_handicap);
+            self.retirement_targets.push(game_retirement_targets);
 
             let mut token_list = token_ids.into_iter().collect::<Vec<_>>();
             token_list.sort();
@@ -414,11 +392,13 @@ impl NativeTennisEngine {
         let num_games = self.game_ids.len();
         self.rows = vec![None; num_games];
         self.game_states = vec![TennisGameState::default(); num_games];
-        self.match_total_under_emitted = vec![false; num_games];
-        self.first_set_total_under_emitted = vec![false; num_games];
         self.set_total_under_emitted = vec![false; num_games];
         self.first_set_winner_resolved = vec![false; num_games];
         self.final_resolved_games = vec![false; num_games];
+        // retirement_targets is built per-game during market loading above
+        // (already pushed in the market-processing loop — resize to ensure
+        // games with no retirement-eligible markets have an empty vec)
+        self.retirement_targets.resize(num_games, Vec::new());
 
         self.registry = Some(Arc::new(TargetRegistry {
             tokens: self.tokens.clone(),
@@ -481,10 +461,14 @@ impl NativeTennisEngine {
         current_set: i64,
         match_completed: bool,
         first_set_completed: bool,
+        retirement_winner: Option<&'static str>,
         game_state: &'static str,
         _recv_monotonic_ns: i64,
     ) -> Option<TennisLiveTickResult> {
         let gi = gidx.0 as usize;
+        if self.final_resolved_games[gi] {
+            return None;
+        }
 
         // Detect first observation before overwriting the dedup row.
         // On first tick, rows[gi] is None → prev fields must be None to prevent
@@ -530,19 +514,38 @@ impl NativeTennisEngine {
         if is_first_observation {
             if state.first_set_completed {
                 self.first_set_winner_resolved[gi] = true;
-                self.first_set_total_under_emitted[gi] = true;
             }
             if state.match_completed {
-                self.match_total_under_emitted[gi] = true;
                 self.set_total_under_emitted[gi] = true;
                 self.final_resolved_games[gi] = true;
             }
         }
 
-        // Evaluate directly into stack-allocated SmallVec — no intermediate type.
+        // ── Retirement path: completely separate from normal evaluation ──
+        // Retirement is detected from freeText (4 exact strings).
+        // On retirement: fire moneyline from normal pool + 50/50 from
+        // retirement pool. Do NOT call normal evaluators.
+        if let Some(winner) = retirement_winner {
+            let result = self.handle_retirement(gidx, &state, winner);
+            self.final_resolved_games[gi] = true;
+            self.cleanup_completed_game_idx(gidx);
+            // Combine both intent lists into a single SmallVec<[Intent; 32]>.
+            // The frame pipeline will need the RetirementResult to know
+            // which intents go to which pool. For now, store the boundary.
+            let mut all_intents = smallvec::SmallVec::<[Intent; 32]>::new();
+            let moneyline_count = result.moneyline_intents.len();
+            all_intents.extend(result.moneyline_intents.iter().cloned());
+            all_intents.extend(result.retirement_intents.iter().cloned());
+            return Some(TennisLiveTickResult {
+                game_idx: result.game_idx,
+                state: result.state,
+                normal_intent_count: moneyline_count,
+                intents: all_intents,
+            });
+        }
+
+        // ── Normal evaluation path (only reached if NOT retirement) ──
         let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
-        self.evaluate_match_totals_into(gidx, &state, &mut intents);
-        self.evaluate_first_set_totals_into(gidx, &state, &mut intents);
         self.evaluate_set_totals_into(gidx, &state, &mut intents);
         self.evaluate_first_set_winner_into(gidx, &state, &mut intents);
         self.evaluate_moneyline_into(gidx, &state, &mut intents);
@@ -553,9 +556,11 @@ impl NativeTennisEngine {
             self.cleanup_completed_game_idx(gidx);
         }
 
+        let normal_count = intents.len();
         Some(TennisLiveTickResult {
             game_idx: gidx,
             state,
+            normal_intent_count: normal_count,
             intents,
         })
     }
@@ -564,99 +569,75 @@ impl NativeTennisEngine {
         let gi = gidx.0 as usize;
         self.rows[gi] = None;
         self.game_states[gi] = TennisGameState::default();
-        // Tombstones preserved: match_total_under_emitted, first_set_total_under_emitted,
-        // set_total_under_emitted, first_set_winner_resolved, final_resolved_games
+        // Tombstones preserved: set_total_under_emitted, first_set_winner_resolved,
+        // final_resolved_games
+    }
+
+    // ---------------------------------------------------------------
+    // Retirement handling
+    // ---------------------------------------------------------------
+
+    /// Handle retirement: fire moneyline for the winner (normal pool) and
+    /// 50/50 orders for all eligible tokens (retirement pool).
+    /// Winner is determined from freeText parsing, NOT from set counts.
+    fn handle_retirement(
+        &self,
+        gidx: GameIdx,
+        state: &TennisGameState,
+        winner: &'static str,
+    ) -> RetirementResult {
+        let gi = gidx.0 as usize;
+        let targets = &self.game_targets[gi];
+        let mut moneyline_intents = smallvec::SmallVec::<[Intent; 2]>::new();
+        let mut retirement_intents = smallvec::SmallVec::<[Intent; 32]>::new();
+
+        // 1. Moneyline — from NORMAL presign pool
+        match winner {
+            "home" => {
+                if let Some(tidx) = targets.moneyline_home {
+                    moneyline_intents.push(Intent { target_idx: tidx });
+                }
+            }
+            "away" => {
+                if let Some(tidx) = targets.moneyline_away {
+                    moneyline_intents.push(Intent { target_idx: tidx });
+                }
+            }
+            _ => {}
+        }
+
+        // 2. 50/50 retirement targets — from RETIREMENT presign pool
+        for rt in &self.retirement_targets[gi] {
+            // Skip first-set markets if set 1 already completed
+            // (they resolved normally via the first-set evaluator)
+            if rt.first_set_only && state.first_set_completed {
+                continue;
+            }
+            // Skip set_totals O/U 3.5 in BO5 set 5 (ambiguous resolution)
+            if rt.is_set_total_3_5 && self.sets_to_win[gi] == 3 && state.current_set >= 5 {
+                continue;
+            }
+            retirement_intents.push(Intent { target_idx: rt.target_idx });
+        }
+
+        RetirementResult {
+            game_idx: gidx,
+            state: *state,
+            moneyline_intents,
+            retirement_intents,
+        }
     }
 
     // ---------------------------------------------------------------
     // Evaluators
     // ---------------------------------------------------------------
 
-    /// Match totals (total games across all sets): progressive over crossing,
-    /// under at match end.
-    fn evaluate_match_totals_into(
-        &mut self,
-        gidx: GameIdx,
-        state: &TennisGameState,
-        intents: &mut smallvec::SmallVec<[Intent; 32]>,
-    ) {
-        let gi = gidx.0 as usize;
-        if !self.has_match_totals[gi] {
-            return;
-        }
-        let tgt = &self.game_targets[gi];
-        let now = state.total_games;
-
-        // Over crossings: fire when half_int crosses from prev to now.
-        // prev = None on first tick (cold start) → skip to establish baseline.
-        if let Some(prev) = state.prev_total_games {
-            if now > prev {
-                let prev_u = prev.max(0) as u16;
-                let now_u = now.max(0) as u16;
-                for ol in &tgt.match_total_over_lines {
-                    if ol.half_int >= prev_u && ol.half_int < now_u {
-                        intents.push(Intent { target_idx: ol.target_idx });
-                    }
-                }
-            }
-        }
-
-        // Under at match end.
-        if state.match_completed && !self.match_total_under_emitted[gi] {
-            self.match_total_under_emitted[gi] = true;
-            let total_u = now.max(0) as u16;
-            for ol in &tgt.match_total_under_lines {
-                if ol.half_int >= total_u {
-                    intents.push(Intent { target_idx: ol.target_idx });
-                }
-            }
-        }
-    }
-
-    /// First-set totals (games in set 1): progressive over crossing,
-    /// under at first set end.
-    fn evaluate_first_set_totals_into(
-        &mut self,
-        gidx: GameIdx,
-        state: &TennisGameState,
-        intents: &mut smallvec::SmallVec<[Intent; 32]>,
-    ) {
-        let gi = gidx.0 as usize;
-        if !self.has_first_set_totals[gi] {
-            return;
-        }
-        let tgt = &self.game_targets[gi];
-        let now = state.first_set_games;
-
-        // Over crossings. prev = None on first tick → skip (cold-start safe).
-        // No first_set_completed guard needed: first_set_games comes from
-        // phases[0] which freezes after set 1 — subsequent ticks have now == prev.
-        if let Some(prev) = state.prev_first_set_games {
-            if now > prev {
-                let prev_u = prev.max(0) as u16;
-                let now_u = now.max(0) as u16;
-                for ol in &tgt.first_set_total_over_lines {
-                    if ol.half_int >= prev_u && ol.half_int < now_u {
-                        intents.push(Intent { target_idx: ol.target_idx });
-                    }
-                }
-            }
-        }
-
-        // Under at first set end.
-        if state.first_set_completed && !self.first_set_total_under_emitted[gi] {
-            self.first_set_total_under_emitted[gi] = true;
-            let total_u = now.max(0) as u16;
-            for ol in &tgt.first_set_total_under_lines {
-                if ol.half_int >= total_u {
-                    intents.push(Intent { target_idx: ol.target_idx });
-                }
-            }
-        }
-    }
-
     /// Set totals (total sets played): progressive over crossing,
     /// under at match end.
+    /// Set totals: both over and under fire at match end only (Option A).
+    /// Mid-match over (guaranteed-certainty) is disabled because it carries
+    /// retirement risk — if the match later ends in retirement, the position
+    /// resolves 50/50 instead of the expected full payout.
     fn evaluate_set_totals_into(
         &mut self,
         gidx: GameIdx,
@@ -667,38 +648,27 @@ impl NativeTennisEngine {
         if !self.has_set_totals[gi] {
             return;
         }
-        let tgt = &self.game_targets[gi];
-        let now = state.total_sets;
+        if !state.match_completed {
+            return;
+        }
+        if self.set_total_under_emitted[gi] {
+            return;
+        }
+        self.set_total_under_emitted[gi] = true;
 
-        // Over: fire when outcome becomes guaranteed (not when set completes).
-        // Over N.5 (half_int = N) is guaranteed when both players have enough
-        // sets that the total cannot stay at N or below.
-        // Condition: min(sets_home, sets_away) >= N + 1 - sets_to_win.
-        // Example BO3: Over 2.5 guaranteed when min(h,a) >= 1 (i.e., 1-1).
-        // Example BO5: Over 4.5 guaranteed when min(h,a) >= 2 (i.e., 2-2).
-        // prev = None on first tick → skip (cold-start safe).
-        if let Some(prev) = state.prev_total_sets {
-            if now > prev {
-            let stw = self.sets_to_win[gi];
-            let min_sets = state.sets_home.min(state.sets_away);
-            for ol in &tgt.set_total_over_lines {
-                let n = ol.half_int as i64;
-                let min_needed = (n + 1 - stw).max(0);
-                if min_sets >= min_needed {
-                    intents.push(Intent { target_idx: ol.target_idx });
-                }
-            }
+        let tgt = &self.game_targets[gi];
+        let total = state.total_sets.max(0) as u16;
+
+        // Over: total > line (half_int stores floor of line)
+        for ol in &tgt.set_total_over_lines {
+            if ol.half_int < total {
+                intents.push(Intent { target_idx: ol.target_idx });
             }
         }
-
-        // Under at match end.
-        if state.match_completed && !self.set_total_under_emitted[gi] {
-            self.set_total_under_emitted[gi] = true;
-            let total_u = now.max(0) as u16;
-            for ol in &tgt.set_total_under_lines {
-                if ol.half_int >= total_u {
-                    intents.push(Intent { target_idx: ol.target_idx });
-                }
+        // Under: total <= line
+        for ol in &tgt.set_total_under_lines {
+            if ol.half_int >= total {
+                intents.push(Intent { target_idx: ol.target_idx });
             }
         }
     }
@@ -771,12 +741,9 @@ impl NativeTennisEngine {
         }
     }
 
-    /// Set handicap: covers fires at match end, not_covers fires early when
-    /// the favored player can no longer achieve a sufficient margin.
-    ///
-    /// not_covers guaranteed when: max_margin + line <= 0, where
-    /// max_margin = sets_to_win - opponent_sets (best case: favored wins match).
-    /// covers can never fire early — favored could still lose the match.
+    /// Set handicap: both covers and not_covers fire at match end only
+    /// (Option A). Mid-match early not_covers is disabled because it
+    /// carries retirement risk — the position would resolve 50/50.
     fn evaluate_set_handicap_into(
         &mut self,
         gidx: GameIdx,
@@ -795,35 +762,22 @@ impl NativeTennisEngine {
             || state.sets_home >= stw
             || state.sets_away >= stw;
 
-        for slot in &tgt.set_handicaps {
-            let opponent_sets = match slot.side {
-                SpreadSide::Home => state.sets_away,
-                SpreadSide::Away => state.sets_home,
-            };
+        if !match_decided {
+            return;
+        }
 
-            if match_decided {
-                // Match end: fire covers or not_covers based on final margin.
-                let adj_margin = match slot.side {
-                    SpreadSide::Home => margin as f64,
-                    SpreadSide::Away => -(margin as f64),
-                };
-                if adj_margin + slot.line > 0.0 {
-                    if let Some(tidx) = slot.covers_idx {
-                        intents.push(Intent { target_idx: tidx });
-                    }
-                } else {
-                    if let Some(tidx) = slot.not_covers_idx {
-                        intents.push(Intent { target_idx: tidx });
-                    }
+        for slot in &tgt.set_handicaps {
+            let adj_margin = match slot.side {
+                SpreadSide::Home => margin as f64,
+                SpreadSide::Away => -(margin as f64),
+            };
+            if adj_margin + slot.line > 0.0 {
+                if let Some(tidx) = slot.covers_idx {
+                    intents.push(Intent { target_idx: tidx });
                 }
             } else {
-                // Mid-match: check if not_covers is already guaranteed.
-                // Best case for favored: win match at sets_to_win, opponent stays.
-                let max_margin = stw - opponent_sets;
-                if (max_margin as f64) + slot.line <= 0.0 {
-                    if let Some(tidx) = slot.not_covers_idx {
-                        intents.push(Intent { target_idx: tidx });
-                    }
+                if let Some(tidx) = slot.not_covers_idx {
+                    intents.push(Intent { target_idx: tidx });
                 }
             }
         }
@@ -892,8 +846,6 @@ impl NativeTennisEngine {
                     let stw = game_val.get("sets_to_win").and_then(|v| v.as_i64()).unwrap_or(2);
                     self.sets_to_win.push(stw);
                     self.game_targets.push(TennisGameTargets::default());
-                    self.has_match_totals.push(false);
-                    self.has_first_set_totals.push(false);
                     self.has_set_totals.push(false);
                     self.has_moneyline.push(false);
                     self.has_first_set_winner.push(false);
@@ -901,11 +853,10 @@ impl NativeTennisEngine {
                     self.token_ids_by_game.push(Vec::new());
                     self.rows.push(None);
                     self.game_states.push(TennisGameState::default());
-                    self.match_total_under_emitted.push(false);
-                    self.first_set_total_under_emitted.push(false);
                     self.set_total_under_emitted.push(false);
                     self.first_set_winner_resolved.push(false);
                     self.final_resolved_games.push(false);
+                    self.retirement_targets.push(Vec::new());
                     new_game_count += 1;
                     idx
                 }
@@ -990,46 +941,6 @@ impl NativeTennisEngine {
 
                     let game_tgt = &mut self.game_targets[gi];
                     match sports_market_type.as_str() {
-                        "tennis_match_totals" => {
-                            if let Some(l) = effective_line {
-                                let half = l.floor() as u16;
-                                match semantic.as_str() {
-                                    "over" => game_tgt.match_total_over_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    "under" => game_tgt.match_total_under_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    other => {
-                                        eprintln!("[polybot2] WARN: unhandled tennis_match_totals semantic '{}' for game {}", other, uid);
-                                    }
-                                }
-                            }
-                            self.has_match_totals[gi] = true;
-                            dirty_games.insert(gi);
-                        }
-                        "tennis_first_set_totals" => {
-                            if let Some(l) = effective_line {
-                                let half = l.floor() as u16;
-                                match semantic.as_str() {
-                                    "over" => game_tgt.first_set_total_over_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    "under" => game_tgt.first_set_total_under_lines.push(OverLine {
-                                        half_int: half,
-                                        target_idx: tidx,
-                                    }),
-                                    other => {
-                                        eprintln!("[polybot2] WARN: unhandled tennis_first_set_totals semantic '{}' for game {}", other, uid);
-                                    }
-                                }
-                            }
-                            self.has_first_set_totals[gi] = true;
-                            dirty_games.insert(gi);
-                        }
                         "tennis_set_totals" => {
                             if let Some(l) = effective_line {
                                 let half = l.floor() as u16;
@@ -1124,18 +1035,6 @@ impl NativeTennisEngine {
 
         for gi in dirty_games {
             self.game_targets[gi]
-                .match_total_over_lines
-                .sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi]
-                .match_total_under_lines
-                .sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi]
-                .first_set_total_over_lines
-                .sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi]
-                .first_set_total_under_lines
-                .sort_by_key(|ol| ol.half_int);
-            self.game_targets[gi]
                 .set_total_over_lines
                 .sort_by_key(|ol| ol.half_int);
             self.game_targets[gi]
@@ -1157,11 +1056,12 @@ fn canonical_tennis_market_type(input: &str) -> String {
     let raw = norm(input).replace('-', "_").replace(' ', "_");
     match raw.as_str() {
         "moneyline" => "moneyline".to_string(),
-        "tennis_match_totals" => "tennis_match_totals".to_string(),
-        "tennis_first_set_totals" => "tennis_first_set_totals".to_string(),
         "tennis_set_totals" => "tennis_set_totals".to_string(),
         "tennis_first_set_winner" => "tennis_first_set_winner".to_string(),
         "tennis_set_handicap" => "tennis_set_handicap".to_string(),
+        // Retirement-only: no evaluator, but tokens needed for retirement pool
+        "tennis_match_totals" => "tennis_match_totals".to_string(),
+        "tennis_first_set_totals" => "tennis_first_set_totals".to_string(),
         _ => raw,
     }
 }
@@ -1243,6 +1143,7 @@ mod tests {
             current_set,
             match_completed,
             first_set_completed,
+            None, // retirement_winner — normal tick, no retirement
             "LIVE",
             1000,
         );
@@ -1253,141 +1154,49 @@ mod tests {
     }
 
     // =================================================================
-    // Match totals tests
-    // =================================================================
-
-    #[test]
-    fn test_match_total_over_crossing() {
-        let mut engine = NativeTennisEngine::new();
-        let t1 = target_json("tok_over20", "over", "g1:MATCH_TOTAL:OVER:20.5");
-        let m = market_json("tennis_match_totals", Some(20.5), &[t1]);
-        let plan = plan_json_one_game("game1", &m);
-        engine.load_plan_from_json(&plan).unwrap();
-
-        // Tick 1: total_games=18, no fire
-        let intents = tick(&mut engine, "game1", 1, 0, 5, 3, 18, None, 1, 2, false, true);
-        assert!(intents.is_empty());
-
-        // Tick 2: total_games=21, crosses 20.5 -> fires
-        let intents = tick(&mut engine, "game1", 1, 0, 6, 5, 21, None, 1, 2, false, true);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
-    }
-
-    #[test]
-    fn test_match_total_under_at_end() {
-        let mut engine = NativeTennisEngine::new();
-        let t_under = target_json("tok_under25", "under", "g1:MATCH_TOTAL:UNDER:25.5");
-        let m = market_json("tennis_match_totals", Some(25.5), &[t_under]);
-        let plan = plan_json_one_game("game1", &m);
-        engine.load_plan_from_json(&plan).unwrap();
-
-        // During game: total_games=22, no fire
-        let intents = tick(&mut engine, "game1", 1, 1, 5, 4, 22, None, 2, 3, false, true);
-        assert!(intents.is_empty());
-
-        // Match ends with 24 total games -> under 25.5 fires
-        let intents = tick(&mut engine, "game1", 2, 1, 6, 4, 24, None, 3, 3, true, true);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
-    }
-
-    #[test]
-    fn test_match_total_under_no_fire() {
-        let mut engine = NativeTennisEngine::new();
-        let t_under = target_json("tok_under20", "under", "g1:MATCH_TOTAL:UNDER:20.5");
-        let m = market_json("tennis_match_totals", Some(20.5), &[t_under]);
-        let plan = plan_json_one_game("game1", &m);
-        engine.load_plan_from_json(&plan).unwrap();
-
-        // Match ends with 24 total games -> under 20.5 does NOT fire (24 >= 20)
-        let intents = tick(&mut engine, "game1", 2, 1, 6, 4, 24, None, 3, 3, true, true);
-        assert!(intents.is_empty());
-    }
-
-    // =================================================================
-    // First-set totals tests
-    // =================================================================
-
-    #[test]
-    fn test_first_set_total_over() {
-        let mut engine = NativeTennisEngine::new();
-        let t1 = target_json("tok_fs_over9", "over", "g1:FS_TOTAL:OVER:9.5");
-        let m = market_json("tennis_first_set_totals", Some(9.5), &[t1]);
-        let plan = plan_json_one_game("game1", &m);
-        engine.load_plan_from_json(&plan).unwrap();
-
-        // First set in progress: first_set_games=8, no fire
-        let intents = tick(&mut engine, "game1", 0, 0, 4, 4, 8, Some(8), 0, 1, false, false);
-        assert!(intents.is_empty());
-
-        // First set: first_set_games=10, crosses 9.5 -> fires
-        let intents = tick(&mut engine, "game1", 0, 0, 5, 5, 10, Some(10), 0, 1, false, false);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
-    }
-
-    #[test]
-    fn test_first_set_total_under_at_set_end() {
-        let mut engine = NativeTennisEngine::new();
-        let t_under = target_json("tok_fs_under10", "under", "g1:FS_TOTAL:UNDER:10.5");
-        let m = market_json("tennis_first_set_totals", Some(10.5), &[t_under]);
-        let plan = plan_json_one_game("game1", &m);
-        engine.load_plan_from_json(&plan).unwrap();
-
-        // Warm-up tick during set 1 (establishes baseline, cold-start skips)
-        let intents = tick(&mut engine, "game1", 0, 0, 5, 4, 9, Some(9), 0, 1, false, false);
-        assert!(intents.is_empty());
-
-        // First set ends with 10 games -> under 10.5 fires
-        let intents = tick(&mut engine, "game1", 1, 0, 0, 0, 10, Some(10), 1, 2, false, true);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
-    }
-
-    // =================================================================
     // Set totals tests
     // =================================================================
 
     #[test]
-    fn test_set_total_over_guaranteed_certainty_bo3() {
-        // BO3 (sets_to_win=2, the default): Over 2.5 fires at 1-1 (3rd set guaranteed).
+    fn test_set_totals_over_and_under_fire_at_match_end() {
+        // Option A: both over and under fire at match end only.
+        // BO3, match completed at 2-1 (3 sets). Over 2.5 and Under 3.5 should fire.
+        let mut engine = NativeTennisEngine::new();
+        let t_over = target_json("tok_set_over2", "over", "g1:SET_TOTAL:OVER:2.5");
+        let t_under = target_json("tok_set_under3", "under", "g1:SET_TOTAL:UNDER:3.5");
+        let m1 = market_json("tennis_set_totals", Some(2.5), &[t_over]);
+        let m2 = market_json("tennis_set_totals", Some(3.5), &[t_under]);
+        let markets = format!("{},{}", m1, m2);
+        let plan = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":2,"markets":[{}]}}]}}"#,
+            markets
+        );
+        engine.load_plan_from_json(&plan).unwrap();
+
+        // Mid-match at 1-1 (over 2.5 is guaranteed but should NOT fire — Option A)
+        let intents = tick(&mut engine, "game1", 1, 1, 0, 0, 20, None, 2, 3, false, true);
+        assert!(intents.is_empty(), "Option A: no mid-match over fire");
+
+        // Match end at 2-1 with match_completed=true
+        let intents = tick(&mut engine, "game1", 2, 1, 0, 0, 30, None, 3, 0, true, true);
+        assert_eq!(intents.len(), 2, "Both over 2.5 and under 3.5 should fire at match end");
+        let tids: Vec<TargetIdx> = intents.iter().map(|i| i.target_idx).collect();
+        assert!(tids.contains(&TargetIdx(0)), "over 2.5 fires (3 > 2.5)");
+        assert!(tids.contains(&TargetIdx(1)), "under 3.5 fires (3 < 3.5)");
+    }
+
+    #[test]
+    fn test_set_totals_no_fire_mid_match() {
+        // Option A: over does NOT fire mid-match even when guaranteed.
         let mut engine = NativeTennisEngine::new();
         let t1 = target_json("tok_set_over2", "over", "g1:SET_TOTAL:OVER:2.5");
         let m = market_json("tennis_set_totals", Some(2.5), &[t1]);
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
-        // 1 set played (1-0): min(1,0)=0, min_needed=2+1-2=1. 0 < 1, no fire.
-        let intents = tick(&mut engine, "game1", 1, 0, 3, 2, 15, None, 1, 2, false, true);
-        assert!(intents.is_empty(), "Over 2.5 should not fire at 1-0");
-
-        // 2 sets played (1-1): min(1,1)=1, min_needed=1. 1 >= 1, FIRES.
+        // At 1-1 (guaranteed 3+ sets) — should NOT fire
         let intents = tick(&mut engine, "game1", 1, 1, 0, 0, 20, None, 2, 3, false, true);
-        assert_eq!(intents.len(), 1, "Over 2.5 should fire at 1-1 (3rd set guaranteed)");
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
-    }
-
-    #[test]
-    fn test_set_total_over_guaranteed_certainty_bo5() {
-        // BO5 (sets_to_win=3): Over 4.5 fires at 2-2 (5th set guaranteed).
-        let mut engine = NativeTennisEngine::new();
-        let t1 = target_json("tok_set_over4", "over", "g1:SET_TOTAL:OVER:4.5");
-        let m = market_json("tennis_set_totals", Some(4.5), &[t1]);
-        let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
-            m
-        );
-        engine.load_plan_from_json(&plan_str).unwrap();
-
-        // 3 sets played (2-1): min(2,1)=1, min_needed=4+1-3=2. 1 < 2, no fire.
-        let intents = tick(&mut engine, "game1", 2, 1, 3, 2, 30, None, 3, 4, false, true);
-        assert!(intents.is_empty(), "Over 4.5 should not fire at 2-1");
-
-        // 4 sets played (2-2): min(2,2)=2, min_needed=2. 2 >= 2, FIRES.
-        let intents = tick(&mut engine, "game1", 2, 2, 0, 0, 40, None, 4, 5, false, true);
-        assert_eq!(intents.len(), 1, "Over 4.5 should fire at 2-2 (5th set guaranteed)");
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
+        assert!(intents.is_empty(), "Option A: over 2.5 must not fire at 1-1");
     }
 
     // =================================================================
@@ -1550,57 +1359,9 @@ mod tests {
     }
 
     #[test]
-    fn test_set_handicap_not_covers_fires_early_bo5() {
-        // BO5 line -2.5: not_covers guaranteed when opponent has >= 1 set.
-        // max_margin = 3 - 1 = 2, 2 + (-2.5) = -0.5 <= 0 → guaranteed.
-        let mut engine = NativeTennisEngine::new();
-        let t_covers = target_json("tok_covers", "home_covers", "g1:SH:HOME_COVERS:-2.5");
-        let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
-        let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
-        let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
-            m
-        );
-        engine.load_plan_from_json(&plan_str).unwrap();
-
-        // Warm-up tick (baseline)
-        let intents = tick(&mut engine, "game1", 0, 0, 3, 2, 5, Some(5), 0, 1, false, false);
-        assert!(intents.is_empty());
-
-        // Opponent wins 1st set (score 0-1): not_covers fires immediately
-        let intents = tick(&mut engine, "game1", 0, 1, 0, 0, 10, Some(10), 1, 2, false, true);
-        assert_eq!(intents.len(), 1, "not_covers should fire when opponent has 1 set");
-        assert_eq!(intents[0].target_idx, TargetIdx(1)); // not_covers
-    }
-
-    #[test]
-    fn test_set_handicap_no_early_fire_when_favored_leads() {
-        // BO5 line -2.5: favored leads 2-0. max_margin = 3-0 = 3, 3+(-2.5) = 0.5 > 0.
-        // not_covers NOT guaranteed (could still win 3-0). covers not yet determined.
-        let mut engine = NativeTennisEngine::new();
-        let t_covers = target_json("tok_covers", "home_covers", "g1:SH:HOME_COVERS:-2.5");
-        let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-2.5");
-        let m = market_json("tennis_set_handicap", Some(-2.5), &[t_covers, t_not]);
-        let plan_str = format!(
-            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":3,"markets":[{}]}}]}}"#,
-            m
-        );
-        engine.load_plan_from_json(&plan_str).unwrap();
-
-        // Warm-up tick
-        let intents = tick(&mut engine, "game1", 0, 0, 3, 2, 5, Some(5), 0, 1, false, false);
-        assert!(intents.is_empty());
-
-        // Favored leads 2-0: nothing fires
-        let intents = tick(&mut engine, "game1", 2, 0, 0, 0, 20, Some(10), 2, 3, false, true);
-        assert!(intents.is_empty(), "Nothing should fire when favored leads 2-0");
-    }
-
-    #[test]
-    fn test_set_handicap_not_covers_fires_early_bo3() {
-        // BO3 line -1.5: not_covers guaranteed when opponent has >= 1 set.
-        // max_margin = 2-1 = 1, 1 + (-1.5) = -0.5 <= 0 → guaranteed.
-        // At score 1-1, not_covers fires.
+    fn test_set_handicap_no_fire_mid_match() {
+        // Option A: handicap does NOT fire mid-match, even when not_covers
+        // is mathematically guaranteed.
         let mut engine = NativeTennisEngine::new();
         let t_covers = target_json("tok_covers", "home_covers", "g1:SH:HOME_COVERS:-1.5");
         let t_not = target_json("tok_not", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-1.5");
@@ -1612,10 +1373,9 @@ mod tests {
         let intents = tick(&mut engine, "game1", 0, 0, 3, 2, 5, Some(5), 0, 1, false, false);
         assert!(intents.is_empty());
 
-        // Score 1-1: not_covers fires
+        // Score 1-1: not_covers would be guaranteed but Option A blocks mid-match fire
         let intents = tick(&mut engine, "game1", 1, 1, 0, 0, 20, Some(10), 2, 3, false, true);
-        assert_eq!(intents.len(), 1, "not_covers should fire at 1-1 in BO3");
-        assert_eq!(intents[0].target_idx, TargetIdx(1));
+        assert!(intents.is_empty(), "Option A: no mid-match handicap fire");
     }
 
     // =================================================================
@@ -1719,54 +1479,197 @@ mod tests {
     }
 
     // =================================================================
-    // C1 regression: first-set total OVER must fire during set 1
+    // =================================================================
+    // Retirement tests
     // =================================================================
 
+    /// Helper: tick with retirement_winner parameter.
+    fn tick_with_retirement(
+        engine: &mut NativeTennisEngine,
+        game_id: &str,
+        sets_home: i64,
+        sets_away: i64,
+        total_sets: i64,
+        current_set: i64,
+        match_completed: bool,
+        first_set_completed: bool,
+        retirement_winner: Option<&'static str>,
+    ) -> Vec<Intent> {
+        let gidx = match engine.game_id_to_idx.get(game_id) {
+            Some(&g) => g,
+            None => return vec![],
+        };
+        let result = engine.process_tick_live(
+            gidx, "", "", "", "", "free_text",
+            sets_home, sets_away, 0, 0, 0, None,
+            total_sets, current_set,
+            match_completed, first_set_completed,
+            retirement_winner,
+            if retirement_winner.is_some() { "FINAL" } else { "LIVE" },
+            1000,
+        );
+        match result {
+            Some(r) => r.intents.to_vec(),
+            None => vec![],
+        }
+    }
+
     #[test]
-    fn test_first_set_total_over_fires_during_set_1() {
-        // Simulates the frame pipeline path: during set 1, first_set_games
-        // is Some(live_value) and first_set_completed is false.
+    fn test_retirement_home_retired_fires_moneyline_away() {
         let mut engine = NativeTennisEngine::new();
-        let t_over = target_json("tok_fs_over5", "over", "g1:FS_TOTAL:OVER:5.5");
-        let m = market_json("tennis_first_set_totals", Some(5.5), &[t_over]);
+        let t_home = target_json("tok_ml_home", "home", "g1:MONEYLINE:HOME");
+        let t_away = target_json("tok_ml_away", "away", "g1:MONEYLINE:AWAY");
+        let m = market_json("moneyline", None, &[t_home, t_away]);
         let plan = plan_json_one_game("game1", &m);
         engine.load_plan_from_json(&plan).unwrap();
 
-        // Tick 1: first_set_games=4 (2-2), still in set 1, no fire
-        let intents = tick(
-            &mut engine, "game1",
-            0, 0,       // sets: 0-0
-            2, 2,       // games: 2-2
-            4,          // total_games
-            Some(4),    // first_set_games: live value from phases[0]
-            0,          // total_sets: 0 (set 1 not done)
-            1,          // current_set: 1
-            false, false,
-        );
-        assert!(intents.is_empty(), "Over 5.5 should not fire at 4 games");
+        // Warm-up tick
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
 
-        // Tick 2: first_set_games=6 (3-3), crosses 5.5 -> fires
-        let intents = tick(
-            &mut engine, "game1",
-            0, 0, 3, 3, 6,
-            Some(6),    // first_set_games: live value
-            0, 1,       // total_sets=0, current_set=1
-            false, false,
+        // Home retired in set 2 → away wins. Score 1-0 in sets.
+        let intents = tick_with_retirement(
+            &mut engine, "game1", 1, 0, 1, 2, false, true, Some("away"),
         );
-        assert_eq!(intents.len(), 1, "Over 5.5 should fire at 6 games");
-        assert_eq!(intents[0].target_idx, TargetIdx(0));
-
-        // Tick 3: first_set_games=8 (4-4), no re-fire (presign pool gate)
-        let intents = tick(
-            &mut engine, "game1",
-            0, 0, 4, 4, 8,
-            Some(8), 0, 1,
-            false, false,
-        );
-        assert!(intents.is_empty(), "Over 5.5 should not re-fire");
+        assert_eq!(intents.len(), 1);
+        assert_eq!(intents[0].target_idx, TargetIdx(1), "away moneyline should fire");
+        assert!(engine.final_resolved_games[0], "game should be final-resolved");
     }
 
-    // =================================================================
+    #[test]
+    fn test_retirement_away_retired_fires_moneyline_home() {
+        let mut engine = NativeTennisEngine::new();
+        let t_home = target_json("tok_ml_home", "home", "g1:MONEYLINE:HOME");
+        let t_away = target_json("tok_ml_away", "away", "g1:MONEYLINE:AWAY");
+        let m = market_json("moneyline", None, &[t_home, t_away]);
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // Away retired → home wins. Sets tied 1-1, retirement in set 3.
+        let intents = tick_with_retirement(
+            &mut engine, "game1", 1, 1, 2, 3, false, true, Some("home"),
+        );
+        assert_eq!(intents.len(), 1);
+        assert_eq!(intents[0].target_idx, TargetIdx(0), "home moneyline should fire");
+    }
+
+    #[test]
+    fn test_retirement_fires_50_50_targets() {
+        let mut engine = NativeTennisEngine::new();
+        // Set up moneyline + set handicap (both sides)
+        let t_ml = target_json("tok_ml_away", "away", "g1:MONEYLINE:AWAY");
+        let m_ml = market_json("moneyline", None, &[t_ml]);
+        let t_cov = target_json("tok_cov", "home_covers", "g1:SH:HOME_COVERS:-1.5");
+        let t_ncov = target_json("tok_ncov", "home_not_covers", "g1:SH:HOME_NOT_COVERS:-1.5");
+        let m_sh = market_json("tennis_set_handicap", Some(-1.5), &[t_cov, t_ncov]);
+        let markets = format!("{},{}", m_ml, m_sh);
+        let plan = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":2,"markets":[{}]}}]}}"#,
+            markets
+        );
+        engine.load_plan_from_json(&plan).unwrap();
+
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // Home retired in set 2 → away wins
+        let intents = tick_with_retirement(
+            &mut engine, "game1", 1, 0, 1, 2, false, true, Some("away"),
+        );
+        // Should have: moneyline away (from normal pool) + both handicap sides (from retirement pool)
+        assert_eq!(intents.len(), 3, "moneyline + 2 handicap sides");
+        let tids: Vec<TargetIdx> = intents.iter().map(|i| i.target_idx).collect();
+        assert!(tids.contains(&TargetIdx(0)), "moneyline away");
+        assert!(tids.contains(&TargetIdx(1)), "handicap covers");
+        assert!(tids.contains(&TargetIdx(2)), "handicap not_covers");
+    }
+
+    #[test]
+    fn test_retirement_skips_first_set_markets_after_set1() {
+        let mut engine = NativeTennisEngine::new();
+        // First-set winner (retirement-eligible, first_set_only=true)
+        let t_fsw = target_json("tok_fsw", "home", "g1:FSW:HOME");
+        let m_fsw = market_json("tennis_first_set_winner", None, &[t_fsw]);
+        let plan = plan_json_one_game("game1", &m_fsw);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // Retirement in set 2, set 1 already completed
+        let intents = tick_with_retirement(
+            &mut engine, "game1", 1, 0, 1, 2, false, true, Some("away"),
+        );
+        // First-set winner should NOT be in retirement intents (set 1 completed)
+        // Only moneyline would fire, but we didn't set up moneyline targets
+        assert!(intents.is_empty(), "first-set winner should be skipped (set 1 complete)");
+    }
+
+    #[test]
+    fn test_retirement_does_not_call_normal_evaluators() {
+        let mut engine = NativeTennisEngine::new();
+        // Set up set_totals — would fire at match end via normal evaluator
+        let t_under = target_json("tok_under", "under", "g1:SET_TOTAL:UNDER:2.5");
+        let m = market_json("tennis_set_totals", Some(2.5), &[t_under]);
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // Retirement at 1-0 in sets. Normal evaluator would fire under 2.5
+        // (match_completed + total_sets=1 < 2.5). But retirement path should
+        // NOT call normal evaluators — the set_totals should only fire as
+        // a 50/50 retirement target.
+        let intents = tick_with_retirement(
+            &mut engine, "game1", 1, 0, 1, 2, false, true, Some("away"),
+        );
+        // The under target IS in retirement_targets (set_totals), so it fires
+        // from the retirement path. But crucially, set_total_under_emitted
+        // should NOT be set (normal evaluator was not called).
+        assert!(!engine.set_total_under_emitted[0], "normal evaluator should not have run");
+    }
+
+    #[test]
+    fn test_normal_completion_does_not_fire_retirement() {
+        let mut engine = NativeTennisEngine::new();
+        let t_ml = target_json("tok_ml", "home", "g1:MONEYLINE:HOME");
+        let t_cov = target_json("tok_cov", "home_covers", "g1:SH:HOME_COVERS:-1.5");
+        let m_ml = market_json("moneyline", None, &[t_ml]);
+        let m_sh = market_json("tennis_set_handicap", Some(-1.5), &[t_cov]);
+        let markets = format!("{},{}", m_ml, m_sh);
+        let plan = format!(
+            r#"{{"games":[{{"provider_game_id":"game1","canonical_league":"test","kickoff_ts_utc":1700000000,"sets_to_win":2,"markets":[{}]}}]}}"#,
+            markets
+        );
+        engine.load_plan_from_json(&plan).unwrap();
+
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // Normal completion (Ended) at 2-0 — should fire moneyline + handicap
+        // via normal evaluators, NOT retirement path.
+        let intents = tick(&mut engine, "game1", 2, 0, 0, 0, 0, None, 2, 0, true, true);
+        let tids: Vec<TargetIdx> = intents.iter().map(|i| i.target_idx).collect();
+        assert!(tids.contains(&TargetIdx(0)), "moneyline should fire via normal path");
+        assert!(tids.contains(&TargetIdx(1)), "handicap covers should fire via normal path");
+    }
+
+    #[test]
+    fn test_retirement_unknown_freetext_ignored() {
+        let mut engine = NativeTennisEngine::new();
+        let t_ml = target_json("tok_ml", "home", "g1:MONEYLINE:HOME");
+        let m = market_json("moneyline", None, &[t_ml]);
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // Unknown freeText — should NOT trigger retirement
+        let intents = tick_with_retirement(
+            &mut engine, "game1", 1, 0, 1, 2, false, true, None,
+        );
+        // No retirement, no match_completed → nothing fires
+        assert!(intents.is_empty(), "unknown freeText should not trigger anything");
+    }
+
     // C2 regression: "Interrupted" must NOT trigger final evaluators
     // =================================================================
 
@@ -1774,10 +1677,10 @@ mod tests {
     fn test_interrupted_does_not_fire_finals() {
         let mut engine = NativeTennisEngine::new();
         let t_ml = target_json("tok_ml_home", "home", "g1:ML:HOME");
-        let t_under = target_json("tok_mt_under30", "under", "g1:MT:UNDER:30.5");
+        let t_under = target_json("tok_st_under2", "under", "g1:ST:UNDER:2.5");
         let m_ml = market_json("moneyline", None, &[t_ml]);
-        let m_mt = market_json("tennis_match_totals", Some(30.5), &[t_under]);
-        let plan = plan_json_one_game("game1", &format!("{},{}", m_ml, m_mt));
+        let m_st = market_json("tennis_set_totals", Some(2.5), &[t_under]);
+        let plan = plan_json_one_game("game1", &format!("{},{}", m_ml, m_st));
         engine.load_plan_from_json(&plan).unwrap();
 
         // Tick with match_completed=false (what frame pipeline produces for "Interrupted")
@@ -1802,7 +1705,7 @@ mod tests {
             true,       // match_completed = true (Ended)
             true,
         );
-        // Should fire moneyline HOME + under 30.5
-        assert_eq!(intents.len(), 2, "Moneyline + under should fire on Ended");
+        // Should fire moneyline HOME + set total under 2.5 (total_sets=2 < 2.5)
+        assert_eq!(intents.len(), 2, "Moneyline + set total under should fire on Ended");
     }
 }

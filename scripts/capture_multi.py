@@ -258,10 +258,11 @@ async def v1_capture(fixture_id: str, out_path: Path, stop: asyncio.Event):
 
 # ─── V2 capture (python-socketio, runs in a thread) ─────────────────────
 
-def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
+def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list,
+                    verbose: bool = False):
     fixture_id = provider["fixture_id"]
     sio = socketio.Client(reconnection=True, reconnection_attempts=0,
-                          logger=False, engineio_logger=False)
+                          logger=verbose, engineio_logger=verbose)
     count = 0
     f = out_path.open("a")
 
@@ -304,11 +305,12 @@ def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list):
 
     try:
         from urllib.parse import urlencode as _ue
-        # Socket.IO auth uses raw signature (no "Bearer" prefix)
-        _sio_auth = v2_auth_headers()
-        _sio_auth["Authorization"] = _sio_auth["Authorization"].removeprefix("Bearer ")
-        _sio_qs = _ue({"product": "genius-stats", **_sio_auth})
-        sio.connect(f"{V2_BASE}?{_sio_qs}", socketio_path=V2_SIO_PATH, transports=["websocket"])
+        _auth = v2_auth_headers()
+        _sio_qs = _ue({"product": "genius-stats", **_auth})
+        # Pass auth in both query params AND headers — required to survive
+        # Socket.IO transport upgrade (per Kalstrop docs).
+        sio.connect(f"{V2_BASE}?{_sio_qs}", socketio_path=V2_SIO_PATH,
+                    transports=["websocket"], headers=_auth)
         while not stop_flag[0]:
             sio.sleep(1)
     except Exception as e:
@@ -642,7 +644,7 @@ def _run_single_game(
                 return
             if stop_flag[0]:
                 return
-            v2_capture_sync(provider, out_dir / "v2_raw.jsonl", stop_flag)
+            v2_capture_sync(provider, out_dir / "v2_raw.jsonl", stop_flag, verbose=args.verbose)
 
         v2_thread = threading.Thread(target=_v2_resolve_and_capture, daemon=True)
         v2_thread.start()
@@ -704,6 +706,8 @@ def main():
     ap.add_argument("--duration", type=int, default=7200, help="Max seconds (default 7200)")
     ap.add_argument("--resolve-timeout", type=int, default=1800,
                     help="Max seconds for V2 provider resolution")
+    ap.add_argument("--verbose", action="store_true", default=False,
+                    help="Enable verbose Socket.IO protocol logging")
     args = ap.parse_args()
 
     out_dir = Path(args.out)

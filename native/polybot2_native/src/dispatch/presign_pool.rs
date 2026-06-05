@@ -14,6 +14,9 @@ impl DispatchHandle {
             presign_template_catalog: HashMap::new(),
             presign_templates: (0..n).map(|_| smallvec::SmallVec::new()).collect(),
             presign_pool: (0..n).map(|_| smallvec::SmallVec::new()).collect(),
+            presign_template_catalog_retirement: HashMap::new(),
+            presign_templates_retirement: (0..n).map(|_| smallvec::SmallVec::new()).collect(),
+            presign_pool_retirement: (0..n).map(|_| smallvec::SmallVec::new()).collect(),
             submit_tx: None,
         }
     }
@@ -95,6 +98,52 @@ impl DispatchHandle {
         active
     }
 
+    pub(crate) fn set_presign_templates_retirement(&mut self, templates: &[PresignTemplateData]) {
+        self.presign_template_catalog_retirement.clear();
+        for slot in self.presign_templates_retirement.iter_mut() {
+            slot.clear();
+        }
+        for slot in self.presign_pool_retirement.iter_mut() {
+            slot.clear();
+        }
+        for template in templates {
+            let Some(request) = Self::parse_template_request(template) else {
+                continue;
+            };
+            self.presign_template_catalog_retirement
+                .entry(request.token_id.clone())
+                .or_insert_with(smallvec::SmallVec::new)
+                .push(request);
+        }
+    }
+
+    pub(crate) fn activate_presign_templates_for_tokens_retirement(&mut self, _token_ids: &[String]) -> usize {
+        let mut active = 0usize;
+        for (idx, slot) in self.registry.tokens.iter().enumerate() {
+            let trimmed = slot.token_id.trim();
+            if let Some(templates) = self.presign_template_catalog_retirement.get(trimmed) {
+                self.presign_templates_retirement[idx] = templates.clone();
+                active += 1;
+            } else {
+                self.presign_templates_retirement[idx].clear();
+                self.presign_pool_retirement[idx].clear();
+            }
+        }
+        active
+    }
+
+    pub(crate) fn templates_and_pool_mut_retirement(
+        &mut self,
+    ) -> (
+        &[smallvec::SmallVec<[OrderRequestData; 2]>],
+        &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>],
+    ) {
+        (
+            self.presign_templates_retirement.as_slice(),
+            self.presign_pool_retirement.as_mut_slice(),
+        )
+    }
+
     pub(crate) fn extend_for_patch(
         &mut self,
         new_templates: &mut std::collections::HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
@@ -105,6 +154,9 @@ impl DispatchHandle {
         let new_len = registry_tokens.len();
         self.presign_templates.resize_with(new_len, smallvec::SmallVec::new);
         self.presign_pool.resize_with(new_len, smallvec::SmallVec::new);
+        // Also grow retirement pool vectors to match new token count.
+        self.presign_templates_retirement.resize_with(new_len, smallvec::SmallVec::new);
+        self.presign_pool_retirement.resize_with(new_len, smallvec::SmallVec::new);
         for idx in old_len..new_len {
             let token_id = registry_tokens[idx].token_id.trim();
             if let Some(tpls) = new_templates.remove(token_id) {

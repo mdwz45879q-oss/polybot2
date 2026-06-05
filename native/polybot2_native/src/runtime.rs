@@ -48,6 +48,7 @@ impl NativeHotPathRuntime {
             runtime_cfg: RuntimeStartConfig::default(),
             dispatch_cfg: DispatchConfig::default(),
             presign_templates: Vec::new(),
+            retirement_presign_templates: Vec::new(),
             live_worker: None,
             submitter: None,
             cached_sdk_client: None,
@@ -172,6 +173,8 @@ impl NativeHotPathRuntime {
             );
             dispatch_handle.set_presign_templates(self.presign_templates.as_slice());
             dispatch_handle.activate_presign_templates_for_tokens(all_plan_tokens.as_slice());
+            dispatch_handle.set_presign_templates_retirement(self.retirement_presign_templates.as_slice());
+            dispatch_handle.activate_presign_templates_for_tokens_retirement(all_plan_tokens.as_slice());
 
             // Create the structured log file and wrap it for cross-thread sharing.
             let run_id = cfg.run_id.unwrap_or(0);
@@ -281,6 +284,34 @@ impl NativeHotPathRuntime {
                         }
                         self.cached_sdk_client = submitter.sdk_client_ref().ok().map(|c| c.clone());
                         self.cached_signer = submitter.signer_ref().ok().map(|s| s.clone());
+
+                        // Retirement presign warmup (tennis 50/50 orders).
+                        let ret_start = std::time::Instant::now();
+                        let (ret_templates, ret_pool) = dispatch_handle.templates_and_pool_mut_retirement();
+                        if ret_templates.iter().any(|t| !t.is_empty()) {
+                            let client_ret = submitter.sdk_client_ref().map_err(|e| PyValueError::new_err(format!("retirement_sdk_client:{}", e)))?.clone();
+                            let signer_ret = submitter.signer_ref().map_err(|e| PyValueError::new_err(format!("retirement_signer:{}", e)))?.clone();
+                            let dispatch_cfg_ret = dispatch_cfg.clone();
+                            let ret_warm_result = py.allow_threads(|| {
+                                match TokioBuilder::new_multi_thread().enable_all().build() {
+                                    Ok(rt) => rt.block_on(async {
+                                        warm_presign_startup_into(
+                                            &dispatch_cfg_ret,
+                                            &client_ret,
+                                            &signer_ret,
+                                            ret_templates,
+                                            ret_pool,
+                                        )
+                                        .await
+                                    }),
+                                    Err(e) => Err(format!("retirement_tokio_rt:{}", e)),
+                                }
+                            });
+                            if let Err(err) = ret_warm_result {
+                                return Err(PyValueError::new_err(format!("retirement_warmup:{}", err)));
+                            }
+                            eprintln!("[presign] retirement warmup: {}ms", ret_start.elapsed().as_millis());
+                        }
                     }
 
                     dispatch_handle.install_submit_tx(submit_producer);
@@ -561,6 +592,14 @@ impl NativeHotPathRuntime {
                 .map_err(|e| PyValueError::new_err(format!("invalid_prewarm_payload:{}", e)))?;
         self.presign_templates = templates;
         Ok(self.presign_templates.len())
+    }
+
+    fn prewarm_presign_retirement(&mut self, template_orders_json: &str) -> PyResult<usize> {
+        let templates: Vec<crate::dispatch::PresignTemplateData> =
+            serde_json::from_str(template_orders_json)
+                .map_err(|e| PyValueError::new_err(format!("invalid_retirement_prewarm_payload:{}", e)))?;
+        self.retirement_presign_templates = templates;
+        Ok(self.retirement_presign_templates.len())
     }
 
     fn patch_plan(

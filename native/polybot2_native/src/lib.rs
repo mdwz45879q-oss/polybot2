@@ -446,6 +446,7 @@ struct NativeHotPathRuntime {
     runtime_cfg: RuntimeStartConfig,
     dispatch_cfg: DispatchConfig,
     presign_templates: Vec<crate::dispatch::PresignTemplateData>,
+    retirement_presign_templates: Vec<crate::dispatch::PresignTemplateData>,
     live_worker: Option<LiveWorkerHandle>,
     submitter: Option<SubmitterHandle>,
     cached_sdk_client: Option<SdkClient<SdkAuthenticatedState<SdkAuthNormal>>>,
