@@ -256,74 +256,153 @@ async def v1_capture(fixture_id: str, out_path: Path, stop: asyncio.Event):
     print(f"  [v1] captured {count} frames")
 
 
-# ─── V2 capture (python-socketio, runs in a thread) ─────────────────────
+# ─── V2 capture (raw websocket, matching Rust kalstrop_v2_sio.rs) ───
 
+def _v2_auth_qs():
+    """Build auth query string for V2 Socket.IO websocket connection."""
+    from urllib.parse import urlencode as _ue
+    headers = v2_auth_headers()
+    return _ue({
+        "product": "genius-stats",
+        "X-Client-ID": headers["X-Client-ID"],
+        "X-Timestamp": headers["X-Timestamp"],
+        "Authorization": headers["Authorization"],
+    })
+
+
+async def v2_capture_async(provider: dict, out_path: Path, stop: asyncio.Event):
+    """Capture V2 Genius Stats via raw websocket (Engine.IO/Socket.IO manual handshake).
+
+    Mirrors the Rust implementation in kalstrop_v2_sio.rs. Uses raw websocket
+    instead of python-socketio which has handshake compatibility issues with
+    the Kalstrop gateway.
+    """
+    fixture_id = str(provider["fixture_id"])
+    count = 0
+    backoff = 2.0
+
+    with out_path.open("a") as f:
+        while not stop.is_set():
+            try:
+                auth_qs = _v2_auth_qs()
+                ws_url = f"wss://stats.kalstropservice.com/socket.io/?EIO=4&transport=websocket&{auth_qs}"
+
+                async with websockets.connect(ws_url, ping_interval=None, ping_timeout=None,
+                                              max_size=10*1024*1024) as ws:
+                    # Engine.IO OPEN: 0{"sid":"...","pingInterval":25000,...}
+                    msg = await asyncio.wait_for(ws.recv(), timeout=10)
+                    if isinstance(msg, bytes):
+                        msg = msg.decode()
+                    if not msg.startswith("0"):
+                        print(f"  [v2] bad OPEN: {msg[:60]}")
+                        break
+
+                    # Socket.IO CONNECT
+                    await ws.send("40")
+
+                    # Socket.IO CONNECT ACK: 40{"sid":"..."}
+                    msg = await asyncio.wait_for(ws.recv(), timeout=10)
+                    if isinstance(msg, bytes):
+                        msg = msg.decode()
+                    if not msg.startswith("40"):
+                        print(f"  [v2] bad ACK: {msg[:60]}")
+                        break
+
+                    # Subscribe
+                    sub_payload = json.dumps(["genius_subscribe", {
+                        "fixtureId": fixture_id,
+                        "activeContent": "court",
+                        "sport": provider.get("sport"),
+                        "sportId": provider.get("sport_id"),
+                        "competitionId": provider.get("competition_id"),
+                    }])
+                    await ws.send(f"42{sub_payload}")
+                    print(f"  [v2] subscribed to fixture_id={fixture_id}")
+                    backoff = 2.0
+
+                    # Frame loop
+                    async for raw in ws:
+                        if stop.is_set():
+                            break
+                        if isinstance(raw, bytes):
+                            raw = raw.decode()
+
+                        # Engine.IO PING → PONG
+                        if raw == "2":
+                            await ws.send("3")
+                            continue
+
+                        # Socket.IO EVENT: 42["event_name", data]
+                        if raw.startswith("42"):
+                            ts_ns = time.time_ns()
+                            try:
+                                payload = json.loads(raw[2:])
+                                event_name = payload[0] if isinstance(payload, list) else "unknown"
+                                event_data = payload[1] if isinstance(payload, list) and len(payload) > 1 else {}
+                            except (json.JSONDecodeError, IndexError):
+                                event_name = "parse_error"
+                                event_data = raw[2:100]
+
+                            f.write(json.dumps({
+                                "ts_ns": ts_ns,
+                                "source": "v2",
+                                "event": event_name,
+                                "data": event_data,
+                            }) + "\n")
+                            count += 1
+                            if count % 50 == 0:
+                                f.flush()
+
+                            if event_name == "subscribed":
+                                d = event_data.get("data", {}) if isinstance(event_data, dict) else {}
+                                sb = d.get("scoreboardInfo", {})
+                                if sb:
+                                    print(f"  [v2] initial: {sb.get('homeScore')}-{sb.get('awayScore')} phase={sb.get('currentPhase')}")
+                                f.flush()
+                            elif event_name == "error":
+                                print(f"  [v2] error: {event_data}")
+
+                    # Unsubscribe before closing
+                    try:
+                        unsub = json.dumps(["genius_unsubscribe", {
+                            "fixtureId": fixture_id,
+                            "activeContent": "court",
+                        }])
+                        await ws.send(f"42{unsub}")
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                if stop.is_set():
+                    break
+                print(f"  [v2] {type(e).__name__}: {e} — reconnecting in {backoff:.0f}s")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+
+    print(f"  [v2] captured {count} events")
+
+
+# Legacy sync wrapper for backward compat with threading callers
 def v2_capture_sync(provider: dict, out_path: Path, stop_flag: list,
                     verbose: bool = False):
-    fixture_id = provider["fixture_id"]
-    sio = socketio.Client(reconnection=True, reconnection_attempts=0,
-                          logger=verbose, engineio_logger=verbose)
-    count = 0
-    f = out_path.open("a")
+    """Sync wrapper that runs v2_capture_async in a new event loop."""
+    stop = asyncio.Event()
 
-    @sio.event
-    def connect():
-        params = {
-            "fixtureId": str(fixture_id),
-            "activeContent": "court",
-            "sport": provider.get("sport"),
-            "sportId": provider.get("sport_id"),
-            "competitionId": provider.get("competition_id"),
-        }
-        sio.emit("genius_subscribe", params)
-        print(f"  [v2] subscribed to fixture_id={fixture_id}")
+    async def _run():
+        while not stop_flag[0] and not stop.is_set():
+            await asyncio.sleep(0.1)
+        stop.set()
 
-    @sio.on("subscribed")
-    def on_sub(data):
-        nonlocal count
-        ts_ns = time.time_ns()
-        f.write(json.dumps({"ts_ns": ts_ns, "source": "v2", "event": "subscribed", "data": data}) + "\n")
-        f.flush()
-        count += 1
-        d = data.get("data", {}) if isinstance(data, dict) else {}
-        sb = d.get("scoreboardInfo", {})
-        if sb:
-            print(f"  [v2] initial: {sb.get('homeScore')}-{sb.get('awayScore')} phase={sb.get('currentPhase')}")
+    async def _main():
+        monitor = asyncio.create_task(_run())
+        capture = asyncio.create_task(v2_capture_async(provider, out_path, stop))
+        await asyncio.gather(capture, monitor, return_exceptions=True)
 
-    @sio.on("genius_update")
-    def on_update(data):
-        nonlocal count
-        ts_ns = time.time_ns()
-        f.write(json.dumps({"ts_ns": ts_ns, "source": "v2", "event": "genius_update", "data": data}) + "\n")
-        count += 1
-        if count % 50 == 0:
-            f.flush()
-
-    @sio.on("error")
-    def on_error(data):
-        print(f"  [v2] error: {data}")
-
+    loop = asyncio.new_event_loop()
     try:
-        from urllib.parse import urlencode as _ue
-        _auth = v2_auth_headers()
-        _sio_qs = _ue({"product": "genius-stats", **_auth})
-        # Pass auth in both query params AND headers — required to survive
-        # Socket.IO transport upgrade (per Kalstrop docs).
-        sio.connect(f"{V2_BASE}?{_sio_qs}", socketio_path=V2_SIO_PATH,
-                    transports=["websocket"], headers=_auth)
-        while not stop_flag[0]:
-            sio.sleep(1)
-    except Exception as e:
-        print(f"  [v2] {type(e).__name__}: {e}")
-    finally:
-        try:
-            sio.emit("genius_unsubscribe", {"fixtureId": str(fixture_id), "activeContent": "court"})
-            sio.disconnect()
-        except Exception:
-            pass
-        f.flush()
-        f.close()
-    print(f"  [v2] captured {count} events")
+        loop.run_until_complete(_main())
+    except Exception:
+        pass
 
 
 # ─── Opta capture (python-socketio, runs in a thread) ──────────────────
