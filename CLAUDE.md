@@ -56,7 +56,7 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `kalstrop_types.rs` | Zero-copy serde structs for Kalstrop WS frames (`KalstropFrame<'a>`, etc.) |
 | `baseball/` | Sport-specific: `engine.rs` (NativeMlbEngine, process_tick_live, merge_plan), `eval.rs` (totals, NRFI, walkoff, moneyline, spreads), `parse.rs` (inning parsing), `frame_pipeline.rs` (zero-alloc live path), `types.rs` (GameState, GameTargets, etc.) |
 | `soccer/` | Sport-specific: `engine.rs` (NativeSoccerEngine), `eval.rs` (totals, three-way moneyline, BTTS, spreads, corners, halftime result, exact score with early NO), `parse.rs` (half parsing), `frame_pipeline.rs`, `types.rs` |
-| `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 6 evaluators: match totals, first-set totals, set totals, moneyline, first-set winner, set handicap), `frame_pipeline.rs`, `types.rs`. Per-game `sets_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-module dependency on soccer). |
+| `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 4 evaluators: set totals, moneyline, first-set winner, set handicap — match totals and first-set totals evaluators removed, those market types are retirement-pool-only), `frame_pipeline.rs` (includes `detect_retirement` for 4-string exact match), `types.rs` (includes `RetirementTarget`, `RetirementResult`). Per-game `sets_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot`. Separate retirement presign pool for 50/50 orders on retirement. Option A: set totals and set handicap fire only at match end (no mid-match guaranteed-certainty over or early not_covers). |
 | `cs2/` | Sport-specific: `engine.rs` (NativeCs2Engine, process_tick_live, merge_plan), `eval.rs` (closed-form map winner via `map_winner()`, child moneyline with dual-signal detection, match moneyline, totals with guaranteed-certainty, map handicap with early not_covers — 40 tests), `frame_pipeline.rs` (uses `"Closed"` not `"Ended"` for match completion), `types.rs` (Cs2GameTargets, Cs2GameState, SpreadSlot). Per-game `maps_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-sport imports). Effective-maps optimization: fires match-end bets on round-13 tick without waiting for V1 maps counter. |
 | `moba/` | Sport-specific: `engine.rs` (NativeMobaEngine — shared by LoL + Dota2), `eval.rs` (child moneyline via maps-won only, moneyline, totals with guaranteed-certainty, map handicap with early not_covers — 11 tests), `types.rs` (MobaGameTargets, MobaGameState, SpreadSlot). Simplified CS2 engine: no round-level data, no `map_winner()`, no effective_state. BoltOdds-only (no V1). |
 | `kalstrop_v2_sio.rs` | Socket.IO/Engine.IO client for Kalstrop V2 (`SioConnection`, handshake, `subscribe`/`unsubscribe`, frame classification) |
@@ -72,7 +72,7 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | `boltodds_moba_types.rs` | Byte-level extractor for BoltOdds MOBA frames (`BoltOddsMobaExtract`) + serde fallback. Extracts `event` (game label), `teams.home.score`, `teams.away.score` from `new_play` frames. |
 | `ws_boltodds.rs` | BoltOdds WS worker: plain WS connection (`?key=TOKEN`), subscribe by game labels, frame drain loop. Dispatches to `SportEngine::Soccer`, `Baseball`, or `Moba` per-frame. Simpler protocol than V1 (no GraphQL). Per-provider reconnection timers with exponential backoff. |
 | `fast_extract.rs` | Byte-level extractor for Kalstrop V1 frames. `fast_extract_v1` (soccer/baseball): fixtureId, homeScore, awayScore, freeText, corners. `fast_extract_tennis_v1` (tennis): adds nested currentPhase fields (games_home/away, phase number) and phases array scan for total_games/first_set_games. `fast_extract_cs2_v1` (CS2): extracts fixture_id, maps_home/away, rounds_home/away, free_text, current_phase. No phases array scanning (unlike tennis). |
-| `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. Handles noop-mode logging and http-mode presign pop + batch build + send. Called by baseball, soccer (V1, BoltOdds, V2), tennis, and CS2 frame pipelines. |
+| `dispatch/flow.rs` | `DispatchHandle::pop_for_target(TargetIdx)` (sync, returns `Box<PreparedOrderPayload>` or err) and `send_batch(SubmitBatch, &log)` (sync, pushes one Batch onto the SPSC ring). `dispatch_intents(intents, handle, log)`: shared dispatch logic extracted from frame pipelines. `pop_for_target_retirement(TargetIdx)`: same as `pop_for_target` but reads from the separate retirement presign pool. Tennis frame pipeline routes moneyline intents to normal pool and 50/50 retirement intents to retirement pool via `normal_intent_count` boundary. |
 | `dispatch/presign_pool.rs` | Presign pool indexed by `TokenIdx` (`Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>`). Depth is 1-2 per token (primary + optional secondary order). `PreparedOrderPayload` contains pre-serialized order JSON bytes (serialized once at presign time). `warm_presign_startup_into` signs + serializes orders per token at startup. |
 | `dispatch/fast_submit_client.rs` | `FastClobSubmitClient`: custom HTTP client bypassing the SDK for `POST /order` (single) and `POST /orders` (batch). Caches decoded API secret, uses stack-based `itoa` + base64 for HMAC, sends pre-serialized order bytes directly. Two methods: `post_order_bytes_single` (single order) and `post_orders_bytes` (batch, via generic `send_json_post` helper). `warmup_connection()` pre-establishes TCP + TLS + HTTP/2 via `GET /time`. Configured with `tcp_nodelay(true)`, `connect_timeout(5s)`, `timeout(10s)`, `pool_max_idle_per_host(30)`, `pool_idle_timeout(None)`, HTTP/2 via ALPN. |
 | `dispatch/sdk_exec.rs` | `OrderSubmitter::new`, `ensure_sdk_runtime_async`, `sdk_client_ref`, `signer_ref` (SDK init for presign signing). `sign_order_batch` (presign warmup). `map_post_response` helper. The SDK client is used only for order signing at startup/patch — not for HTTP submission. |
@@ -571,7 +571,7 @@ The `map_sdk_signature_type` function in `dispatch/mod.rs` maps integer 3 to `Sd
 
 ## Tennis Integration
 
-Third sport alongside baseball and soccer. Currently supports French Open men's singles (`rgm` league, BO5) and French Open women's singles (`rgw` league, BO3). Documentation in `docs/tennis/`.
+Third sport alongside baseball and soccer. Supports multiple tournaments: French Open men's/women's (`rgm`/`rgw`, BO5/BO3), Birmingham men's/women's (`birmm`/`birmw`, BO3), and ATP Challengers/WTA 125K events (`tyler`, `centurion`, `perugia`, `heilbronn`, `prostejov`, `foggia`, `makarska` — all BO3). Documentation in `docs/tennis/` and `tennis_upgrade.md`.
 
 ### Scoring Hierarchy
 
@@ -579,28 +579,59 @@ Point → Game → Set → Match. Markets count **games** (not points). A 7-6 ti
 
 ### Tennis-Specific Frame Extraction
 
-`fast_extract_tennis_v1` handles nested JSON structure: top-level `homeScore`/`awayScore` = sets won, `currentPhase.homeScore`/`awayScore` = games in current set. The `phases` array is scanned to compute `total_games` (sum of all sets' games) and `first_set_games`. At match end, `currentPhase` is `null`. Dedup at game-level granularity (sets + games + freeText) — point-level changes are ignored since all markets resolve at game/set/match level.
+`fast_extract_tennis_v1` handles nested JSON structure: top-level `homeScore`/`awayScore` = sets won, `currentPhase.homeScore`/`awayScore` = games in current set. The `phases` array is scanned to compute `total_games` (sum of all sets' games) and `first_set_games`. At match end, `currentPhase` is `null`. Dedup at game-level granularity (sets + games + freeText, `InlineStr<32>` for freeText to cover retirement strings up to 30 chars).
 
 ### Match Format
 
-Per-game `sets_to_win` (from `LEAGUES[league]["sets_to_win"]` in config): 2 for BO3 (regular ATP/WTA), 3 for BO5 (Grand Slam men's). Flows through `CompiledGamePlan.sets_to_win` → serialized JSON → Rust `NativeTennisEngine.sets_to_win[GameIdx]`.
+Per-game `sets_to_win` (from `LEAGUES[league]["sets_to_win"]` in config): 2 for BO3 (regular ATP/WTA/Challengers), 3 for BO5 (Grand Slam men's). Flows through `CompiledGamePlan.sets_to_win` → serialized JSON → Rust `NativeTennisEngine.sets_to_win[GameIdx]`.
 
 ### Market Types
 
-6 tennis market types: `tennis_match_totals` (progressive over/under on total games), `tennis_first_set_totals` (progressive during set 1), `tennis_set_totals` (over/under on sets played), `moneyline` (match winner), `tennis_first_set_winner`, `tennis_set_handicap` (like spreads on set margin).
+4 active evaluators + 2 retirement-pool-only types:
+- **Active:** `moneyline` (match winner), `tennis_first_set_winner`, `tennis_set_totals` (over/under on sets played), `tennis_set_handicap` (spreads on set margin).
+- **Retirement-pool-only (no evaluator):** `tennis_match_totals`, `tennis_first_set_totals` — tokens loaded for retirement 50/50 orders but V1 data unreliable for normal evaluation.
 
-### Timeliness Optimizations
+### Evaluation Timing (Option A — Match-End-Only)
 
-- **Match totals OVER**: progressive, fires on each game crossing (same as soccer totals)
-- **First-set totals OVER**: progressive during set 1, fires on set-completion frame (no `!first_set_completed` guard — phases[0] freezes naturally)
-- **Set totals OVER**: fires at guaranteed certainty using `min(sets_home, sets_away) >= N + 1 - sets_to_win`, not when the set actually completes
-- **Set handicap not_covers**: fires mid-match when `max_margin + line <= 0` (favored player can no longer cover even if they win). `covers` waits for match end.
-- **Moneyline, set handicap covers**: fire when `sets_home >= sets_to_win || sets_away >= sets_to_win` (match decided), not waiting for `freeText = "Ended"`. 45-159ms edge in 13% of matches.
-- **All under lines and set handicap at match end**: fire on `freeText = "Ended"` only
+Set totals and set handicap fire ONLY at match end to eliminate retirement risk. Mid-match firing (guaranteed-certainty over, early not_covers) is disabled.
+
+- **Set totals OVER + UNDER**: both fire when `match_decided = match_completed || sets >= sets_to_win`. No mid-match guaranteed-certainty over.
+- **Set handicap covers + not_covers**: both fire when `match_decided`. No mid-match early not_covers.
+- **Moneyline**: fires when `match_decided` (sets reach threshold or `freeText = "Ended"`). 45-159ms edge over waiting for "Ended".
+- **First-set winner**: fires once when `first_set_completed = true`.
+
+### Retirement Handling
+
+When a player retires mid-match, most markets resolve 50/50 ($0.50 per token). The tennis hotpath has a completely separate retirement code path from normal match completion. Reference: `tennis_upgrade.md`.
+
+**Detection:** `detect_retirement()` in `tennis/frame_pipeline.rs` matches freeText against exactly 4 normalized strings:
+- `"player 1 retired, player 2 won"` / `"player 2 won, player 1 retired"` → away wins
+- `"player 2 retired, player 1 won"` / `"player 1 won, player 2 retired"` → home wins
+
+No fuzzy matching, no regex. Player 1 = home, Player 2 = away.
+
+**Separate paths:** When retirement is detected, `process_tick_live` calls `handle_retirement()` instead of the normal evaluators. The normal evaluators (`evaluate_set_totals_into`, etc.) are NEVER called on a retirement tick. After retirement, `final_resolved_games[gi] = true` is set and subsequent ticks early-return.
+
+**What fires on retirement:**
+1. **Moneyline** from the **normal presign pool** — winner determined from freeText (NOT set counts, since sets may be tied on retirement).
+2. **50/50 orders** from the **retirement presign pool** — both sides of every eligible market at $0.49 limit. Eligible: set_handicap (always), set_totals (always, except O/U 3.5 in BO5 set 5), match_totals (always), first_set_winner (only if retirement during set 1), first_set_totals (only if retirement during set 1).
+
+**Retirement presign pool:** Parallel pool on `DispatchHandle` (`presign_pool_retirement`, `presign_templates_retirement`, `presign_template_catalog_retirement`). Populated from Python via `prewarm_presign_retirement()`. Orders are presigned at startup with limit price from the `"retirement"` key in `HOTPATH_EXECUTION_POLICY`.
+
+**Resolution rules on retirement:**
+
+| Market | On retirement |
+|---|---|
+| Moneyline | Normal — opponent wins |
+| First-set winner | Normal if set 1 complete; 50/50 if during set 1 |
+| First-set totals | Normal if set 1 complete; 50/50 if during set 1 |
+| Set handicap | Always 50/50 |
+| Set totals | Always 50/50 (skip O/U 3.5 in BO5 set 5 — ambiguous) |
+| Match totals | Always 50/50 |
 
 ### Cold-Start Protection
 
-`prev_total_games`, `prev_first_set_games`, `prev_total_sets` are `Option<i64>` — `None` on first observation (detected via `rows[gi].is_none()`). Progressive evaluators skip entirely when prev is `None`. Event-based evaluators (first-set under/winner) have tombstones set on first observation when the event has already occurred.
+`prev_total_sets` is `Option<i64>` — `None` on first observation (detected via `prev.maps_home.is_none()` pattern). `process_tick_live` has a `final_resolved_games` early return at the top (matching CS2 pattern) to prevent re-processing completed/retired games.
 
 ### Set Handicap Side Detection
 
@@ -608,11 +639,11 @@ The slug determines the favored side, not `outcome_index`. Slugs contain `-handi
 
 ### Player Mappings
 
-Tennis uses player names instead of team names. `config/tennis_mappings.py` contains `PLAYER_MAP_*` dicts with Kalstrop V1 aliases (`"Last, First"`), V2 aliases (`"First Last"`), and PM aliases. PM code derivation: last word of PM full name, lowercased, truncated to 7 chars. Same-surname disambiguation uses shorter truncation (e.g., two Cerundolo brothers).
+Tennis uses player names instead of team names. `config/tennis_mappings.py` and `config/tennis_birmingham_mappings.py` contain `PLAYER_MAP_*` dicts per tournament with Kalstrop V1 aliases (`"Last, First"`), V2 aliases (`"First Last"`), and PM aliases. PM code derivation: last word of PM full name, lowercased, truncated to 7 chars. Same-surname disambiguation uses shorter truncation (e.g., two Cerundolo brothers). Player maps are built progressively — run `hotpath compile --league <X>` to identify unmapped players.
 
 ### Sport Isolation
 
-Each sport's frame pipeline owns its own completion detection — inlined `free_text.trim().eq_ignore_ascii_case("Ended")` per pipeline (CS2 uses `"Closed"` instead). No shared `parse_common.rs`. No cross-sport type imports. Each sport's engine, types, and frame pipeline are fully self-contained. Adding or modifying one sport cannot silently affect another.
+Each sport's frame pipeline owns its own completion detection — inlined `free_text.trim().eq_ignore_ascii_case("Ended")` per pipeline (CS2 uses `"Closed"`, tennis also checks retirement via `detect_retirement`). No shared `parse_common.rs`. No cross-sport type imports. Retirement handling (`detect_retirement`, `handle_retirement`, `RetirementTarget`, `RetirementResult`, `pop_for_target_retirement`) is tennis-only — no retirement code in baseball, soccer, CS2, or MOBA modules.
 
 ## CS2 Integration
 

@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA
 from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -91,6 +91,18 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
+    "heilbronn": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "prostejov": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
     "foggia": {
         "polymarket_league_code": "wta",
         "sport_family": "tennis",
@@ -139,6 +151,8 @@ PROVIDER_LEAGUE_ALIASES = {
         "atp challenger tyler": "tyler",
         "atp challenger centurion 2": "centurion",
         "atp challenger perugia": "perugia",
+        "atp challenger bad rappenau": "heilbronn",
+        "atp challenger prostejov": "prostejov",
         "wta 125k foggia": "foggia",
         "wta 125k makarska": "makarska",
         "cs2": "cs2",
@@ -168,6 +182,8 @@ PROVIDER_LEAGUE_ALIASES = {
         "challenger tyler - tennis": "tyler",
         "challenger centurion - tennis": "centurion",
         "challenger perugia - tennis": "perugia",
+        "challenger heilbronn - tennis": "heilbronn",
+        "challenger prostejov - tennis": "prostejov",
         "wta foggia - tennis": "foggia",
         "wta makarska - tennis": "makarska",
         "cs2": "cs2",
@@ -223,6 +239,8 @@ TEAM_MAP = {
     "tyler": PLAYER_MAP_TYLER,
     "centurion": PLAYER_MAP_CENTURION,
     "perugia": PLAYER_MAP_PERUGIA,
+    "heilbronn": PLAYER_MAP_HEILBRONN,
+    "prostejov": PLAYER_MAP_PROSTEJOV,
     "foggia": PLAYER_MAP_FOGGIA,
     "makarska": PLAYER_MAP_MAKARSKA,
     "cs2": TEAM_MAP_CS2,
@@ -245,6 +263,8 @@ PM_LEAGUE_ORDERINGS = {
     "tyler": "home",
     "centurion": "home",
     "perugia": "home",
+    "heilbronn": "home",
+    "prostejov": "home",
     "foggia": "home",
     "makarska": "home",
     "cs2": "home",

@@ -1280,6 +1280,82 @@ PLAYER_MAP_PERUGIA = {
 
 
 # =============================================================================
+# ATP CHALLENGER HEILBRONN (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_HEILBRONN = {
+    "nava, emilio": {
+        "polymarket_code": "nava",
+        "provider_aliases": {"kalstrop_v1": ["Nava, Emilio"]},
+        "pm_aliases": ["Emilio Nava"],
+    },
+    "trungelliti, marco": {
+        "polymarket_code": "trungel",
+        "provider_aliases": {"kalstrop_v1": ["Trungelliti, Marco"]},
+        "pm_aliases": ["Marco Trungelliti"],
+    },
+    "dedura-palomero, diego": {
+        "polymarket_code": "dedurap",
+        "provider_aliases": {"kalstrop_v1": ["Dedura-Palomero, Diego"]},
+        "pm_aliases": ["Diego Dedura-Palomero"],
+    },
+    "den ouden, guy": {
+        "polymarket_code": "ouden",
+        "provider_aliases": {"kalstrop_v1": ["Den Ouden, Guy"]},
+        "pm_aliases": ["Guy Den Ouden"],
+    },
+    "mikrut, luka": {
+        "polymarket_code": "mikrut",
+        "provider_aliases": {"kalstrop_v1": ["Mikrut, Luka"]},
+        "pm_aliases": ["Luka Mikrut"],
+    },
+    "moeller, marvin": {
+        "polymarket_code": "moelle",
+        "provider_aliases": {"kalstrop_v1": ["Moeller, Marvin"]},
+        "pm_aliases": ["Marvin Moeller"],
+    },
+}
+
+
+# =============================================================================
+# ATP CHALLENGER PROSTEJOV (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_PROSTEJOV = {
+    "baez, sebastian": {
+        "polymarket_code": "baez",
+        "provider_aliases": {"kalstrop_v1": ["Baez, Sebastian"]},
+        "pm_aliases": ["Sebastian Baez"],
+    },
+    "barton, hynek": {
+        "polymarket_code": "barton",
+        "provider_aliases": {"kalstrop_v1": ["Barton, Hynek"]},
+        "pm_aliases": ["Hynek Barton"],
+    },
+    "daniel, taro": {
+        "polymarket_code": "daniel",
+        "provider_aliases": {"kalstrop_v1": ["Daniel, Taro"]},
+        "pm_aliases": ["Taro Daniel"],
+    },
+    "midon, lautaro": {
+        "polymarket_code": "midon",
+        "provider_aliases": {"kalstrop_v1": ["Midon, Lautaro"]},
+        "pm_aliases": ["Lautaro Midon"],
+    },
+    "mrva, maxim": {
+        "polymarket_code": "mrva",
+        "provider_aliases": {"kalstrop_v1": ["Mrva, Maxim"]},
+        "pm_aliases": ["Maxim Mrva"],
+    },
+    "sanchez izquierdo, nikolas": {
+        "polymarket_code": "izquier",
+        "provider_aliases": {"kalstrop_v1": ["Sanchez Izquierdo, Nikolas"]},
+        "pm_aliases": ["Nikolas Sanchez Izquierdo"],
+    },
+}
+
+
+# =============================================================================
 # WTA 125K FOGGIA (Best of 3 sets)
 # =============================================================================
 
