@@ -194,11 +194,6 @@ async def _v1_stream(
             async with websockets.connect(uri, ping_interval=20, ping_timeout=20,
                                           max_size=10*1024*1024) as ws:
                 await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
-                # Wait for connection_ack before subscribing
-                ack = await asyncio.wait_for(ws.recv(), timeout=10)
-                ack_frame = json.loads(ack) if isinstance(ack, str) else {}
-                if ack_frame.get("type") != "connection_ack":
-                    print(f"[{label}] unexpected ack: {str(ack)[:60]}")
                 await ws.send(json.dumps({
                     "id": sub_id,
                     "type": "subscribe",
