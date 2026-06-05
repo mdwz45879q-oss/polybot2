@@ -132,6 +132,10 @@ impl DispatchHandle {
         active
     }
 
+    pub(crate) fn retirement_template_catalog_count(&self) -> usize {
+        self.presign_template_catalog_retirement.len()
+    }
+
     pub(crate) fn templates_and_pool_mut_retirement(
         &mut self,
     ) -> (

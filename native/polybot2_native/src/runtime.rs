@@ -287,8 +287,11 @@ impl NativeHotPathRuntime {
 
                         // Retirement presign warmup (tennis 50/50 orders).
                         let ret_start = std::time::Instant::now();
+                        let ret_catalog_count = dispatch_handle.retirement_template_catalog_count();
                         let (ret_templates, ret_pool) = dispatch_handle.templates_and_pool_mut_retirement();
-                        if ret_templates.iter().any(|t| !t.is_empty()) {
+                        let ret_active = ret_templates.iter().filter(|t| !t.is_empty()).count();
+                        eprintln!("[presign] retirement: catalog={} active={}", ret_catalog_count, ret_active);
+                        if ret_active > 0 {
                             let client_ret = submitter.sdk_client_ref().map_err(|e| PyValueError::new_err(format!("retirement_sdk_client:{}", e)))?.clone();
                             let signer_ret = submitter.signer_ref().map_err(|e| PyValueError::new_err(format!("retirement_signer:{}", e)))?.clone();
                             let dispatch_cfg_ret = dispatch_cfg.clone();
