@@ -168,7 +168,7 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "retirement": {
-            "size_shares": 500.0,
+            "size_shares": 50.0,
             "time_in_force": "GTC",
             "limit_price": 0.49,
         },
@@ -184,7 +184,7 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "retirement": {
-            "size_shares": 500.0,
+            "size_shares": 50.0,
             "time_in_force": "GTC",
             "limit_price": 0.49,
         },
@@ -200,7 +200,7 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "retirement": {
-            "size_shares": 500.0,
+            "size_shares": 50.0,
             "time_in_force": "GTC",
             "limit_price": 0.49,
         },
@@ -216,7 +216,7 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "retirement": {
-            "size_shares": 500.0,
+            "size_shares": 50.0,
             "time_in_force": "GTC",
             "limit_price": 0.49,
         },

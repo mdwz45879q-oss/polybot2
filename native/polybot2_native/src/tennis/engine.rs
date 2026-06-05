@@ -648,7 +648,11 @@ impl NativeTennisEngine {
         if !self.has_set_totals[gi] {
             return;
         }
-        if !state.match_completed {
+        let stw = self.sets_to_win[gi];
+        let match_decided = state.match_completed
+            || state.sets_home >= stw
+            || state.sets_away >= stw;
+        if !match_decided {
             return;
         }
         if self.set_total_under_emitted[gi] {
@@ -1183,6 +1187,25 @@ mod tests {
         let tids: Vec<TargetIdx> = intents.iter().map(|i| i.target_idx).collect();
         assert!(tids.contains(&TargetIdx(0)), "over 2.5 fires (3 > 2.5)");
         assert!(tids.contains(&TargetIdx(1)), "under 3.5 fires (3 < 3.5)");
+    }
+
+    #[test]
+    fn test_set_totals_fires_at_sets_to_win_before_ended() {
+        // Set totals should fire when sets >= sets_to_win, not wait for
+        // match_completed ("Ended"). Consistent with moneyline and set handicap.
+        let mut engine = NativeTennisEngine::new();
+        let t_under = target_json("tok_set_under3", "under", "g1:SET_TOTAL:UNDER:3.5");
+        let m = market_json("tennis_set_totals", Some(3.5), &[t_under]);
+        let plan = plan_json_one_game("game1", &m);
+        engine.load_plan_from_json(&plan).unwrap();
+
+        // Warm-up tick
+        tick(&mut engine, "game1", 0, 0, 0, 0, 0, None, 0, 1, false, false);
+
+        // sets_home=2 >= sets_to_win=2, but match_completed=false (no "Ended" yet)
+        let intents = tick(&mut engine, "game1", 2, 0, 0, 0, 0, None, 2, 0, false, true);
+        assert_eq!(intents.len(), 1, "under 3.5 should fire at sets>=stw before Ended");
+        assert_eq!(intents[0].target_idx, TargetIdx(0));
     }
 
     #[test]
