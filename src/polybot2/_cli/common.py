@@ -201,6 +201,8 @@ def _build_retirement_template_orders(
         base_policy = order_policies.get(game.canonical_league, _fallback_policy)
         ret_policy = base_policy.retirement_policy()
         if ret_policy is None:
+            import sys
+            print(f"[retirement-debug] league={game.canonical_league!r} retirement={base_policy.retirement!r} → None", file=sys.stderr)
             continue
         for market in tuple(game.markets):
             if market.sports_market_type not in RETIREMENT_ELIGIBLE_TYPES:
