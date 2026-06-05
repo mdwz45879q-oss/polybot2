@@ -17,12 +17,6 @@ from polybot2.linking.actionable import actionable_game_ids
 from polybot2.linking.mapping_loader import LoadedLiveTradingPolicy, load_live_trading_policy
 from polybot2.market_types import is_totals_market_type, normalize_sports_market_type
 
-# Market types that are only included in the plan for retirement handling (tennis).
-# These are not listed in LIVE_BETTING_MARKET_TYPES but need to be compiled so the
-# Rust engine can fire 50/50 retirement orders for them.
-RETIREMENT_ONLY_MARKET_TYPES = {"tennis_match_totals", "tennis_first_set_totals"}
-
-
 def _norm(text: str) -> str:
     return " ".join(str(text or "").strip().lower().split())
 
@@ -572,8 +566,6 @@ def compile_hotpath_plan(
         )
 
     allowed_market_types = _load_allowed_market_types(policy=policy, league=scope.league)
-    if sport == "tennis":
-        allowed_market_types |= RETIREMENT_ONLY_MARKET_TYPES
 
     selected_ids = [x for x in scope.eligible_game_ids if x]
     dropped_missing_kickoff = 0

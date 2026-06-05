@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA
 from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -73,6 +73,36 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
+    "tyler": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "centurion": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "perugia": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "foggia": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "makarska": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
@@ -106,6 +136,11 @@ PROVIDER_LEAGUE_ALIASES = {
         "french open women singles": "rgw",
         "atp challenger birmingham": "birmm",
         "wta 125k birmingham": "birmw",
+        "atp challenger tyler": "tyler",
+        "atp challenger centurion 2": "centurion",
+        "atp challenger perugia": "perugia",
+        "wta 125k foggia": "foggia",
+        "wta 125k makarska": "makarska",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
@@ -130,6 +165,11 @@ PROVIDER_LEAGUE_ALIASES = {
         "bundesliga": "bundesliga",
         "champions league": "ucl",
         "la liga": "laliga",
+        "challenger tyler - tennis": "tyler",
+        "challenger centurion - tennis": "centurion",
+        "challenger perugia - tennis": "perugia",
+        "wta foggia - tennis": "foggia",
+        "wta makarska - tennis": "makarska",
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
@@ -180,6 +220,11 @@ TEAM_MAP = {
     "rgw": PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES,
     "birmm": PLAYER_MAP_BIRMINGHAM_MEN,
     "birmw": PLAYER_MAP_BIRMINGHAM_WOMEN,
+    "tyler": PLAYER_MAP_TYLER,
+    "centurion": PLAYER_MAP_CENTURION,
+    "perugia": PLAYER_MAP_PERUGIA,
+    "foggia": PLAYER_MAP_FOGGIA,
+    "makarska": PLAYER_MAP_MAKARSKA,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
@@ -197,6 +242,11 @@ PM_LEAGUE_ORDERINGS = {
     "rgw": "home",
     "birmm": "home",
     "birmw": "home",
+    "tyler": "home",
+    "centurion": "home",
+    "perugia": "home",
+    "foggia": "home",
+    "makarska": "home",
     "cs2": "home",
     "lol": "home",
     "dota2": "home",

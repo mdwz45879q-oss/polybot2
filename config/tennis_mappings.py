@@ -1166,6 +1166,216 @@ PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES = {
 
 
 # =============================================================================
+# ATP CHALLENGER TYLER (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_TYLER = {
+    "walton, adam": {
+        "polymarket_code": "walton",
+        "provider_aliases": {"kalstrop_v1": ["Walton, Adam"]},
+        "pm_aliases": ["Adam Walton"],
+    },
+    "draxl, liam": {
+        "polymarket_code": "draxl",
+        "provider_aliases": {"kalstrop_v1": ["Draxl, Liam"]},
+        "pm_aliases": ["Liam Draxl"],
+    },
+    "ilagan, andre": {
+        "polymarket_code": "ilagan",
+        "provider_aliases": {"kalstrop_v1": ["Ilagan, Andre"]},
+        "pm_aliases": ["Andre Ilagan"],
+    },
+    "legout, timo": {
+        "polymarket_code": "legout",
+        "provider_aliases": {"kalstrop_v1": ["Legout, Timo"]},
+        "pm_aliases": ["Timo Legout"],
+    },
+    "poling, karl": {
+        "polymarket_code": "poling",
+        "provider_aliases": {"kalstrop_v1": ["Poling, Karl"]},
+        "pm_aliases": ["Karl Poling"],
+    },
+    "searle, henry": {
+        "polymarket_code": "searle",
+        "provider_aliases": {"kalstrop_v1": ["Searle, Henry"]},
+        "pm_aliases": ["Henry Searle"],
+    },
+    "shick, braden": {
+        "polymarket_code": "shick",
+        "provider_aliases": {"kalstrop_v1": ["Shick, Braden"]},
+        "pm_aliases": ["Braden Shick"],
+    },
+    "shimizu, yuta": {
+        "polymarket_code": "shimizu",
+        "provider_aliases": {"kalstrop_v1": ["Shimizu, Yuta"]},
+        "pm_aliases": ["Yuta Shimizu"],
+    },
+}
+
+
+# =============================================================================
+# ATP CHALLENGER CENTURION (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_CENTURION = {
+    "donski, alexander": {
+        "polymarket_code": "donski",
+        "provider_aliases": {"kalstrop_v1": ["Donski, Alexander"]},
+        "pm_aliases": ["Alexander Donski"],
+    },
+    "montsi, khololwam": {
+        "polymarket_code": "montsi",
+        "provider_aliases": {"kalstrop_v1": ["Montsi, Khololwam"]},
+        "pm_aliases": ["Khololwam Montsi"],
+    },
+}
+
+
+# =============================================================================
+# ATP CHALLENGER PERUGIA (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_PERUGIA = {
+    "llamas ruiz, pablo": {
+        "polymarket_code": "ruiz",
+        "provider_aliases": {"kalstrop_v1": ["Llamas Ruiz, Pablo"]},
+        "pm_aliases": ["Pablo Llamas Ruiz"],
+    },
+    "merida, daniel": {
+        "polymarket_code": "aguilar",
+        "provider_aliases": {"kalstrop_v1": ["Merida, Daniel"]},
+        "pm_aliases": ["Daniel Merida"],
+    },
+    "pellegrino, andrea": {
+        "polymarket_code": "pellegr",
+        "provider_aliases": {"kalstrop_v1": ["Pellegrino, Andrea"]},
+        "pm_aliases": ["Andrea Pellegrino"],
+    },
+    "basile, pierluigi": {
+        "polymarket_code": "basile",
+        "provider_aliases": {"kalstrop_v1": ["Basile, Pierluigi"]},
+        "pm_aliases": ["Pierluigi Basile"],
+    },
+    "bertola, remy": {
+        "polymarket_code": "bertola",
+        "provider_aliases": {"kalstrop_v1": ["Bertola, Remy"]},
+        "pm_aliases": ["Remy Bertola"],
+    },
+    "cecchinato, marco": {
+        "polymarket_code": "cecchin",
+        "provider_aliases": {"kalstrop_v1": ["Cecchinato, Marco"]},
+        "pm_aliases": ["Marco Cecchinato"],
+    },
+    "rocha, henrique": {
+        "polymarket_code": "rocha",
+        "provider_aliases": {"kalstrop_v1": ["Rocha, Henrique"]},
+        "pm_aliases": ["Henrique Rocha"],
+    },
+    "skatov, timofey": {
+        "polymarket_code": "skatov",
+        "provider_aliases": {"kalstrop_v1": ["Skatov, Timofey"]},
+        "pm_aliases": ["Timofey Skatov"],
+    },
+}
+
+
+# =============================================================================
+# WTA 125K FOGGIA (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_FOGGIA = {
+    "astakhova, darya": {
+        "polymarket_code": "astakho",
+        "provider_aliases": {"kalstrop_v1": ["Astakhova, Darya"]},
+        "pm_aliases": ["Darya Astakhova"],
+    },
+    "bronzetti, lucia": {
+        "polymarket_code": "bronzet",
+        "provider_aliases": {"kalstrop_v1": ["Bronzetti, Lucia"]},
+        "pm_aliases": ["Lucia Bronzetti"],
+    },
+    "grant, tyra caterina": {
+        "polymarket_code": "grant",
+        "provider_aliases": {"kalstrop_v1": ["Grant, Tyra Caterina"]},
+        "pm_aliases": ["Tyra Caterina Grant"],
+    },
+    "monnet, carole": {
+        "polymarket_code": "monnet",
+        "provider_aliases": {"kalstrop_v1": ["Monnet, Carole"]},
+        "pm_aliases": ["Carole Monnet"],
+    },
+    "paquet, chloe": {
+        "polymarket_code": "paquet",
+        "provider_aliases": {"kalstrop_v1": ["Paquet, Chloe"]},
+        "pm_aliases": ["Chloe Paquet"],
+    },
+    "pedone, giorgia": {
+        "polymarket_code": "pedone",
+        "provider_aliases": {"kalstrop_v1": ["Pedone, Giorgia"]},
+        "pm_aliases": ["Giorgia Pedone"],
+    },
+    "pieri, tatiana": {
+        "polymarket_code": "pieri",
+        "provider_aliases": {"kalstrop_v1": ["Pieri, Tatiana"]},
+        "pm_aliases": ["Tatiana Pieri"],
+    },
+    "romero gormaz, leyre": {
+        "polymarket_code": "gormaz",
+        "provider_aliases": {"kalstrop_v1": ["Romero Gormaz, Leyre"]},
+        "pm_aliases": ["Leyre Romero Gormaz"],
+    },
+}
+
+
+# =============================================================================
+# WTA 125K MAKARSKA (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_MAKARSKA = {
+    "avanesyan, elina": {
+        "polymarket_code": "avanesy",
+        "provider_aliases": {"kalstrop_v1": ["Avanesyan, Elina"]},
+        "pm_aliases": ["Elina Avanesyan"],
+    },
+    "kabbaj, yasmine": {
+        "polymarket_code": "kabbaj",
+        "provider_aliases": {"kalstrop_v1": ["Kabbaj, Yasmine"]},
+        "pm_aliases": ["Yasmine Kabbaj"],
+    },
+    "lazaro garcia, andrea": {
+        "polymarket_code": "garcia",
+        "provider_aliases": {"kalstrop_v1": ["Lazaro Garcia, Andrea"]},
+        "pm_aliases": ["Andrea Lazaro Garcia"],
+    },
+    "noha akugue, noma": {
+        "polymarket_code": "akugue",
+        "provider_aliases": {"kalstrop_v1": ["Noha Akugue, Noma"]},
+        "pm_aliases": ["Noma Noha Akugue"],
+    },
+    "palicova, barbora": {
+        "polymarket_code": "palicov",
+        "provider_aliases": {"kalstrop_v1": ["Palicova, Barbora"]},
+        "pm_aliases": ["Barbora Palicova"],
+    },
+    "semenistaja, darja": {
+        "polymarket_code": "semenis",
+        "provider_aliases": {"kalstrop_v1": ["Semenistaja, Darja"]},
+        "pm_aliases": ["Darja Semenistaja"],
+    },
+    "sorribes tormo, sara": {
+        "polymarket_code": "tormo",
+        "provider_aliases": {"kalstrop_v1": ["Sorribes Tormo, Sara"]},
+        "pm_aliases": ["Sara Sorribes Tormo"],
+    },
+    "timofeeva, maria": {
+        "polymarket_code": "timofee",
+        "provider_aliases": {"kalstrop_v1": ["Timofeeva, Maria"]},
+        "pm_aliases": ["Maria Timofeeva"],
+    },
+}
+
+
+# =============================================================================
 # FRENCH OPEN WOMEN SINGLES (Roland-Garros, Best of 3 sets)
 # =============================================================================
 
