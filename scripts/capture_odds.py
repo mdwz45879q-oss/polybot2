@@ -36,6 +36,12 @@ try:
 except ImportError:
     print("pip install websockets"); sys.exit(2)
 
+try:
+    import requests as _requests
+except ImportError:
+    _requests = None
+
+V1_BASE = "https://sportsapi.kalstropservice.com/odds_v1/v1"
 V1_WS = "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"
 CLIENT_ID = os.environ.get("KALSTROP_CLIENT_ID") or os.environ.get("CLIENT_ID", "")
 SECRET_RAW = os.environ.get("KALSTROP_SHARED_SECRET_RAW") or os.environ.get("SHARED_SECRET_RAW", "")
@@ -55,11 +61,126 @@ def v1_auth_qs():
     })
 
 
+def v1_auth_headers() -> dict[str, str]:
+    """Build auth headers for V1 REST calls."""
+    if not CLIENT_ID or not SECRET_RAW:
+        return {}
+    ts = str(int(time.time()))
+    hashed = hashlib.sha256(SECRET_RAW.encode()).hexdigest()
+    sig = _hmac.new(hashed.encode(), f"{CLIENT_ID}:{ts}".encode(), hashlib.sha256).hexdigest()
+    return {
+        "X-Client-ID": CLIENT_ID,
+        "X-Timestamp": ts,
+        "Authorization": f"Bearer {sig}",
+    }
+
+
+def fetch_market_catalog(fixture_id: str, out_dir: Path, game_name: str) -> dict[str, dict]:
+    """Fetch market details for all available groups and build a market ID → info mapping.
+
+    Saves the raw catalog to {out_dir}/{game_name}/v1_market_catalog.json.
+    Returns {market_uuid: {"name": ..., "selections": [...], "group": ...}}.
+    """
+    if _requests is None:
+        print(f"  [catalog/{game_name}] requests not installed — skipping")
+        return {}
+
+    # Step 1: Get available market groups via SSR endpoint
+    # We need the fixture slug, but we only have the UUID. Try fetching details
+    # with common market groups directly.
+    groups_to_try = [
+        "TOP_MARKETS", "WIN_MARKETS", "HANDICAP_MARKETS", "TOTAL_MARKETS",
+        "SET_MARKETS", "GAMES_MARKETS", "OTHER_MARKETS",
+    ]
+
+    catalog: dict[str, dict] = {}
+    raw_markets: list[dict] = []
+
+    for group in groups_to_try:
+        try:
+            headers = v1_auth_headers()
+            url = f"{V1_BASE}/fixture/{fixture_id}/details"
+            resp = _requests.get(url, params={"group": group}, headers=headers, timeout=15)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            # Response shape: {"top_markets": {"display": [...]}} or similar
+            group_key = group.lower()
+            group_data = data.get(group_key, {})
+            if not isinstance(group_data, dict):
+                continue
+            display_groups = group_data.get("display", [])
+            for dg in display_groups:
+                group_name = str(dg.get("groupName") or "").strip()
+                # Markets are nested inside display groups
+                markets = dg.get("markets", [])
+                for m in markets:
+                    mid = str(m.get("id") or "").strip()
+                    if not mid or mid in catalog:
+                        continue
+                    mname = str(m.get("name") or "").strip()
+                    status = str(m.get("status") or "").strip()
+                    selections = []
+                    for s in (m.get("selections") or []):
+                        selections.append({
+                            "id": str(s.get("id") or "").strip(),
+                            "name": str(s.get("name") or s.get("fullName") or "").strip(),
+                        })
+                    entry = {
+                        "id": mid,
+                        "name": mname or group_name,
+                        "group_name": group_name,
+                        "group": group,
+                        "selections": selections,
+                        "status": status,
+                    }
+                    catalog[mid] = entry
+                    raw_markets.append(entry)
+                # Also check selectionGroups (V1 uses this for handicap/spread markets)
+                for sg in (dg.get("selectionGroups") or []):
+                    for s in (sg.get("selections") or []):
+                        mid = str(s.get("marketId") or "").strip()
+                        if not mid or mid in catalog:
+                            continue
+                        sname = str(s.get("fullName") or s.get("name") or "").strip()
+                        entry = {
+                            "id": mid,
+                            "name": f"{group_name}: {sname}",
+                            "group_name": group_name,
+                            "group": group,
+                            "selections": [{"id": str(s.get("id") or ""), "name": sname}],
+                            "status": "",
+                        }
+                        catalog[mid] = entry
+                        raw_markets.append(entry)
+        except Exception as e:
+            print(f"  [catalog/{game_name}] {group}: {type(e).__name__}: {e}")
+
+    if catalog:
+        game_dir = out_dir / game_name
+        game_dir.mkdir(parents=True, exist_ok=True)
+        catalog_path = game_dir / "v1_market_catalog.json"
+        with open(catalog_path, "w") as f:
+            json.dump(raw_markets, f, indent=2)
+        print(f"  [catalog/{game_name}] {len(catalog)} markets across {len(groups_to_try)} groups → {catalog_path.name}")
+    else:
+        print(f"  [catalog/{game_name}] no markets found (fixture may be prematch)")
+
+    return catalog
+
+
 async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
                   duration: int, stop: asyncio.Event):
     if not CLIENT_ID or not SECRET_RAW:
         print("[!] No credentials — set KALSTROP_CLIENT_ID and KALSTROP_SHARED_SECRET_RAW")
         return
+
+    # Fetch market catalogs (one REST call per group per fixture)
+    market_catalogs: dict[str, dict[str, dict]] = {}  # game_name → {market_id → info}
+    for fid, name in zip(fixture_ids, game_names):
+        catalog = fetch_market_catalog(fid, out_dir, name)
+        if catalog:
+            market_catalogs[name] = catalog
 
     # Open output files
     score_files: dict[str, any] = {}
@@ -203,14 +324,25 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
                                 if odds_count % 10 == 0:
                                     f.flush()
 
-                            # Print odds summary
+                            # Print odds summary with market names from catalog
+                            game_catalog = market_catalogs.get(name, {})
                             status_counts: dict[str, int] = {}
+                            market_names: list[str] = []
                             for m in markets:
                                 s = m.get("status", "?")
                                 status_counts[s] = status_counts.get(s, 0) + 1
+                                mid = str(m.get("id") or "")
+                                cat_entry = game_catalog.get(mid)
+                                mname = cat_entry["name"] if cat_entry else mid[:8]
+                                n_sel = len(m.get("selections") or [])
+                                market_names.append(f"{mname}({s},{n_sel}sel)")
                             status_str = ", ".join(f"{c} {s}" for s, c in sorted(status_counts.items()))
                             fixture_status = update.get("fixtureStatus", "?")
-                            print(f"  [odds]  {name}: status={fixture_status} markets={len(markets)} ({status_str})")
+                            markets_detail = " | ".join(market_names[:6])
+                            if len(market_names) > 6:
+                                markets_detail += f" +{len(market_names)-6} more"
+                            print(f"  [odds]  {name}: {fixture_status} {len(markets)}mkts ({status_str})")
+                            print(f"          {markets_detail}")
 
             except Exception as e:
                 if stop.is_set():
