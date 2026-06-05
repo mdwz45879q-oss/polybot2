@@ -4,7 +4,7 @@ Standalone Kalstrop V1 capture: record raw GraphQL WS frames to disk.
 
 Usage:
     python capture_kalstrop_v1.py \
-        --fixture-id d3f41158-f1cc-41c0-8c5f-3b91c00703e1 \
+        --fixture-id e921ea02-7b0a-4ee6-bad5-65e982486290 \
         --out ./captures/mlb_game
 
     python capture_kalstrop_v1.py \
