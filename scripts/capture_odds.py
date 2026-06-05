@@ -169,6 +169,97 @@ def fetch_market_catalog(fixture_id: str, out_dir: Path, game_name: str) -> dict
     return catalog
 
 
+async def _v1_stream(
+    label: str,
+    sub_id: str,
+    operation: str,
+    query: str,
+    data_key: str,
+    fixture_ids: list[str],
+    fid_to_name: dict[str, str],
+    files: dict[str, any],
+    stop: asyncio.Event,
+    on_frame=None,
+):
+    """Generic V1 GraphQL WS subscription loop on its own connection.
+
+    Reconnects independently. Used for both scores and odds streams.
+    """
+    count = 0
+    backoff = 2.0
+    while not stop.is_set():
+        try:
+            qs = v1_auth_qs()
+            uri = f"{V1_WS}?{qs}"
+            async with websockets.connect(uri, ping_interval=20, ping_timeout=20,
+                                          max_size=10*1024*1024) as ws:
+                await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
+                await ws.send(json.dumps({
+                    "id": sub_id,
+                    "type": "subscribe",
+                    "payload": {
+                        "operationName": operation,
+                        "query": query,
+                        "variables": {"fixtureIds": fixture_ids},
+                    },
+                }))
+                print(f"[{label}] subscribed to {len(fixture_ids)} fixtures")
+                backoff = 2.0
+
+                async for raw in ws:
+                    if stop.is_set():
+                        break
+                    ts_ns = time.time_ns()
+                    try:
+                        frame = json.loads(raw)
+                    except Exception:
+                        continue
+
+                    msg_type = frame.get("type", "")
+
+                    if msg_type == "ping":
+                        await ws.send(json.dumps({"type": "pong"}))
+                        continue
+
+                    if msg_type == "complete":
+                        print(f"[{label}] subscription completed by server — resubscribing")
+                        await ws.send(json.dumps({
+                            "id": sub_id,
+                            "type": "subscribe",
+                            "payload": {
+                                "operationName": operation,
+                                "query": query,
+                                "variables": {"fixtureIds": fixture_ids},
+                            },
+                        }))
+                        continue
+
+                    if msg_type != "next":
+                        continue
+
+                    update = frame.get("payload", {}).get("data", {}).get(data_key, {})
+                    fid = update.get("fixtureId", "")
+                    name = fid_to_name.get(fid, fid[:8])
+                    f = files.get(name)
+                    if f:
+                        f.write(json.dumps({"ts_ns": ts_ns, "source": f"v1_{label}", "frame": update}) + "\n")
+                        count += 1
+                        if count % 10 == 0:
+                            f.flush()
+
+                    if on_frame:
+                        on_frame(name, update, ts_ns)
+
+        except Exception as e:
+            if stop.is_set():
+                break
+            print(f"[{label}] {type(e).__name__}: {e} — reconnecting in {backoff:.0f}s")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+    print(f"[{label}] done — {count} frames")
+
+
 async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
                   duration: int, stop: asyncio.Event):
     if not CLIENT_ID or not SECRET_RAW:
@@ -176,7 +267,7 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
         return
 
     # Fetch market catalogs (one REST call per group per fixture)
-    market_catalogs: dict[str, dict[str, dict]] = {}  # game_name → {market_id → info}
+    market_catalogs: dict[str, dict[str, dict]] = {}
     for fid, name in zip(fixture_ids, game_names):
         catalog = fetch_market_catalog(fid, out_dir, name)
         if catalog:
@@ -193,170 +284,77 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
         odds_files[name] = (game_dir / "v1_odds.jsonl").open("a")
         fid_to_name[fid] = name
 
-    score_count = 0
-    odds_count = 0
-    backoff = 2.0
+    # Score summary printer
+    def on_score(name, update, ts_ns):
+        summary = update.get("matchSummary", {})
+        ft = (summary.get("matchStatusDisplay") or [{}])[0].get("freeText", "")
+        hs = summary.get("homeScore", "?")
+        aws = summary.get("awayScore", "?")
+        cp = summary.get("currentPhase") or {}
+        rh = cp.get("homeScore", "")
+        ra = cp.get("awayScore", "")
+        rounds_str = f" rounds={rh}-{ra}" if rh else ""
+        print(f"  [score] {name}: maps={hs}-{aws}{rounds_str} ({ft})")
+
+    # Odds summary printer
+    def on_odds(name, update, ts_ns):
+        markets = update.get("markets", [])
+        game_catalog = market_catalogs.get(name, {})
+        status_counts: dict[str, int] = {}
+        market_names: list[str] = []
+        for m in markets:
+            s = m.get("status", "?")
+            status_counts[s] = status_counts.get(s, 0) + 1
+            mid = str(m.get("id") or "")
+            cat_entry = game_catalog.get(mid)
+            mname = cat_entry["name"] if cat_entry else mid[:8]
+            n_sel = len(m.get("selections") or [])
+            market_names.append(f"{mname}({s},{n_sel}sel)")
+        status_str = ", ".join(f"{c} {s}" for s, c in sorted(status_counts.items()))
+        fixture_status = update.get("fixtureStatus", "?")
+        markets_detail = " | ".join(market_names[:6])
+        if len(market_names) > 6:
+            markets_detail += f" +{len(market_names)-6} more"
+        print(f"  [odds]  {name}: {fixture_status} {len(markets)}mkts ({status_str})")
+        print(f"          {markets_detail}")
+
+    # Run scores and odds on SEPARATE WS connections (independent reconnect)
+    scores_task = asyncio.create_task(_v1_stream(
+        label="scores",
+        sub_id="scores_sub",
+        operation="sportsMatchStateUpdatedV2",
+        query=("subscription sportsMatchStateUpdatedV2($fixtureIds: [String!]!)"
+               " { sportsMatchStateUpdatedV2(fixtureIds: $fixtureIds) }"),
+        data_key="sportsMatchStateUpdatedV2",
+        fixture_ids=fixture_ids,
+        fid_to_name=fid_to_name,
+        files=score_files,
+        stop=stop,
+        on_frame=on_score,
+    ))
+    odds_task = asyncio.create_task(_v1_stream(
+        label="odds",
+        sub_id="odds_sub",
+        operation="sportsMatchOddsUpdated",
+        query=("subscription sportsMatchOddsUpdated($fixtureIds: [String!])"
+               " { sportsMatchOddsUpdated(fixtureIds: $fixtureIds) }"),
+        data_key="sportsMatchOddsUpdated",
+        fixture_ids=fixture_ids,
+        fid_to_name=fid_to_name,
+        files=odds_files,
+        stop=stop,
+        on_frame=on_odds,
+    ))
 
     try:
-        while not stop.is_set():
-            try:
-                qs = v1_auth_qs()
-                uri = f"{V1_WS}?{qs}"
-                async with websockets.connect(uri, ping_interval=20, ping_timeout=20,
-                                              max_size=10*1024*1024) as ws:
-                    # Init
-                    await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
-
-                    # Subscribe to scores
-                    await ws.send(json.dumps({
-                        "id": "scores_sub",
-                        "type": "subscribe",
-                        "payload": {
-                            "operationName": "sportsMatchStateUpdatedV2",
-                            "query": ("subscription sportsMatchStateUpdatedV2($fixtureIds: [String!]!)"
-                                      " { sportsMatchStateUpdatedV2(fixtureIds: $fixtureIds) }"),
-                            "variables": {"fixtureIds": fixture_ids},
-                        },
-                    }))
-                    print(f"[scores] subscribed to {len(fixture_ids)} fixtures")
-
-                    # Subscribe to all market odds
-                    await ws.send(json.dumps({
-                        "id": "odds_sub",
-                        "type": "subscribe",
-                        "payload": {
-                            "operationName": "sportsMatchOddsUpdated",
-                            "query": ("subscription sportsMatchOddsUpdated($fixtureIds: [String!])"
-                                      " { sportsMatchOddsUpdated(fixtureIds: $fixtureIds) }"),
-                            "variables": {"fixtureIds": fixture_ids},
-                        },
-                    }))
-                    print(f"[odds] subscribed to {len(fixture_ids)} fixtures")
-                    backoff = 2.0
-
-                    async for raw in ws:
-                        if stop.is_set():
-                            break
-                        ts_ns = time.time_ns()
-                        try:
-                            frame = json.loads(raw)
-                        except Exception:
-                            continue
-
-                        msg_type = frame.get("type", "")
-                        msg_id = frame.get("id", "")
-
-                        if msg_type == "ping":
-                            await ws.send(json.dumps({"type": "pong"}))
-                            continue
-
-                        # Server completed a subscription — resubscribe
-                        if msg_type == "complete":
-                            if msg_id == "scores_sub":
-                                print(f"[scores] subscription completed by server — resubscribing")
-                                await ws.send(json.dumps({
-                                    "id": "scores_sub",
-                                    "type": "subscribe",
-                                    "payload": {
-                                        "operationName": "sportsMatchStateUpdatedV2",
-                                        "query": ("subscription sportsMatchStateUpdatedV2($fixtureIds: [String!]!)"
-                                                  " { sportsMatchStateUpdatedV2(fixtureIds: $fixtureIds) }"),
-                                        "variables": {"fixtureIds": fixture_ids},
-                                    },
-                                }))
-                            elif msg_id == "odds_sub":
-                                print(f"[odds] subscription completed by server — resubscribing")
-                                await ws.send(json.dumps({
-                                    "id": "odds_sub",
-                                    "type": "subscribe",
-                                    "payload": {
-                                        "operationName": "sportsMatchOddsUpdated",
-                                        "query": ("subscription sportsMatchOddsUpdated($fixtureIds: [String!])"
-                                                  " { sportsMatchOddsUpdated(fixtureIds: $fixtureIds) }"),
-                                        "variables": {"fixtureIds": fixture_ids},
-                                    },
-                                }))
-                            continue
-
-                        if msg_type != "next":
-                            continue
-
-                        payload = frame.get("payload", {})
-                        data = payload.get("data", {})
-
-                        if msg_id == "scores_sub":
-                            update = data.get("sportsMatchStateUpdatedV2", {})
-                            fid = update.get("fixtureId", "")
-                            name = fid_to_name.get(fid, fid[:8])
-                            f = score_files.get(name)
-                            if f:
-                                f.write(json.dumps({"ts_ns": ts_ns, "source": "v1_scores", "frame": update}) + "\n")
-                                score_count += 1
-                                if score_count % 20 == 0:
-                                    f.flush()
-
-                            # Print score summary
-                            summary = update.get("matchSummary", {})
-                            ft = (summary.get("matchStatusDisplay") or [{}])[0].get("freeText", "")
-                            hs = summary.get("homeScore", "?")
-                            aws = summary.get("awayScore", "?")
-                            cp = summary.get("currentPhase") or {}
-                            rh = cp.get("homeScore", "")
-                            ra = cp.get("awayScore", "")
-                            rounds_str = f" rounds={rh}-{ra}" if rh else ""
-                            print(f"  [score] {name}: maps={hs}-{aws}{rounds_str} ({ft})")
-
-                        elif msg_id == "odds_sub":
-                            update = data.get("sportsMatchOddsUpdated", {})
-                            fid = update.get("fixtureId", "")
-                            name = fid_to_name.get(fid, fid[:8])
-                            markets = update.get("markets", [])
-                            f = odds_files.get(name)
-                            if f:
-                                f.write(json.dumps({
-                                    "ts_ns": ts_ns,
-                                    "source": "v1_odds",
-                                    "fixture_id": fid,
-                                    "n_markets": len(markets),
-                                    "frame": update,
-                                }) + "\n")
-                                odds_count += 1
-                                if odds_count % 10 == 0:
-                                    f.flush()
-
-                            # Print odds summary with market names from catalog
-                            game_catalog = market_catalogs.get(name, {})
-                            status_counts: dict[str, int] = {}
-                            market_names: list[str] = []
-                            for m in markets:
-                                s = m.get("status", "?")
-                                status_counts[s] = status_counts.get(s, 0) + 1
-                                mid = str(m.get("id") or "")
-                                cat_entry = game_catalog.get(mid)
-                                mname = cat_entry["name"] if cat_entry else mid[:8]
-                                n_sel = len(m.get("selections") or [])
-                                market_names.append(f"{mname}({s},{n_sel}sel)")
-                            status_str = ", ".join(f"{c} {s}" for s, c in sorted(status_counts.items()))
-                            fixture_status = update.get("fixtureStatus", "?")
-                            markets_detail = " | ".join(market_names[:6])
-                            if len(market_names) > 6:
-                                markets_detail += f" +{len(market_names)-6} more"
-                            print(f"  [odds]  {name}: {fixture_status} {len(markets)}mkts ({status_str})")
-                            print(f"          {markets_detail}")
-
-            except Exception as e:
-                if stop.is_set():
-                    break
-                print(f"[!] {type(e).__name__}: {e} — reconnecting in {backoff:.0f}s")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+        await asyncio.gather(scores_task, odds_task)
+    except asyncio.CancelledError:
+        pass
     finally:
         for f in score_files.values():
             f.flush(); f.close()
         for f in odds_files.values():
             f.flush(); f.close()
-
-    print(f"\n[+] Done. Scores: {score_count} frames, Odds: {odds_count} frames")
 
 
 def main():
