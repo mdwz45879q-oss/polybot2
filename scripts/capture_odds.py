@@ -129,6 +129,34 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
                             await ws.send(json.dumps({"type": "pong"}))
                             continue
 
+                        # Server completed a subscription — resubscribe
+                        if msg_type == "complete":
+                            if msg_id == "scores_sub":
+                                print(f"[scores] subscription completed by server — resubscribing")
+                                await ws.send(json.dumps({
+                                    "id": "scores_sub",
+                                    "type": "subscribe",
+                                    "payload": {
+                                        "operationName": "sportsMatchStateUpdatedV2",
+                                        "query": ("subscription sportsMatchStateUpdatedV2($fixtureIds: [String!]!)"
+                                                  " { sportsMatchStateUpdatedV2(fixtureIds: $fixtureIds) }"),
+                                        "variables": {"fixtureIds": fixture_ids},
+                                    },
+                                }))
+                            elif msg_id == "odds_sub":
+                                print(f"[odds] subscription completed by server — resubscribing")
+                                await ws.send(json.dumps({
+                                    "id": "odds_sub",
+                                    "type": "subscribe",
+                                    "payload": {
+                                        "operationName": "sportsMatchOddsUpdated",
+                                        "query": ("subscription sportsMatchOddsUpdated($fixtureIds: [String!])"
+                                                  " { sportsMatchOddsUpdated(fixtureIds: $fixtureIds) }"),
+                                        "variables": {"fixtureIds": fixture_ids},
+                                    },
+                                }))
+                            continue
+
                         if msg_type != "next":
                             continue
 
