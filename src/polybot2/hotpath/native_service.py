@@ -49,6 +49,7 @@ class NativeHotPathService:
         self._order_policies: dict[str, OrderPolicy] = {"_default": OrderPolicy()}
         self._runtime_bridge: NativeHotPathRuntimeBridge | None = None
         self._pending_presign_templates: list[dict[str, Any]] = []
+        self._pending_retirement_templates: list[dict[str, Any]] = []
         self._subscribe_lead_minutes: int = 90
         self._subscription_refresh_seconds: int = 120
         self._execution_mode = (
@@ -133,6 +134,7 @@ class NativeHotPathService:
                 templates.append(self._serialize_template_order(req))
             except Exception:
                 continue
+        self._pending_retirement_templates = templates
         bridge = self._runtime_bridge
         if bridge is not None:
             try:
@@ -206,6 +208,8 @@ class NativeHotPathService:
             bridge.set_subscriptions(dict(self._provider_subs))
             if self._pending_presign_templates:
                 bridge.prewarm_presign(list(self._pending_presign_templates))
+            if self._pending_retirement_templates:
+                bridge.prewarm_presign_retirement(list(self._pending_retirement_templates))
             bridge.start(
                 config_json=json.dumps(
                     self._runtime_config_payload(),
