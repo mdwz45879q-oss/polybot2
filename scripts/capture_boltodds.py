@@ -152,7 +152,7 @@ async def _bo_stream(
 
 def _extract_game_label(evt: dict) -> str:
     """Extract the game label from a BoltOdds event."""
-    # Scores: top-level "game" field
+    # Scores (livescores): top-level "game" field
     game = evt.get("game")
     if game and isinstance(game, str):
         return game
@@ -176,6 +176,8 @@ def main():
     ap.add_argument("--duration", type=int, default=14400, help="Max seconds (default 14400 = 4h)")
     ap.add_argument("--db", default="data/prediction_markets.db", help="DB path")
     ap.add_argument("--out", default="", help="Output dir (default: captures/{date}/{league}/)")
+    ap.add_argument("--games", nargs="+", default=[], metavar="TEAM",
+                    help="Filter to games matching these team names (substring match, case-insensitive)")
     ap.add_argument("--config-dir", default="", help="Config dir (default: auto)")
     args = ap.parse_args()
 
@@ -243,6 +245,16 @@ def main():
             })
 
     conn.close()
+
+    # Filter by --games if provided
+    if args.games and all_games:
+        filters = [f.strip().lower() for f in args.games]
+        before = len(all_games)
+        all_games = [
+            g for g in all_games
+            if any(f in g["game_label"].lower() or f in g["name"].lower() for f in filters)
+        ]
+        print(f"\n[filter] {before} → {len(all_games)} games matching: {', '.join(args.games)}")
 
     if not all_games:
         print("\nNo BoltOdds games found for the given league(s) and date.")
