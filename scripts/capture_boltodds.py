@@ -152,14 +152,14 @@ async def _bo_stream(
 
 def _extract_game_label(evt: dict) -> str:
     """Extract the game label from a BoltOdds event."""
-    # Scores (livescores): top-level "game" field
-    game = evt.get("game")
+    # Scores: top-level "game" (traditional sports) or "event" (esports)
+    game = evt.get("game") or evt.get("event")
     if game and isinstance(game, str):
         return game
-    # Odds: nested in "data.game"
+    # Odds: nested in "data.game" or "data.event"
     data = evt.get("data")
     if isinstance(data, dict):
-        game = data.get("game")
+        game = data.get("game") or data.get("event")
         if game and isinstance(game, str):
             return game
     return ""
