@@ -40,9 +40,11 @@ ET = ZoneInfo("America/New_York")
 def main():
     ap = argparse.ArgumentParser(description="Auto-discover + capture V1 scores + odds")
     ap.add_argument("--league", nargs="+", required=True, help="Canonical league key(s)")
-    ap.add_argument("--date", default="", help="Date YYYY-MM-DD (default: today)")
-    ap.add_argument("--tz", default="utc", choices=["utc", "et"],
-                    help="Timezone for date range (default: utc)")
+    ap.add_argument("--date", default="", help="Date YYYY-MM-DD (calendar day)")
+    ap.add_argument("--horizon-hours", type=float, default=0,
+                    help="Capture window: games starting within N hours from now (default: 24 if --date not given)")
+    ap.add_argument("--tz", default="et", choices=["utc", "et"],
+                    help="Timezone for --date (default: et)")
     ap.add_argument("--duration", type=int, default=14400, help="Max seconds (default 14400 = 4h)")
     ap.add_argument("--db", default="data/prediction_markets.db", help="DB path")
     ap.add_argument("--out", default="", help="Output dir (default: captures/{date}/{league}/)")
@@ -53,20 +55,23 @@ def main():
     config_dir = args.config_dir or str(Path(__file__).resolve().parents[1] / "config")
     cfg = load_config(config_dir)
 
-    # Parse date
+    # Parse time window
+    import time as _time
     if args.date:
+        # Calendar day mode
+        tz = ET if args.tz == "et" else timezone.utc
+        dt = datetime.strptime(args.date, "%Y-%m-%d").replace(tzinfo=tz)
+        date_start = int(dt.timestamp())
+        date_end = date_start + 86400
         date_str = args.date
     else:
-        now = datetime.now(ET if args.tz == "et" else timezone.utc)
-        date_str = now.strftime("%Y-%m-%d")
-
-    if args.tz == "et":
-        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=ET)
-    else:
-        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-
-    date_start = int(dt.timestamp())
-    date_end = date_start + 86400
+        # Horizon mode: from (now - lookback) to (now + horizon)
+        # Lookback catches games that already kicked off and are still live
+        horizon = args.horizon_hours if args.horizon_hours > 0 else 24
+        now = int(_time.time())
+        date_start = now - 6 * 3600  # 6h lookback for live games
+        date_end = now + int(horizon * 3600)
+        date_str = datetime.now(ET).strftime("%Y-%m-%d")
 
     if not Path(args.db).exists():
         print(f"ERROR: database not found: {args.db}")

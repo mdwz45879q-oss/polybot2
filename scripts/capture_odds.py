@@ -43,6 +43,10 @@ except ImportError:
 
 V1_BASE = "https://sportsapi.kalstropservice.com/odds_v1/v1"
 V1_WS = "wss://sportsapi.kalstropservice.com/odds_v1/v1/ws"
+
+# Keepalive / silent-disconnect detection (V1 docs Section 8.2)
+PING_INTERVAL = 15   # send a client ping if idle this long (seconds)
+RECV_TIMEOUT  = 45   # declare connection dead after this long with zero frames
 CLIENT_ID = os.environ.get("KALSTROP_CLIENT_ID") or os.environ.get("CLIENT_ID", "")
 SECRET_RAW = os.environ.get("KALSTROP_SHARED_SECRET_RAW") or os.environ.get("SHARED_SECRET_RAW", "")
 
@@ -136,23 +140,35 @@ def fetch_market_catalog(fixture_id: str, out_dir: Path, game_name: str) -> dict
                     }
                     catalog[mid] = entry
                     raw_markets.append(entry)
-                # Also check selectionGroups (V1 uses this for handicap/spread markets)
+                # Collect ALL selections per market from selectionGroups
+                # (each group is one side: HOME/AWAY, Over/Under, etc.)
+                market_sels: dict[str, list[dict]] = {}  # marketId → [selections]
                 for sg in (dg.get("selectionGroups") or []):
+                    team = sg.get("team")  # "HOME", "AWAY", or None
                     for s in (sg.get("selections") or []):
                         mid = str(s.get("marketId") or "").strip()
-                        if not mid or mid in catalog:
+                        if not mid:
                             continue
-                        sname = str(s.get("fullName") or s.get("name") or "").strip()
-                        entry = {
-                            "id": mid,
-                            "name": f"{group_name}: {sname}",
-                            "group_name": group_name,
-                            "group": group,
-                            "selections": [{"id": str(s.get("id") or ""), "name": sname}],
-                            "status": "",
+                        sel_entry = {
+                            "id": str(s.get("id") or "").strip(),
+                            "name": str(s.get("fullName") or s.get("name") or "").strip(),
                         }
-                        catalog[mid] = entry
-                        raw_markets.append(entry)
+                        if team:
+                            sel_entry["team"] = team
+                        market_sels.setdefault(mid, []).append(sel_entry)
+                for mid, sels in market_sels.items():
+                    if mid in catalog:
+                        continue
+                    entry = {
+                        "id": mid,
+                        "name": group_name,
+                        "group_name": group_name,
+                        "group": group,
+                        "selections": sels,
+                        "status": "",
+                    }
+                    catalog[mid] = entry
+                    raw_markets.append(entry)
         except Exception as e:
             print(f"  [catalog/{game_name}] {group}: {type(e).__name__}: {e}")
 
@@ -205,50 +221,84 @@ async def _v1_stream(
                 }))
                 print(f"[{label}] subscribed to {len(fixture_ids)} fixtures")
                 backoff = 2.0
+                last_activity = time.monotonic()
 
-                async for raw in ws:
-                    if stop.is_set():
-                        break
-                    ts_ns = time.time_ns()
-                    try:
-                        frame = json.loads(raw)
-                    except Exception:
-                        continue
+                try:
+                    while not stop.is_set():
+                        now = time.monotonic()
+                        idle = now - last_activity
 
-                    msg_type = frame.get("type", "")
+                        # Client-initiated keepalive ping (V1 docs Section 8.2)
+                        if idle >= PING_INTERVAL:
+                            await ws.send(json.dumps({"type": "ping"}))
+                            last_activity = now
+                            idle = 0.0
 
-                    if msg_type == "ping":
-                        await ws.send(json.dumps({"type": "pong"}))
-                        continue
+                        # Receive with timeout — detect silent disconnects
+                        remaining = max(1.0, RECV_TIMEOUT - idle)
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                        except asyncio.TimeoutError:
+                            print(f"[{label}] no data for {RECV_TIMEOUT}s — reconnecting")
+                            break
 
-                    if msg_type == "complete":
-                        print(f"[{label}] subscription completed by server — resubscribing")
-                        await ws.send(json.dumps({
-                            "id": sub_id,
-                            "type": "subscribe",
-                            "payload": {
-                                "operationName": operation,
-                                "query": query,
-                                "variables": {"fixtureIds": fixture_ids},
-                            },
-                        }))
-                        continue
+                        last_activity = time.monotonic()
+                        ts_ns = time.time_ns()
+                        try:
+                            frame = json.loads(raw)
+                        except Exception:
+                            continue
 
-                    if msg_type != "next":
-                        continue
+                        msg_type = frame.get("type", "")
 
-                    update = frame.get("payload", {}).get("data", {}).get(data_key, {})
-                    fid = update.get("fixtureId", "")
-                    name = fid_to_name.get(fid, fid[:8])
-                    f = files.get(name)
-                    if f:
-                        f.write(json.dumps({"ts_ns": ts_ns, "source": f"v1_{label}", "frame": update}) + "\n")
-                        count += 1
-                        if count % 10 == 0:
+                        if msg_type == "ping":
+                            await ws.send(json.dumps({"type": "pong"}))
+                            continue
+
+                        if msg_type == "complete":
+                            print(f"[{label}] subscription completed by server — resubscribing")
+                            await ws.send(json.dumps({
+                                "id": sub_id,
+                                "type": "subscribe",
+                                "payload": {
+                                    "operationName": operation,
+                                    "query": query,
+                                    "variables": {"fixtureIds": fixture_ids},
+                                },
+                            }))
+                            continue
+
+                        if msg_type != "next":
+                            continue
+
+                        update = frame.get("payload", {}).get("data", {}).get(data_key, {})
+                        fid = update.get("fixtureId", "")
+                        name = fid_to_name.get(fid, fid[:8])
+                        f = files.get(name)
+                        if f:
+                            line = {"ts_ns": ts_ns, "source": f"v1_{label}", "frame": update}
+                            # Extract provider timestamps for latency analysis
+                            pmt = (update.get("matchSummary") or {}).get("providerMessageTimestamp")
+                            if pmt:
+                                line["provider_ts"] = pmt
+                            mt = update.get("messageTime")
+                            pa = update.get("publishedAt")
+                            if mt:
+                                line["message_time"] = mt
+                            if pa:
+                                line["published_at"] = pa
+                            f.write(json.dumps(line) + "\n")
                             f.flush()
+                            count += 1
 
-                    if on_frame:
-                        on_frame(name, update, ts_ns)
+                        if on_frame:
+                            on_frame(name, update, ts_ns)
+                finally:
+                    # Clean unsubscribe per V1 docs Section 8.2
+                    try:
+                        await ws.send(json.dumps({"id": sub_id, "type": "complete"}))
+                    except Exception:
+                        pass  # connection may already be dead
 
         except Exception as e:
             if stop.is_set():
