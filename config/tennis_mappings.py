@@ -1352,6 +1352,11 @@ PLAYER_MAP_PROSTEJOV = {
         "provider_aliases": {"kalstrop_v1": ["Sanchez Izquierdo, Nikolas"]},
         "pm_aliases": ["Nikolas Sanchez Izquierdo"],
     },
+    "molcan, alex": {
+        "polymarket_code": "molcan",
+        "provider_aliases": {"kalstrop_v1": ["Molcan, Alex"]},
+        "pm_aliases": ["Alex Molcan"],
+    },
 }
 
 
