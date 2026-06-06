@@ -83,6 +83,10 @@ def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tu
             secondary_size_shares=float(cfg.get("secondary_size_shares", 0.0)),
             secondary_limit_price=float(cfg.get("secondary_limit_price", 0.0)),
             secondary_time_in_force=str(cfg.get("secondary_time_in_force", "") or ""),
+            tertiary_amount_usdc=float(cfg.get("tertiary_amount_usdc", 0.0)),
+            tertiary_size_shares=float(cfg.get("tertiary_size_shares", 0.0)),
+            tertiary_limit_price=float(cfg.get("tertiary_limit_price", 0.0)),
+            tertiary_time_in_force=str(cfg.get("tertiary_time_in_force", "") or ""),
             market_overrides=market_overrides,
             retirement=retirement,
         ),
@@ -173,6 +177,31 @@ def _build_hotpath_template_orders(
                                 client_order_id=f"hp_template_{len(out) + 1}",
                                 condition_id=str(target.condition_id or ""),
                                 size_shares=float(policy.secondary_size_shares),
+                            )
+                        )
+                # Tertiary order (optional)
+                if policy.has_tertiary:
+                    ter_key = (
+                        token_id,
+                        "buy_yes",
+                        float(policy.tertiary_amount_usdc),
+                        float(policy.tertiary_limit_price),
+                        str(policy.tertiary_time_in_force),
+                        str(target.condition_id or ""),
+                        2,
+                    )
+                    if ter_key not in seen:
+                        seen.add(ter_key)
+                        out.append(
+                            OrderRequest(
+                                token_id=token_id,
+                                side="buy_yes",
+                                amount_usdc=float(policy.tertiary_amount_usdc),
+                                limit_price=float(policy.tertiary_limit_price),
+                                time_in_force=str(policy.tertiary_time_in_force),
+                                client_order_id=f"hp_template_{len(out) + 1}",
+                                condition_id=str(target.condition_id or ""),
+                                size_shares=float(policy.tertiary_size_shares),
                             )
                         )
     return out

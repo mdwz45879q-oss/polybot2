@@ -28,8 +28,8 @@ impl DispatchHandle {
     pub(crate) fn templates_and_pool_mut(
         &mut self,
     ) -> (
-        &[smallvec::SmallVec<[OrderRequestData; 2]>],
-        &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>],
+        &[smallvec::SmallVec<[OrderRequestData; 3]>],
+        &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>],
     ) {
         (
             self.presign_templates.as_slice(),
@@ -46,7 +46,8 @@ impl DispatchHandle {
         }
         let amount_usdc = template.amount_usdc.unwrap_or(0.0);
         let limit_price = template.limit_price.unwrap_or(0.0);
-        if amount_usdc <= 0.0 || limit_price <= 0.0 {
+        let size = template.size_shares.unwrap_or(0.0);
+        if (amount_usdc <= 0.0 && size <= 0.0) || limit_price <= 0.0 {
             return None;
         }
         let price = limit_price.max(0.001);
@@ -60,7 +61,7 @@ impl DispatchHandle {
             size_shares: template
                 .size_shares
                 .filter(|v| *v > 0.0)
-                .unwrap_or(amount_usdc / price),
+                .unwrap_or_else(|| if amount_usdc > 0.0 { amount_usdc / price } else { 0.0 }),
         })
     }
 
@@ -139,8 +140,8 @@ impl DispatchHandle {
     pub(crate) fn templates_and_pool_mut_retirement(
         &mut self,
     ) -> (
-        &[smallvec::SmallVec<[OrderRequestData; 2]>],
-        &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>],
+        &[smallvec::SmallVec<[OrderRequestData; 3]>],
+        &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>],
     ) {
         (
             self.presign_templates_retirement.as_slice(),
@@ -150,8 +151,8 @@ impl DispatchHandle {
 
     pub(crate) fn extend_for_patch(
         &mut self,
-        new_templates: &mut std::collections::HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
-        new_presigned: &mut std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>>,
+        new_templates: &mut std::collections::HashMap<String, smallvec::SmallVec<[OrderRequestData; 3]>>,
+        new_presigned: &mut std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 3]>>,
         registry_tokens: &[crate::TokenSlot],
     ) {
         let old_len = self.presign_templates.len();
@@ -169,7 +170,7 @@ impl DispatchHandle {
                 self.presign_templates[idx] = tpls;
             }
             if let Some(signed_orders) = new_presigned.remove(token_id) {
-                let tifs: smallvec::SmallVec<[OrderTimeInForce; 2]> = self.presign_templates[idx]
+                let tifs: smallvec::SmallVec<[OrderTimeInForce; 3]> = self.presign_templates[idx]
                     .iter()
                     .map(|t| t.time_in_force)
                     .collect();
@@ -190,13 +191,13 @@ impl DispatchHandle {
 }
 
 /// Signs orders for each token at startup and stores them in the pool.
-/// Each token may have 1-2 templates (primary + optional secondary).
+/// Each token may have 1-3 templates (primary + optional secondary + optional tertiary).
 pub(crate) async fn warm_presign_startup_into(
     cfg: &DispatchConfig,
     client: &SdkClient<SdkAuthenticatedState<SdkAuthNormal>>,
     signer: &super::CachedSigner,
-    templates: &[smallvec::SmallVec<[OrderRequestData; 2]>],
-    pool: &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>],
+    templates: &[smallvec::SmallVec<[OrderRequestData; 3]>],
+    pool: &mut [smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>],
 ) -> Result<(), String> {
     if !cfg.presign_enabled {
         return Ok(());

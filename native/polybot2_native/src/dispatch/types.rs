@@ -33,7 +33,7 @@ pub(crate) struct PresignTemplateData {
 }
 
 /// Inline-friendly batch of `(TargetIdx, PreparedOrderPayload)` pairs. With
-/// dual-order presign, a frame with N intents can produce up to 2N entries.
+/// up to 3 orders per presign slot, a frame with N intents can produce up to 3N entries.
 /// Capacity 32 covers the common case without heap allocation.
 pub(crate) type SubmitBatch =
     smallvec::SmallVec<[(crate::TargetIdx, Box<PreparedOrderPayload>); 32]>;
@@ -54,24 +54,24 @@ pub(crate) struct DispatchHandle {
     pub(super) registry: Arc<crate::TargetRegistry>,
     pub(super) shared_registry: SharedRegistry,
     /// Catalog of templates indexed by raw token_id string. Each token may
-    /// have 1-2 templates (primary + optional secondary). Set once via
-    /// `prewarm_presign` from Python; survives across plan loads.
-    pub(super) presign_template_catalog: HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
+    /// have 1-3 templates (primary + optional secondary + optional tertiary).
+    /// Set once via `prewarm_presign` from Python; survives across plan loads.
+    pub(super) presign_template_catalog: HashMap<String, smallvec::SmallVec<[OrderRequestData; 3]>>,
     /// Active templates resolved against the current registry, indexed by
     /// `TokenIdx`. Empty vec means no template is active for that token.
-    pub(super) presign_templates: Vec<smallvec::SmallVec<[OrderRequestData; 2]>>,
-    /// Presign pool, indexed by `TokenIdx`. Each slot holds 0-2 pre-signed
+    pub(super) presign_templates: Vec<smallvec::SmallVec<[OrderRequestData; 3]>>,
+    /// Presign pool, indexed by `TokenIdx`. Each slot holds 0-3 pre-signed
     /// orders. `std::mem::take()` drains all orders for that token at once.
-    pub(super) presign_pool: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>>,
+    pub(super) presign_pool: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>>,
     /// Retirement presign template catalog — parallel to `presign_template_catalog`.
     /// Populated by Python with 50/50 retirement orders for tennis markets.
-    pub(super) presign_template_catalog_retirement: HashMap<String, smallvec::SmallVec<[OrderRequestData; 2]>>,
+    pub(super) presign_template_catalog_retirement: HashMap<String, smallvec::SmallVec<[OrderRequestData; 3]>>,
     /// Retirement templates resolved against the current registry, indexed by
     /// `TokenIdx`. Parallel to `presign_templates`.
-    pub(super) presign_templates_retirement: Vec<smallvec::SmallVec<[OrderRequestData; 2]>>,
+    pub(super) presign_templates_retirement: Vec<smallvec::SmallVec<[OrderRequestData; 3]>>,
     /// Retirement presign pool, indexed by `TokenIdx`. Parallel to `presign_pool`.
     /// Used for 50/50 retirement orders in tennis.
-    pub(super) presign_pool_retirement: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>>,
+    pub(super) presign_pool_retirement: Vec<smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>>,
     pub(super) submit_tx: Option<rtrb::Producer<SubmitWork>>,
 }
 

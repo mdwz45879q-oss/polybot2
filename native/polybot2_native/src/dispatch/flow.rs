@@ -25,13 +25,13 @@ impl DispatchHandle {
     }
 
     /// Pop a presigned order for the given target from the per-token pool.
-    /// Returns all pre-signed orders for this target's token (1-2 orders),
+    /// Returns all pre-signed orders for this target's token (1-3 orders),
     /// or an error string if the pool slot is empty. Drains the slot completely.
     /// Synchronous; runs on the WS thread.
     pub(crate) fn pop_for_target(
         &mut self,
         target_idx: crate::TargetIdx,
-    ) -> Result<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>, String> {
+    ) -> Result<smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>, String> {
         let target = self
             .registry
             .targets
@@ -63,7 +63,7 @@ impl DispatchHandle {
     pub(crate) fn pop_for_target_retirement(
         &mut self,
         target_idx: crate::TargetIdx,
-    ) -> Result<smallvec::SmallVec<[Box<PreparedOrderPayload>; 2]>, String> {
+    ) -> Result<smallvec::SmallVec<[Box<PreparedOrderPayload>; 3]>, String> {
         let target = self
             .registry
             .targets

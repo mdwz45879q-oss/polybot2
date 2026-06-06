@@ -629,7 +629,7 @@ impl NativeHotPathRuntime {
             serde_json::from_str(&templates_json).map_err(|e| {
                 PyValueError::new_err(format!("patch_plan_invalid_templates:{}", e))
             })?;
-        let mut template_map: std::collections::HashMap<String, smallvec::SmallVec<[crate::dispatch::OrderRequestData; 2]>> =
+        let mut template_map: std::collections::HashMap<String, smallvec::SmallVec<[crate::dispatch::OrderRequestData; 3]>> =
             std::collections::HashMap::new();
         for tpl in &templates {
             if let Some(req) = crate::dispatch::DispatchHandle::parse_template_request(tpl) {
@@ -644,7 +644,7 @@ impl NativeHotPathRuntime {
 
         let sign_result = py
             .allow_threads(
-                move || -> Result<std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>>, String> {
+                move || -> Result<std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 3]>>, String> {
                     if !dispatch_cfg.presign_enabled || template_map_clone.is_empty() {
                         return Ok(std::collections::HashMap::new());
                     }
@@ -674,7 +674,7 @@ impl NativeHotPathRuntime {
                                 })
                             })
                             .collect();
-                        let mut signed: std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 2]>> =
+                        let mut signed: std::collections::HashMap<String, smallvec::SmallVec<[SdkSignedOrder; 3]>> =
                             std::collections::HashMap::new();
                         for handle in handles {
                             let (token_id, result) =
