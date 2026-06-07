@@ -465,6 +465,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["OLDBOYS PL", "OLDBOYS-"],
     },
+    "pain":{
+        "polymarket_code": "pain", 
+        "provider_aliases": {
+            "kalstrop_v1": ["paiN Gaming"],
+        },
+        "pm_aliases": ["PAIN",],
+    },
     # Phantom Esports
     "phantom esports": {
         "polymarket_code": "pha",
