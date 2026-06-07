@@ -49,6 +49,7 @@ def main():
     ap.add_argument("--db", default="data/prediction_markets.db", help="DB path")
     ap.add_argument("--out", default="", help="Output dir (default: captures/{date}/{league}/)")
     ap.add_argument("--config-dir", default="", help="Config dir (default: auto)")
+    ap.add_argument("--no-odds", action="store_true", help="Skip odds capture, scores only")
     ap.add_argument("--verbose", "-v", action="store_true")
     args = ap.parse_args()
 
@@ -139,7 +140,7 @@ def main():
     async def run():
         try:
             await asyncio.wait_for(
-                capture(fixture_ids, game_names, out_dir, args.duration, stop),
+                capture(fixture_ids, game_names, out_dir, args.duration, stop, no_odds=args.no_odds),
                 timeout=args.duration,
             )
         except asyncio.TimeoutError:

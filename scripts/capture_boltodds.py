@@ -178,6 +178,7 @@ def main():
     ap.add_argument("--out", default="", help="Output dir (default: captures/{date}/{league}/)")
     ap.add_argument("--games", nargs="+", default=[], metavar="TEAM",
                     help="Filter to games matching these team names (substring match, case-insensitive)")
+    ap.add_argument("--no-odds", action="store_true", help="Skip odds capture, scores only")
     ap.add_argument("--config-dir", default="", help="Config dir (default: auto)")
     args = ap.parse_args()
 
@@ -280,7 +281,8 @@ def main():
 
         game_dir = out_dir / name
         game_dir.mkdir(parents=True, exist_ok=True)
-        odds_files[name] = (game_dir / "bo_odds.jsonl").open("a")
+        if not args.no_odds:
+            odds_files[name] = (game_dir / "bo_odds.jsonl").open("a")
         scores_files[name] = (game_dir / "bo_scores.jsonl").open("a")
 
     events_file = (out_dir / "bo_events.jsonl").open("a")
@@ -324,17 +326,19 @@ def main():
     signal.signal(signal.SIGTERM, handle_sig)
 
     async def run():
-        odds_task = asyncio.create_task(_bo_stream(
-            label="odds",
-            ws_base=BOLTODDS_ODDS_WS,
-            game_labels=game_labels,
-            label_to_name=label_to_name,
-            files=odds_files,
-            events_file=events_file,
-            stop=stop,
-            on_event=on_odds_event,
-        ))
-        scores_task = asyncio.create_task(_bo_stream(
+        tasks = []
+        if not args.no_odds:
+            tasks.append(asyncio.create_task(_bo_stream(
+                label="odds",
+                ws_base=BOLTODDS_ODDS_WS,
+                game_labels=game_labels,
+                label_to_name=label_to_name,
+                files=odds_files,
+                events_file=events_file,
+                stop=stop,
+                on_event=on_odds_event,
+            )))
+        tasks.append(asyncio.create_task(_bo_stream(
             label="scores",
             ws_base=BOLTODDS_SCORES_WS,
             game_labels=game_labels,
@@ -343,11 +347,11 @@ def main():
             events_file=events_file,
             stop=stop,
             on_event=on_scores_event,
-        ))
+        )))
 
         try:
             await asyncio.wait_for(
-                asyncio.gather(odds_task, scores_task),
+                asyncio.gather(*tasks),
                 timeout=args.duration,
             )
         except asyncio.TimeoutError:

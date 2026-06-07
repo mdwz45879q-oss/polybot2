@@ -311,17 +311,18 @@ async def _v1_stream(
 
 
 async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
-                  duration: int, stop: asyncio.Event):
+                  duration: int, stop: asyncio.Event, *, no_odds: bool = False):
     if not CLIENT_ID or not SECRET_RAW:
         print("[!] No credentials — set KALSTROP_CLIENT_ID and KALSTROP_SHARED_SECRET_RAW")
         return
 
     # Fetch market catalogs (one REST call per group per fixture)
     market_catalogs: dict[str, dict[str, dict]] = {}
-    for fid, name in zip(fixture_ids, game_names):
-        catalog = fetch_market_catalog(fid, out_dir, name)
-        if catalog:
-            market_catalogs[name] = catalog
+    if not no_odds:
+        for fid, name in zip(fixture_ids, game_names):
+            catalog = fetch_market_catalog(fid, out_dir, name)
+            if catalog:
+                market_catalogs[name] = catalog
 
     # Open output files
     score_files: dict[str, any] = {}
@@ -331,7 +332,8 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
         game_dir = out_dir / name
         game_dir.mkdir(parents=True, exist_ok=True)
         score_files[name] = (game_dir / "v1_scores.jsonl").open("a")
-        odds_files[name] = (game_dir / "v1_odds.jsonl").open("a")
+        if not no_odds:
+            odds_files[name] = (game_dir / "v1_odds.jsonl").open("a")
         fid_to_name[fid] = name
 
     # Score summary printer
@@ -368,8 +370,9 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
         print(f"  [odds]  {name}: {fixture_status} {len(markets)}mkts ({status_str})")
         print(f"          {markets_detail}")
 
-    # Run scores and odds on SEPARATE WS connections (independent reconnect)
-    scores_task = asyncio.create_task(_v1_stream(
+    # Run scores (and optionally odds) on SEPARATE WS connections
+    tasks = []
+    tasks.append(asyncio.create_task(_v1_stream(
         label="scores",
         sub_id="scores_sub",
         operation="sportsMatchStateUpdatedV2",
@@ -381,23 +384,24 @@ async def capture(fixture_ids: list[str], game_names: list[str], out_dir: Path,
         files=score_files,
         stop=stop,
         on_frame=on_score,
-    ))
-    odds_task = asyncio.create_task(_v1_stream(
-        label="odds",
-        sub_id="odds_sub",
-        operation="sportsMatchOddsUpdated",
-        query=("subscription sportsMatchOddsUpdated($fixtureIds: [String!])"
-               " { sportsMatchOddsUpdated(fixtureIds: $fixtureIds) }"),
-        data_key="sportsMatchOddsUpdated",
-        fixture_ids=fixture_ids,
-        fid_to_name=fid_to_name,
-        files=odds_files,
-        stop=stop,
-        on_frame=on_odds,
-    ))
+    )))
+    if not no_odds:
+        tasks.append(asyncio.create_task(_v1_stream(
+            label="odds",
+            sub_id="odds_sub",
+            operation="sportsMatchOddsUpdated",
+            query=("subscription sportsMatchOddsUpdated($fixtureIds: [String!])"
+                   " { sportsMatchOddsUpdated(fixtureIds: $fixtureIds) }"),
+            data_key="sportsMatchOddsUpdated",
+            fixture_ids=fixture_ids,
+            fid_to_name=fid_to_name,
+            files=odds_files,
+            stop=stop,
+            on_frame=on_odds,
+        )))
 
     try:
-        await asyncio.gather(scores_task, odds_task)
+        await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         pass
     finally:
