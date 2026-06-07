@@ -573,7 +573,7 @@ impl NativeMlbEngine {
     // ---------------------------------------------------------------
 
     /// Process a BoltOdds baseball tick. Dedup is integer-based (outs,
-    /// strikes, inning, top_of_inning, score). Evaluates: totals (shared),
+    /// inning, top_of_inning, score). Evaluates: totals (shared),
     /// NRFI-from-outs (with early YES on run delta), walkoff, and
     /// game-end-from-outs. Does NOT run V1-specific evaluators (final,
     /// V1 NRFI via DeltaEvent).
@@ -594,13 +594,11 @@ impl NativeMlbEngine {
     ) -> Option<LiveTickResult> {
         let gi = gidx.0 as usize;
 
-        // Integer-based dedup: ball-count-only changes are filtered out
-        // (ball not in struct), but strike changes pass through (they
-        // change the dedup row and thus allow the next outs change to
-        // be detected even if score/inning are unchanged).
+        // Integer-based dedup: ball-count-only and strike-count-only changes
+        // are filtered out. Only outs, inning, half, and score changes pass
+        // through to evaluators.
         let new_row = BoltOddsBaseballRow {
             outs,
-            strikes,
             inning,
             top_of_inning,
             home_score,
@@ -2409,6 +2407,23 @@ mod tests {
         let _ = engine.process_boltodds_tick_live(gidx, 1, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000);
         let result = engine.process_boltodds_tick_live(gidx, 2, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 2000);
         assert!(result.is_some(), "outs change should pass dedup");
+    }
+
+    #[test]
+    fn boltodds_tick_dedup_strike_only_change_filtered() {
+        let mut engine = NativeMlbEngine::new();
+        add_game(&mut engine, "g1", |_b| {});
+        sync_target_vecs(&mut engine);
+
+        let gidx = GameIdx(0);
+        let _ = engine.process_boltodds_tick_live(
+            gidx, 1, 0, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 1000,
+        );
+        // Only strikes changed (0 → 1): should be deduped
+        let result = engine.process_boltodds_tick_live(
+            gidx, 1, 1, 1, true, 0, 0, false, false, false, "AT_TOP_1ST_INNING", 2000,
+        );
+        assert!(result.is_none(), "strike-only change should be deduped");
     }
 
     #[test]

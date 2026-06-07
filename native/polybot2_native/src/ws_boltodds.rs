@@ -226,10 +226,10 @@ pub(crate) async fn run_boltodds_worker_async(
                 };
                 first_read = false;
 
-                let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                 match &msg {
                     Message::Text(text) => match engine {
                         SportEngine::Soccer(ref mut e) => {
+                            let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                             if let Some(tl) = process_boltodds_frame_sync(
                                 e,
                                 text.as_ref(),
@@ -244,7 +244,7 @@ pub(crate) async fn run_boltodds_worker_async(
                             if let Some(tl) = process_boltodds_baseball_frame_sync(
                                 e,
                                 text.as_ref(),
-                                source_recv_ns,
+                                worker_clock_origin,
                                 &mut dispatch_handle,
                                 &log,
                             ) {
@@ -252,6 +252,7 @@ pub(crate) async fn run_boltodds_worker_async(
                             }
                         }
                         SportEngine::Moba(ref mut e) => {
+                            let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                             if let Some(tl) = process_boltodds_moba_frame_sync(
                                 e,
                                 text.as_ref(),
@@ -268,6 +269,7 @@ pub(crate) async fn run_boltodds_worker_async(
                         if let Ok(text) = std::str::from_utf8(bytes.as_ref()) {
                             match engine {
                                 SportEngine::Soccer(ref mut e) => {
+                                    let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                     if let Some(tl) = process_boltodds_frame_sync(
                                         e,
                                         text,
@@ -282,7 +284,7 @@ pub(crate) async fn run_boltodds_worker_async(
                                     if let Some(tl) = process_boltodds_baseball_frame_sync(
                                         e,
                                         text,
-                                        source_recv_ns,
+                                        worker_clock_origin,
                                         &mut dispatch_handle,
                                         &log,
                                     ) {
@@ -290,6 +292,7 @@ pub(crate) async fn run_boltodds_worker_async(
                                     }
                                 }
                                 SportEngine::Moba(ref mut e) => {
+                                    let source_recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                     if let Some(tl) = process_boltodds_moba_frame_sync(
                                         e,
                                         text,

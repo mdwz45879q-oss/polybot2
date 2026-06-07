@@ -78,13 +78,12 @@ pub(crate) struct GameState {
     pub(crate) base3: Option<bool>,
 }
 
-/// BoltOdds-specific dedup row. Integer-based: ball-count-only changes
-/// are filtered out (ball not in struct), but strike changes pass through
-/// (needed for strikeout pre-fire logic).
+/// BoltOdds-specific dedup row. Integer-based: ball-count-only and
+/// strike-count-only changes are filtered out (neither field is in struct).
+/// Only outs, inning, half, and score changes pass through.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BoltOddsBaseballRow {
     pub(crate) outs: u8,
-    pub(crate) strikes: u8,
     pub(crate) inning: i64,
     pub(crate) top_of_inning: bool,
     pub(crate) home_score: i64,

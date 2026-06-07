@@ -6,10 +6,11 @@ use crate::baseball::types::{GameState, NativeMlbEngine};
 use crate::boltodds_baseball_types::{
     fast_extract_boltodds_baseball, serde_extract_boltodds_baseball, BoltOddsBaseballExtract,
 };
-use crate::dispatch::{dispatch_intents, DispatchHandle};
-use crate::log_writer::LogWriter;
-use crate::{GameIdx, InlineStr};
+use crate::dispatch::{DispatchHandle, SubmitBatch};
+use crate::log_writer::{gid_from_sk, LogWriter};
+use crate::{DispatchMode, GameIdx, InlineStr};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[derive(Clone)]
 pub(crate) struct BoltOddsBaseballPendingLog {
@@ -24,12 +25,13 @@ pub(crate) struct BoltOddsBaseballPendingLog {
 pub(crate) fn process_boltodds_baseball_frame_sync(
     engine: &mut NativeMlbEngine,
     frame_text: &str,
-    recv_monotonic_ns: i64,
+    clock_origin: Instant,
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
 ) -> Option<BoltOddsBaseballPendingLog> {
     // Try fast byte-level extraction; fall back to serde on failure.
     if let Some(extract) = fast_extract_boltodds_baseball(frame_text) {
+        let recv_monotonic_ns = clock_origin.elapsed().as_nanos() as i64;
         return process_extract(engine, &extract, recv_monotonic_ns, dispatch_handle, log);
     }
     // Serde fallback — resilient to field reordering and structural changes.
@@ -47,6 +49,7 @@ pub(crate) fn process_boltodds_baseball_frame_sync(
             base2: owned.base2,
             base3: owned.base3,
         };
+        let recv_monotonic_ns = clock_origin.elapsed().as_nanos() as i64;
         return process_extract(engine, &extract, recv_monotonic_ns, dispatch_handle, log);
     }
     // Neither path could extract — not a match_update or missing required fields.
@@ -77,7 +80,34 @@ fn process_extract(
     )?;
 
     if !result.intents.is_empty() {
-        dispatch_intents(&result.intents, dispatch_handle, log);
+        if matches!(dispatch_handle.cfg.mode, DispatchMode::Noop) {
+            for intent in &result.intents {
+                let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
+                if let Ok(mut g) = log.lock() {
+                    g.log_order_ok(gid_from_sk(sk), sk, tok, "noop", "");
+                }
+            }
+        } else {
+            let mut batch = SubmitBatch::new();
+            for intent in &result.intents {
+                match dispatch_handle.pop_for_target(intent.target_idx) {
+                    Ok(orders) => {
+                        for signed in orders {
+                            batch.push((intent.target_idx, signed));
+                        }
+                    }
+                    Err(err) => {
+                        let (sk, tok) = dispatch_handle.resolve_strings(intent.target_idx);
+                        if let Ok(mut g) = log.lock() {
+                            g.log_order_err(gid_from_sk(sk), sk, tok, &err, "");
+                        }
+                    }
+                }
+            }
+            if !batch.is_empty() {
+                dispatch_handle.send_batch(batch, log);
+            }
+        }
     }
 
     Some(BoltOddsBaseballPendingLog {

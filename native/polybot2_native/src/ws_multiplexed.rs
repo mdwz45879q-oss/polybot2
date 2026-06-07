@@ -476,9 +476,9 @@ pub(crate) async fn run_multiplexed_worker_async(
                             any_ready = true;
                             match msg {
                                 Some(Ok(Message::Text(ref text))) => {
-                                    let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                     match engine {
                                         SportEngine::Soccer(ref mut e) => {
+                                            let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                             if let Some(tl) = process_boltodds_frame_sync(
                                                 e, text, recv_ns, &mut dispatch_handle, &log,
                                             ) {
@@ -487,7 +487,7 @@ pub(crate) async fn run_multiplexed_worker_async(
                                         }
                                         SportEngine::Baseball(ref mut e) => {
                                             if let Some(tl) = process_boltodds_baseball_frame_sync(
-                                                e, text, recv_ns, &mut dispatch_handle, &log,
+                                                e, text, worker_clock_origin, &mut dispatch_handle, &log,
                                             ) {
                                                 pending_baseball_bo_logs.push(tl);
                                             }
@@ -497,9 +497,9 @@ pub(crate) async fn run_multiplexed_worker_async(
                                 }
                                 Some(Ok(Message::Binary(ref bytes))) => {
                                     if let Ok(text) = std::str::from_utf8(bytes) {
-                                        let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                         match engine {
                                             SportEngine::Soccer(ref mut e) => {
+                                                let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                                 if let Some(tl) = process_boltodds_frame_sync(
                                                     e, text, recv_ns, &mut dispatch_handle, &log,
                                                 ) {
@@ -508,7 +508,7 @@ pub(crate) async fn run_multiplexed_worker_async(
                                             }
                                             SportEngine::Baseball(ref mut e) => {
                                                 if let Some(tl) = process_boltodds_baseball_frame_sync(
-                                                    e, text, recv_ns, &mut dispatch_handle, &log,
+                                                    e, text, worker_clock_origin, &mut dispatch_handle, &log,
                                                 ) {
                                                     pending_baseball_bo_logs.push(tl);
                                                 }
@@ -657,9 +657,9 @@ pub(crate) async fn run_multiplexed_worker_async(
                         match msg {
                             Some(Ok(Message::Text(ref text))) => {
                                 got_frame = true;
-                                let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                 match engine {
                                     SportEngine::Soccer(ref mut e) => {
+                                        let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                         if let Some(tl) = process_boltodds_frame_sync(
                                             e, text, recv_ns, &mut dispatch_handle, &log,
                                         ) {
@@ -668,7 +668,7 @@ pub(crate) async fn run_multiplexed_worker_async(
                                     }
                                     SportEngine::Baseball(ref mut e) => {
                                         if let Some(tl) = process_boltodds_baseball_frame_sync(
-                                            e, text, recv_ns, &mut dispatch_handle, &log,
+                                            e, text, worker_clock_origin, &mut dispatch_handle, &log,
                                         ) {
                                             pending_baseball_bo_logs.push(tl);
                                         }
@@ -679,9 +679,9 @@ pub(crate) async fn run_multiplexed_worker_async(
                             Some(Ok(Message::Binary(ref bytes))) => {
                                 if let Ok(text) = std::str::from_utf8(bytes) {
                                     got_frame = true;
-                                    let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                     match engine {
                                         SportEngine::Soccer(ref mut e) => {
+                                            let recv_ns = worker_clock_origin.elapsed().as_nanos() as i64;
                                             if let Some(tl) = process_boltodds_frame_sync(
                                                 e, text, recv_ns, &mut dispatch_handle, &log,
                                             ) {
@@ -690,7 +690,7 @@ pub(crate) async fn run_multiplexed_worker_async(
                                         }
                                         SportEngine::Baseball(ref mut e) => {
                                             if let Some(tl) = process_boltodds_baseball_frame_sync(
-                                                e, text, recv_ns, &mut dispatch_handle, &log,
+                                                e, text, worker_clock_origin, &mut dispatch_handle, &log,
                                             ) {
                                                 pending_baseball_bo_logs.push(tl);
                                             }
