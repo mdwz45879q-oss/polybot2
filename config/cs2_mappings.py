@@ -253,6 +253,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["fnatic"],
     },
+    "fut":{
+        "polymarket_code": "fut", 
+        "provider_aliases": {
+            "kalstrop_v1": ["FUT Esports"],
+        },
+        "pm_aliases": ["FUT"],
+    },
     "galorys":{
         "polymarket_code": "gls1",
         "provider_aliases": {
@@ -502,6 +509,14 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Sinners Esports"],
         },
         "pm_aliases": ["Sinner"],
+    },
+    "spirit":{
+        "polymarket_code": "ts7",
+        "provider_aliases": {
+            "kalstrop_v1": ["Team Spirit"],
+        },
+        "pm_aliases": ["TS7"],
+
     },
     # Team Nemesis
     "team nemesis": {
