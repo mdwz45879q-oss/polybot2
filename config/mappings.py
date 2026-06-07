@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W
 from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -115,6 +115,30 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
+    "queen": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "stuttgart": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "libema_m": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "libema_w": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
@@ -155,6 +179,10 @@ PROVIDER_LEAGUE_ALIASES = {
         "atp challenger prostejov": "prostejov",
         "wta 125k foggia": "foggia",
         "wta 125k makarska": "makarska",
+        "wta london": "queen",
+        "atp stuttgart": "stuttgart",
+        "atp s-hertogenbosch": "libema_m",
+        "wta s-hertogenbosch": "libema_w",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
@@ -186,6 +214,10 @@ PROVIDER_LEAGUE_ALIASES = {
         "challenger prostejov - tennis": "prostejov",
         "wta foggia - tennis": "foggia",
         "wta makarska - tennis": "makarska",
+        "wta london - tennis": "queen",
+        "atp stuttgart - tennis": "stuttgart",
+        "atp s-hertogenbosch - tennis": "libema_m",
+        "wta s-hertogenbosch - tennis": "libema_w",
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
@@ -243,6 +275,10 @@ TEAM_MAP = {
     "prostejov": PLAYER_MAP_PROSTEJOV,
     "foggia": PLAYER_MAP_FOGGIA,
     "makarska": PLAYER_MAP_MAKARSKA,
+    "queen": PLAYER_MAP_QUEEN,
+    "stuttgart": PLAYER_MAP_STUTTGART,
+    "libema_m": PLAYER_MAP_LIBEMA_M,
+    "libema_w": PLAYER_MAP_LIBEMA_W,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
@@ -267,6 +303,10 @@ PM_LEAGUE_ORDERINGS = {
     "prostejov": "home",
     "foggia": "home",
     "makarska": "home",
+    "queen": "home",
+    "stuttgart": "home",
+    "libema_m": "home",
+    "libema_w": "home",
     "cs2": "home",
     "lol": "home",
     "dota2": "home",
