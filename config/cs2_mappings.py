@@ -280,7 +280,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["GamerLegion"],
         },
-        "pm_aliases": ["GamerLegion"],
+        "pm_aliases": ["GamerLegion", "GL"],
 
     },
     "gaimin":{
