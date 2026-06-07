@@ -43,6 +43,7 @@ impl NativeCs2Engine {
             totals_under_emitted: Vec::new(),
             map_handicap_early_emitted: Vec::new(),
             map_winner_resolved: Vec::new(),
+            pending_phase_verify: Vec::new(),
         }
     }
 
@@ -333,6 +334,7 @@ impl NativeCs2Engine {
         self.final_resolved_games.resize(n, false);
         self.totals_under_emitted.resize(n, false);
         self.map_handicap_early_emitted.resize(n, false);
+        self.pending_phase_verify.resize(n, None);
         // map_winner_resolved: per-game vec of bools, sized to max possible maps
         self.map_winner_resolved.resize(n, Vec::new());
         for gi in 0..n {
@@ -364,6 +366,7 @@ impl NativeCs2Engine {
         self.final_resolved_games = vec![false; n];
         self.totals_under_emitted = vec![false; n];
         self.map_handicap_early_emitted = vec![false; n];
+        self.pending_phase_verify = vec![None; n];
         for gi in 0..n {
             let max_maps = (self.maps_to_win[gi] * 2 - 1).max(1) as usize;
             self.map_winner_resolved[gi] = vec![false; max_maps];
@@ -412,6 +415,7 @@ impl NativeCs2Engine {
         current_map: i64,
         match_completed: bool,
         game_state: &'static str,
+        phase_scores: &[(i64, i64); 5],
         _recv_monotonic_ns: i64,
     ) -> Option<Cs2LiveTickResult> {
         let gi = gidx.0 as usize;
@@ -459,7 +463,7 @@ impl NativeCs2Engine {
         }
 
         let mut intents = smallvec::SmallVec::<[Intent; 32]>::new();
-        self.evaluate_child_moneyline_into(gidx, &state, &mut intents);
+        self.evaluate_child_moneyline_into(gidx, &state, phase_scores, &mut intents);
 
         // Compute effective maps for match-end evaluators when the current
         // map is decided (round-13 / OT win) but V1's maps counter hasn't

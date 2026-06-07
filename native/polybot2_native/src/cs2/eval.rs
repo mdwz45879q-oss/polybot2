@@ -55,6 +55,7 @@ impl NativeCs2Engine {
         &mut self,
         gidx: GameIdx,
         state: &Cs2GameState,
+        phase_scores: &[(i64, i64); 5],
         out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
@@ -99,10 +100,21 @@ impl NativeCs2Engine {
             let map_idx = (completed_map - 1) as usize;
             if map_idx < targets.map_moneyline.len()
                 && map_idx < self.map_winner_resolved[gi].len()
+                && map_idx < phase_scores.len()
                 && !self.map_winner_resolved[gi][map_idx]
             {
-                push_if_some(targets.map_moneyline[map_idx].0, out); // home
-                self.map_winner_resolved[gi][map_idx] = true;
+                // Verify the map was completed normally via phases data.
+                // If map_winner() returns None, the map ended abnormally
+                // (forfeit/referee) — Polymarket resolves 50-50, don't fire.
+                // Or phases may lag (Behavior B) — defer to next tick.
+                let (ph, pa) = phase_scores[map_idx];
+                if ph >= 0 && pa >= 0 && map_winner(ph, pa).is_some() {
+                    push_if_some(targets.map_moneyline[map_idx].0, out); // home
+                    self.map_winner_resolved[gi][map_idx] = true;
+                } else {
+                    // Phases didn't confirm — defer to next tick(s).
+                    self.pending_phase_verify[gi] = Some((map_idx, true));
+                }
             }
         }
         if maps_away > prev_away {
@@ -110,10 +122,41 @@ impl NativeCs2Engine {
             let map_idx = (completed_map - 1) as usize;
             if map_idx < targets.map_moneyline.len()
                 && map_idx < self.map_winner_resolved[gi].len()
+                && map_idx < phase_scores.len()
                 && !self.map_winner_resolved[gi][map_idx]
             {
-                push_if_some(targets.map_moneyline[map_idx].1, out); // away
-                self.map_winner_resolved[gi][map_idx] = true;
+                let (ph, pa) = phase_scores[map_idx];
+                if ph >= 0 && pa >= 0 && map_winner(ph, pa).is_some() {
+                    push_if_some(targets.map_moneyline[map_idx].1, out); // away
+                    self.map_winner_resolved[gi][map_idx] = true;
+                } else {
+                    self.pending_phase_verify[gi] = Some((map_idx, false));
+                }
+            }
+        }
+
+        // Re-check deferred phase verification (Behavior B recovery).
+        // When phases lagged behind maps-won, we deferred the child_moneyline
+        // fire. On each subsequent tick, re-check if phases caught up.
+        if let Some((pend_idx, is_home)) = self.pending_phase_verify[gi] {
+            if pend_idx < targets.map_moneyline.len()
+                && pend_idx < self.map_winner_resolved[gi].len()
+                && pend_idx < phase_scores.len()
+                && !self.map_winner_resolved[gi][pend_idx]
+            {
+                let (ph, pa) = phase_scores[pend_idx];
+                if ph >= 0 && pa >= 0 && map_winner(ph, pa).is_some() {
+                    if is_home {
+                        push_if_some(targets.map_moneyline[pend_idx].0, out);
+                    } else {
+                        push_if_some(targets.map_moneyline[pend_idx].1, out);
+                    }
+                    self.map_winner_resolved[gi][pend_idx] = true;
+                    self.pending_phase_verify[gi] = None;
+                }
+            } else {
+                // Already resolved (e.g., by Signal 1) or out of bounds.
+                self.pending_phase_verify[gi] = None;
             }
         }
     }
@@ -284,6 +327,9 @@ mod tests {
     use crate::cs2::types::*;
     use crate::{GameIdx, Intent, OverLine, SpreadSide, TargetIdx};
 
+    /// Default phases (no data) for tests that don't need forfeit detection.
+    const NO_PHASES: [(i64, i64); 5] = [(-1, -1); 5];
+
     fn make_engine(maps_to_win: i64, setup: impl FnOnce(&mut Cs2GameTargets)) -> NativeCs2Engine {
         let mut engine = NativeCs2Engine::new();
         engine.game_ids.push("g1".to_string());
@@ -306,6 +352,7 @@ mod tests {
         engine.final_resolved_games.push(false);
         engine.totals_under_emitted.push(false);
         engine.map_handicap_early_emitted.push(false);
+        engine.pending_phase_verify.push(None);
         let max_maps = (maps_to_win * 2 - 1).max(1) as usize;
         engine.map_winner_resolved.push(vec![false; max_maps]);
 
@@ -362,7 +409,7 @@ mod tests {
 
     fn eval_child_ml(engine: &mut NativeCs2Engine, s: &Cs2GameState) -> Vec<TargetIdx> {
         let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
-        engine.evaluate_child_moneyline_into(GameIdx(0), s, &mut out);
+        engine.evaluate_child_moneyline_into(GameIdx(0), s, &NO_PHASES, &mut out);
         out.iter().map(|i| i.target_idx).collect()
     }
 
@@ -515,9 +562,12 @@ mod tests {
         let mut engine = make_engine(2, |tgt| {
             tgt.map_moneyline.push((Some(TargetIdx(0)), Some(t_away)));
         });
-        // OT resolved via maps-won: maps went 0-0 → 0-1
+        // OT resolved via maps-won: maps went 0-0 → 0-1. Phases confirm 12-16 (OT1 win).
         let s = state_with_prev(0, 1, 0, 0, 0, 0, 2, false);
-        let intents = eval_child_ml(&mut engine, &s);
+        let phases = [(12, 16), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &phases, &mut out);
+        let intents: Vec<TargetIdx> = out.iter().map(|i| i.target_idx).collect();
         assert_eq!(intents, vec![t_away], "maps-won fallback should fire for OT map");
     }
 
@@ -528,9 +578,12 @@ mod tests {
             tgt.map_moneyline.push((Some(TargetIdx(0)), Some(TargetIdx(1))));
             tgt.map_moneyline.push((Some(t_home), Some(TargetIdx(3))));
         });
-        // Behavior B: currentPhase skipped, maps went 0-1 → 1-1
+        // Behavior B: currentPhase skipped, maps went 0-1 → 1-1. Phases confirm map 2 = 13-4.
         let s = state_with_prev(1, 1, 0, 1, 0, 0, 3, false);
-        let intents = eval_child_ml(&mut engine, &s);
+        let phases = [(7, 13), (13, 4), (-1, -1), (-1, -1), (-1, -1)];
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &phases, &mut out);
+        let intents: Vec<TargetIdx> = out.iter().map(|i| i.target_idx).collect();
         assert_eq!(intents, vec![t_home], "fallback fires MAP2 HOME");
     }
 
@@ -551,6 +604,113 @@ mod tests {
         let s2 = state_with_prev(0, 1, 0, 0, 0, 0, 2, false);
         let intents2 = eval_child_ml(&mut engine, &s2);
         assert!(intents2.is_empty(), "should NOT double-fire after round-13");
+    }
+
+    // ── Signal 2 forfeit guard ────────────────────────────────────
+
+    #[test]
+    fn child_ml_signal2_forfeit_blocked() {
+        let t_home = TargetIdx(0);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(t_home), Some(TargetIdx(1))));
+        });
+        // Maps increment 0→1 (home awarded map 1), but phases show 4-0 (forfeit).
+        let s = state_with_prev(1, 0, 0, 0, 0, 0, 2, false);
+        let phases = [(4, 0), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &phases, &mut out);
+        assert!(out.is_empty(), "forfeit map (4-0) must NOT fire child_moneyline");
+    }
+
+    #[test]
+    fn child_ml_signal2_normal_fires_with_phases() {
+        let t_home = TargetIdx(0);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(t_home), Some(TargetIdx(1))));
+        });
+        // Maps increment 0→1, phases confirm 13-7 (regulation win).
+        let s = state_with_prev(1, 0, 0, 0, 0, 0, 2, false);
+        let phases = [(13, 7), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &phases, &mut out);
+        let intents: Vec<TargetIdx> = out.iter().map(|i| i.target_idx).collect();
+        assert_eq!(intents, vec![t_home], "normal completion (13-7) should fire");
+    }
+
+    #[test]
+    fn child_ml_signal2_no_phases_blocked() {
+        let t_home = TargetIdx(0);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(t_home), Some(TargetIdx(1))));
+        });
+        // Maps increment 0→1, but no phases data available.
+        let s = state_with_prev(1, 0, 0, 0, 0, 0, 2, false);
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &NO_PHASES, &mut out);
+        assert!(out.is_empty(), "missing phases data must NOT fire (fail-closed)");
+    }
+
+    // ── Behavior B deferred phase verification ────────────────────
+
+    #[test]
+    fn child_ml_behavior_b_phases_lag_recovery() {
+        let t_home = TargetIdx(0);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(t_home), Some(TargetIdx(1))));
+            tgt.map_moneyline.push((Some(TargetIdx(2)), Some(TargetIdx(3))));
+        });
+        // Tick 0: pre-match
+        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", &NO_PHASES, 0);
+        // Tick 1: rounds=12-4, Signal 1 doesn't fire
+        engine.process_tick_live(GameIdx(0), 0, 0, 12, 4, 1, false, "LIVE", &NO_PHASES, 0);
+        // Tick 2: maps=1-0, rounds=0-0, phases LAG (12-4). Signal 2 blocked, pending set.
+        let lag_phases = [(12, 4), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let r2 = engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", &lag_phases, 0);
+        let i2: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
+        assert!(i2.is_empty(), "phases lag — should NOT fire yet");
+        assert!(engine.pending_phase_verify[0].is_some(), "pending should be set");
+        // Tick 3: maps=1-0, rounds=1-0, phases CAUGHT UP (13-4). Pending re-check fires.
+        let fixed_phases = [(13, 4), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let r3 = engine.process_tick_live(GameIdx(0), 1, 0, 1, 0, 2, false, "LIVE", &fixed_phases, 0);
+        let i3: Vec<TargetIdx> = r3.unwrap().intents.iter().map(|i| i.target_idx).collect();
+        assert_eq!(i3, vec![t_home], "phases caught up — should fire map 1 home");
+        assert!(engine.pending_phase_verify[0].is_none(), "pending should be cleared");
+        assert!(engine.map_winner_resolved[0][0], "map 1 should be resolved");
+    }
+
+    #[test]
+    fn child_ml_pending_cleared_on_signal1() {
+        let t_home = TargetIdx(0);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(t_home), Some(TargetIdx(1))));
+        });
+        // Manually set pending for map 0 (home)
+        engine.pending_phase_verify[0] = Some((0, true));
+        // Signal 1 fires for map 1 (rounds=13-7, current_map=1)
+        let s = state(0, 0, 13, 7, 1, false);
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &NO_PHASES, &mut out);
+        // Signal 1 fires and sets map_winner_resolved[0][0] = true
+        assert!(engine.map_winner_resolved[0][0]);
+        // Pending re-check sees it's already resolved → clears
+        assert!(engine.pending_phase_verify[0].is_none(), "pending cleared by Signal 1");
+    }
+
+    #[test]
+    fn child_ml_pending_forfeit_stays_blocked() {
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(TargetIdx(0)), Some(TargetIdx(1))));
+        });
+        // Manually set pending for map 0 (home)
+        engine.pending_phase_verify[0] = Some((0, true));
+        // Phases "catch up" but still show forfeit score (4-0)
+        let forfeit_phases = [(4, 0), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let s = state_with_prev(1, 0, 0, 0, 1, 0, 2, false);
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        engine.evaluate_child_moneyline_into(GameIdx(0), &s, &forfeit_phases, &mut out);
+        assert!(out.is_empty(), "forfeit phases should NOT fire");
+        // Pending stays set — not resolved
+        assert!(engine.pending_phase_verify[0].is_some(), "pending should persist for forfeit");
     }
 
     // ── Moneyline ───────────────────────────────────────────────────
@@ -829,10 +989,10 @@ mod tests {
             tgt.map_moneyline.push((Some(TargetIdx(2)), Some(TargetIdx(3))));
         });
         // Tick 1: 12-12, OT starts — no fire
-        let r1 = engine.process_tick_live(GameIdx(0), 0, 0, 12, 12, 1, false, "LIVE", 0);
+        let r1 = engine.process_tick_live(GameIdx(0), 0, 0, 12, 12, 1, false, "LIVE", &NO_PHASES, 0);
         assert!(r1.unwrap().intents.is_empty(), "12-12 must not fire");
         // Tick 2: 16-14, OT1 won by home — fires map 1 home
-        let r2 = engine.process_tick_live(GameIdx(0), 0, 0, 16, 14, 1, false, "LIVE", 0);
+        let r2 = engine.process_tick_live(GameIdx(0), 0, 0, 16, 14, 1, false, "LIVE", &NO_PHASES, 0);
         let intents: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert_eq!(intents, vec![t_home], "16-14 OT1 should fire map 1 home");
     }
@@ -859,12 +1019,12 @@ mod tests {
             });
         });
         // Tick 0: pre-match 0-0
-        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", 0);
+        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", &NO_PHASES, 0);
         // Tick 1: home wins map 1 (maps-won fallback: 0-0 → 1-0)
-        engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", 0);
+        engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", &NO_PHASES, 0);
         // Tick 2: map 2 round-13 → home wins map 2 via Signal 1.
         // maps counter is STILL 1-0 (V1 hasn't caught up), but effective is 2-0.
-        let r = engine.process_tick_live(GameIdx(0), 1, 0, 13, 7, 2, false, "LIVE", 0);
+        let r = engine.process_tick_live(GameIdx(0), 1, 0, 13, 7, 2, false, "LIVE", &NO_PHASES, 0);
         let intents: Vec<TargetIdx> = r.unwrap().intents.iter().map(|i| i.target_idx).collect();
         // All four should fire on the SAME tick:
         assert!(intents.contains(&t_map2_home), "child_moneyline MAP2 should fire");
@@ -895,15 +1055,15 @@ mod tests {
             });
         });
         // Tick 0: pre-match
-        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", 0);
+        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", &NO_PHASES, 0);
         // Tick 1: maps go to 1-1 (both teams won a map)
-        engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", 0);
-        engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", 0);
+        engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", &NO_PHASES, 0);
+        engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", &NO_PHASES, 0);
         // Tick 3: map 3, round-13 → home wins map 3. No child_moneyline target.
         // effective_state should detect the map winner via map_winner() directly.
         // Effective maps = 2-1. Moneyline fires (2 >= mtw=2).
         // Note: under 2.5 does NOT fire because effective total=3 > 2.5.
-        let r = engine.process_tick_live(GameIdx(0), 1, 1, 13, 5, 3, false, "LIVE", 0);
+        let r = engine.process_tick_live(GameIdx(0), 1, 1, 13, 5, 3, false, "LIVE", &NO_PHASES, 0);
         let intents: Vec<TargetIdx> = r.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert!(intents.contains(&t_ml_home), "moneyline should fire on map 3 round-13 (no child_ml needed)");
         // Map handicap: margin=2-1=1, 1+(-1.5)=-0.5≤0 → not_covers.
@@ -924,23 +1084,26 @@ mod tests {
         assert_eq!(engine.map_winner_resolved[0].len(), 5, "BO5 should have 5 map slots");
 
         // Tick 0: pre-match 0-0 (establishes first observation, no intents)
-        let r0 = engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", 0);
+        let r0 = engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", &NO_PHASES, 0);
         assert!(r0.unwrap().intents.is_empty(), "0-0 should not fire");
 
-        // Map 1: home wins (maps 0-0 → 1-0)
-        let r1 = engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", 0);
+        // Map 1: home wins (maps 0-0 → 1-0). Phases confirm 13-7.
+        let p1 = [(13, 7), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let r1 = engine.process_tick_live(GameIdx(0), 1, 0, 0, 0, 2, false, "LIVE", &p1, 0);
         let i1: Vec<TargetIdx> = r1.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert_eq!(i1, vec![TargetIdx(0)], "map 1 home = TargetIdx(0)");
         assert!(engine.map_winner_resolved[0][0]);
 
-        // Map 2: away wins (maps 1-0 → 1-1)
-        let r2 = engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", 0);
+        // Map 2: away wins (maps 1-0 → 1-1). Phases confirm map 2 = 8-13.
+        let p2 = [(13, 7), (8, 13), (-1, -1), (-1, -1), (-1, -1)];
+        let r2 = engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", &p2, 0);
         let i2: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert_eq!(i2, vec![TargetIdx(3)], "map 2 away = TargetIdx(3)");
         assert!(engine.map_winner_resolved[0][1]);
 
-        // Map 3: home wins (maps 1-1 → 2-1)
-        let r3 = engine.process_tick_live(GameIdx(0), 2, 1, 0, 0, 4, false, "LIVE", 0);
+        // Map 3: home wins (maps 1-1 → 2-1). Phases confirm map 3 = 13-10.
+        let p3 = [(13, 7), (8, 13), (13, 10), (-1, -1), (-1, -1)];
+        let r3 = engine.process_tick_live(GameIdx(0), 2, 1, 0, 0, 4, false, "LIVE", &p3, 0);
         let i3: Vec<TargetIdx> = r3.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert!(i3.contains(&TargetIdx(4)), "map 3 home = TargetIdx(4)");
         assert!(engine.map_winner_resolved[0][2]);
@@ -969,7 +1132,7 @@ mod tests {
             tgt.over_lines.push(OverLine { half_int: 1, target_idx: t_over });
         });
         // First tick: maps already 1-1 (mid-match subscribe via process_tick_live)
-        let r1 = engine.process_tick_live(GameIdx(0), 1, 1, 5, 3, 3, false, "LIVE", 0);
+        let r1 = engine.process_tick_live(GameIdx(0), 1, 1, 5, 3, 3, false, "LIVE", &NO_PHASES, 0);
         let i1: Vec<TargetIdx> = r1.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert!(i1.is_empty(), "first tick must NOT fire progressive over (cold-start)");
 
@@ -977,7 +1140,7 @@ mod tests {
         let t_over2 = TargetIdx(21);
         engine.game_targets[0].over_lines.push(OverLine { half_int: 2, target_idx: t_over2 });
         engine.game_targets[0].over_lines.sort_by_key(|ol| ol.half_int);
-        let r2 = engine.process_tick_live(GameIdx(0), 2, 1, 0, 0, 0, false, "LIVE", 0);
+        let r2 = engine.process_tick_live(GameIdx(0), 2, 1, 0, 0, 0, false, "LIVE", &NO_PHASES, 0);
         let i2: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
         // total went 2→3, so half_int=2 fires (line 2.5 over). half_int=1 also fires (1→2 crossing missed on first tick, but 1 < prev=2 now).
         assert!(i2.contains(&t_over2), "second tick should fire over 2.5");
@@ -994,14 +1157,15 @@ mod tests {
             tgt.map_moneyline.push((Some(TargetIdx(2)), Some(t_map2_away)));
         });
         // First tick: maps 1-0 (map 1 already completed before subscribe)
-        let r1 = engine.process_tick_live(GameIdx(0), 1, 0, 5, 3, 2, false, "LIVE", 0);
+        let r1 = engine.process_tick_live(GameIdx(0), 1, 0, 5, 3, 2, false, "LIVE", &NO_PHASES, 0);
         let i1: Vec<TargetIdx> = r1.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert!(i1.is_empty(), "first tick must NOT fire map 1 fallback (tombstone)");
         assert!(engine.map_winner_resolved[0][0], "map 1 should be tombstoned");
         assert!(!engine.map_winner_resolved[0][1], "map 2 should NOT be tombstoned");
 
-        // Second tick: maps 1-0 → 1-1 (map 2 just completed by away)
-        let r2 = engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", 0);
+        // Second tick: maps 1-0 → 1-1 (map 2 just completed by away). Phases confirm map 2 = 9-13.
+        let p2 = [(13, 7), (9, 13), (-1, -1), (-1, -1), (-1, -1)];
+        let r2 = engine.process_tick_live(GameIdx(0), 1, 1, 0, 0, 3, false, "LIVE", &p2, 0);
         let i2: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
         assert_eq!(i2, vec![t_map2_away], "map 2 away should fire on second tick");
     }

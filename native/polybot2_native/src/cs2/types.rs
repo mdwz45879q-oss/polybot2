@@ -122,4 +122,7 @@ pub(crate) struct NativeCs2Engine {
     /// Per-game, per-map: whether the map winner has been resolved.
     /// `map_winner_resolved[gi][map_num - 1]` = true when map N winner fired.
     pub(crate) map_winner_resolved: Vec<Vec<bool>>,
+    /// Deferred child_moneyline verification when phases lag behind maps-won
+    /// (Behavior B recovery). `(map_idx, is_home_winner)`. None = nothing pending.
+    pub(crate) pending_phase_verify: Vec<Option<(usize, bool)>>,
 }

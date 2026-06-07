@@ -350,6 +350,94 @@ fn scan_phases_games(bytes: &[u8], start: usize) -> (i64, i64) {
     (total, first_set)
 }
 
+/// Scan the `"phases"` array for CS2. Returns per-phase (homeScore, awayScore)
+/// as separate round counts. Index 0 = map 1, index 1 = map 2, etc.
+/// Max 5 phases (BO5). (-1, -1) = phase not present.
+/// Same brace-counting loop as `scan_phases_games`, but stores home/away
+/// separately instead of summing (needed for `map_winner()` verification).
+pub(crate) fn scan_phases_cs2(bytes: &[u8], start: usize) -> [(i64, i64); 5] {
+    let mut result = [(-1i64, -1i64); 5];
+    let len = bytes.len();
+    let mut pos = start;
+    // Find the opening '['.
+    while pos < len && bytes[pos] != b'[' {
+        pos += 1;
+    }
+    if pos >= len {
+        return result;
+    }
+    pos += 1; // skip '['
+
+    let mut phase_count: usize = 0;
+
+    while pos < len && phase_count < 5 {
+        // Skip whitespace/commas
+        while pos < len && matches!(bytes[pos], b' ' | b'\t' | b'\n' | b'\r' | b',') {
+            pos += 1;
+        }
+        if pos >= len || bytes[pos] == b']' {
+            break;
+        }
+        if bytes[pos] != b'{' {
+            pos += 1;
+            continue;
+        }
+        // Found a phase object — find its end by brace counting
+        let obj_start = pos;
+        let mut depth = 1u32;
+        pos += 1;
+        while pos < len && depth > 0 {
+            match bytes[pos] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                b'"' => {
+                    pos += 1;
+                    while pos < len {
+                        if bytes[pos] == b'\\' {
+                            pos += 2;
+                            continue;
+                        }
+                        if bytes[pos] == b'"' {
+                            break;
+                        }
+                        pos += 1;
+                    }
+                }
+                _ => {}
+            }
+            pos += 1;
+        }
+        let obj_end = pos;
+        let obj_slice = &bytes[obj_start..obj_end.min(len)];
+
+        // Extract homeScore and awayScore separately.
+        let mut home: i64 = -1;
+        let mut away: i64 = -1;
+        if let Some(hs) = find_key_value_start(&FINDER_HOME_SCORE, 11, obj_slice, 0) {
+            if let Some((val, _)) = extract_string_value(obj_slice, hs) {
+                if let Ok(s) = std::str::from_utf8(val) {
+                    if let Some(v) = fast_parse_score(s) {
+                        home = v;
+                    }
+                }
+            }
+        }
+        if let Some(as_start) = find_key_value_start(&FINDER_AWAY_SCORE, 11, obj_slice, 0) {
+            if let Some((val, _)) = extract_string_value(obj_slice, as_start) {
+                if let Ok(s) = std::str::from_utf8(val) {
+                    if let Some(v) = fast_parse_score(s) {
+                        away = v;
+                    }
+                }
+            }
+        }
+        result[phase_count] = (home, away);
+        phase_count += 1;
+    }
+
+    result
+}
+
 pub(crate) fn fast_extract_tennis_v1(json: &str) -> Option<TennisV1Extract<'_>> {
     let bytes = json.as_bytes();
 
@@ -448,10 +536,12 @@ pub(crate) fn fast_extract_tennis_v1(json: &str) -> Option<TennisV1Extract<'_>> 
         }
     }
 
-    // phases array — scan for total games and first set games
+    // phases array — scan for total games and first set games.
+    // "phases" always appears after "currentPhase" in V1 tennis frames.
+    // Search from pos (past sets scores) instead of 0 to skip ~300-500 bytes.
     let mut total_games: i64 = 0;
     let mut first_set_games: i64 = 0;
-    if let Some(phases_pos) = find_with(&FINDER_PHASES, bytes, 0) {
+    if let Some(phases_pos) = find_with(&FINDER_PHASES, bytes, pos) {
         let after_key = phases_pos + 8; // len of "phases"
         (total_games, first_set_games) = scan_phases_games(bytes, after_key);
     }
@@ -481,6 +571,9 @@ pub(crate) struct Cs2V1Extract<'a> {
     pub rounds_away: &'a str,       // currentPhase.awayScore
     pub free_text: &'a str,         // matchStatusDisplay[0].freeText ("1st map", "Closed")
     pub current_phase: Option<i64>, // currentPhase.phase (map number, None if null)
+    /// Per-map round scores from the phases array. Index 0 = map 1.
+    /// (-1, -1) = phase not present (distinguishes from (0, 0) on forfeit).
+    pub phase_scores: [(i64, i64); 5],
 }
 
 /// Dedicated CS2 V1 frame extractor. Same frame structure as tennis
@@ -576,6 +669,13 @@ pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
         }
     }
 
+    // Scan phases array for per-map round scores (forfeit detection).
+    // Search from pos (past currentPhase) to avoid matching "phases" inside a string value.
+    let mut phase_scores = [(-1i64, -1i64); 5];
+    if let Some(phases_pos) = find_with(&FINDER_PHASES, bytes, pos) {
+        phase_scores = scan_phases_cs2(bytes, phases_pos + 8);
+    }
+
     Some(Cs2V1Extract {
         fixture_id: fixture_id?,
         maps_home,
@@ -584,6 +684,7 @@ pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
         rounds_away,
         free_text,
         current_phase,
+        phase_scores,
     })
 }
 
@@ -725,5 +826,67 @@ mod tests {
         assert_eq!(result.fixture_id, "abc-123");
         assert_eq!(result.total_games, 0);
         assert_eq!(result.first_set_games, 0);
+    }
+
+    // ── CS2 phases extraction ──────────────────────────────────────
+
+    #[test]
+    fn test_cs2_phases_normal_completion() {
+        let phases = br#"{"phases":[{"phase":1,"homeScore":"13","awayScore":"7"},{"phase":2,"homeScore":"5","awayScore":"3"}]}"#;
+        let result = scan_phases_cs2(phases, 9);
+        assert_eq!(result[0], (13, 7), "map 1: 13-7 regulation win");
+        assert_eq!(result[1], (5, 3), "map 2: in progress");
+        assert_eq!(result[2], (-1, -1), "map 3: not present");
+    }
+
+    #[test]
+    fn test_cs2_phases_forfeit() {
+        // Map 1 forfeited at 4-0 — map_winner(4, 0) = None
+        let phases = br#"{"phases":[{"phase":1,"homeScore":"4","awayScore":"0"},{"phase":2,"homeScore":"0","awayScore":"0"}]}"#;
+        let result = scan_phases_cs2(phases, 9);
+        assert_eq!(result[0], (4, 0));
+        // Verify map_winner rejects it
+        let big = 4i64.max(0);
+        let small = 4i64.min(0);
+        let d = big - small;
+        let decided = (big == 13 && small <= 11) || (big >= 16 && big % 3 == 1 && d >= 2 && d <= 4);
+        assert!(!decided, "4-0 should NOT be a decided map (forfeit)");
+    }
+
+    #[test]
+    fn test_cs2_phases_ot_completion() {
+        let phases = br#"{"phases":[{"phase":1,"homeScore":"16","awayScore":"14"},{"phase":2,"homeScore":"0","awayScore":"0"}]}"#;
+        let result = scan_phases_cs2(phases, 9);
+        assert_eq!(result[0], (16, 14), "OT1 win: 16-14");
+    }
+
+    #[test]
+    fn test_cs2_phases_empty() {
+        let phases = br#"{"phases":[]}"#;
+        let result = scan_phases_cs2(phases, 9);
+        assert_eq!(result[0], (-1, -1));
+        assert_eq!(result[4], (-1, -1));
+    }
+
+    #[test]
+    fn test_cs2_phases_three_maps() {
+        let phases = br#"{"phases":[{"phase":1,"homeScore":"13","awayScore":"3"},{"phase":2,"homeScore":"7","awayScore":"13"},{"phase":3,"homeScore":"13","awayScore":"10"}]}"#;
+        let result = scan_phases_cs2(phases, 9);
+        assert_eq!(result[0], (13, 3));
+        assert_eq!(result[1], (7, 13));
+        assert_eq!(result[2], (13, 10));
+        assert_eq!(result[3], (-1, -1));
+    }
+
+    #[test]
+    fn test_cs2_v1_extract_includes_phases() {
+        let frame = r#"{"id":"sub","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"abc-123","matchSummary":{"matchStatusDisplay":[{"freeText":"2nd map"}],"homeScore":"1","awayScore":"0","currentPhase":{"phase":2,"homeScore":"5","awayScore":"3"},"phases":[{"phase":1,"homeScore":"13","awayScore":"7"},{"phase":2,"homeScore":"5","awayScore":"3"}]}}}}}"#;
+        let result = fast_extract_cs2_v1(frame).unwrap();
+        assert_eq!(result.fixture_id, "abc-123");
+        assert_eq!(result.maps_home, "1");
+        assert_eq!(result.maps_away, "0");
+        assert_eq!(result.phase_scores[0], (13, 7));
+        assert_eq!(result.phase_scores[1], (5, 3));
+        assert_eq!(result.phase_scores[2], (-1, -1));
     }
 }

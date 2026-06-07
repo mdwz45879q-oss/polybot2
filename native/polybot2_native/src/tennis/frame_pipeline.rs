@@ -12,11 +12,14 @@ use std::sync::{Arc, Mutex};
 /// A mistake here is catastrophic (wrong winner → wrong bets), so the match
 /// set is deliberately closed and exhaustive.
 fn detect_retirement(free_text: &str) -> Option<&'static str> {
-    let mut buf = [0u8; 64];
     let trimmed = free_text.trim().as_bytes();
-    if trimmed.len() > buf.len() {
+    // All 4 retirement strings are exactly 30 bytes. Normal freeText
+    // ("1st set", "2nd set", "Ended") is 5-8 bytes. Length gate
+    // eliminates 99%+ of calls before the lowercase loop.
+    if trimmed.len() < 30 || trimmed.len() > 64 {
         return None;
     }
+    let mut buf = [0u8; 64];
     // lowercase into stack buffer (no allocation)
     for (i, &b) in trimmed.iter().enumerate() {
         buf[i] = b.to_ascii_lowercase();

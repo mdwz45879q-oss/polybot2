@@ -427,10 +427,12 @@ impl NativeTennisEngine {
         let &gidx = self.game_id_to_idx.get(fixture_id)?;
         let gi = gidx.0 as usize;
         if let Some(row) = self.rows[gi].as_ref() {
-            if row.sets_home.as_str() == sets_home
-                && row.sets_away.as_str() == sets_away
-                && row.games_home.as_str() == games_home
+            // Most-volatile fields first: games change ~30-60× per match,
+            // sets change ~3-5×. Exits faster on non-duplicate ticks.
+            if row.games_home.as_str() == games_home
                 && row.games_away.as_str() == games_away
+                && row.sets_home.as_str() == sets_home
+                && row.sets_away.as_str() == sets_away
                 && row.free_text_raw.as_str() == free_text
             {
                 return None; // duplicate
@@ -551,7 +553,8 @@ impl NativeTennisEngine {
         self.evaluate_moneyline_into(gidx, &state, &mut intents);
         self.evaluate_set_handicap_into(gidx, &state, &mut intents);
 
-        if state.match_completed {
+        let stw = self.sets_to_win[gi];
+        if state.match_completed || state.sets_home >= stw || state.sets_away >= stw {
             self.final_resolved_games[gi] = true;
             self.cleanup_completed_game_idx(gidx);
         }
