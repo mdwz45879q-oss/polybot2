@@ -258,7 +258,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["FUT Esports"],
         },
-        "pm_aliases": ["FUT"],
+        "pm_aliases": ["FUT", "FUT Esports"],
     },
     "galorys":{
         "polymarket_code": "gls1",
@@ -266,6 +266,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Galorys"],
         },
         "pm_aliases": ["Galorys"],
+    },
+    "g2":{
+        "polymarket_code": "g2",
+        "provider_aliases": {
+            "kalstrop_v1": ["G2 Esports"],
+        },
+        "pm_aliases": ["G2", "G2 Esports"],
     },
     # Game Hunters
     "game hunters": {
