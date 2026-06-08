@@ -80,6 +80,15 @@ def build_sports_provider(
             ),
         )
 
+    if p == "pandascore":
+        from polybot2.sports.pandascore import PandaScoreProvider, PandaScoreProviderConfig
+        api_token = str(os.getenv("PANDASCORE_API_TOKEN") or "").strip()
+        if not api_token:
+            raise ValueError("missing_PANDASCORE_API_TOKEN")
+        return PandaScoreProvider(
+            config=PandaScoreProviderConfig(api_token=api_token),
+        )
+
     raise ValueError(f"unsupported_provider:{p}")
 
 

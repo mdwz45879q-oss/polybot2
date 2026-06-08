@@ -103,11 +103,17 @@ def sync_provider_games(
     # Normalize legacy "kalstrop" to "kalstrop_v1"
     if p == "kalstrop":
         p = "kalstrop_v1"
-    if p not in {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"}:
+    if p not in {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta", "pandascore"}:
         return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="unsupported_provider")
 
     client: Any
-    if p == "boltodds":
+    if p == "pandascore":
+        from polybot2.sports.pandascore import PandaScoreProvider, PandaScoreProviderConfig
+        api_token = str(os.getenv("PANDASCORE_API_TOKEN") or "").strip()
+        if not api_token:
+            return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_PANDASCORE_API_TOKEN")
+        client = PandaScoreProvider(config=PandaScoreProviderConfig(api_token=api_token))
+    elif p == "boltodds":
         api_key = str(os.getenv("BOLTODDS_API_KEY") or "").strip()
         if not api_key:
             return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_BOLTODDS_API_KEY")
@@ -189,6 +195,7 @@ def sync_provider_games(
                 str(rec.away_team_raw or ""),
                 str(rec.parse_status or ""),
                 str(rec.parse_reason or ""),
+                str(rec.extra_json or ""),
                 now_ts,
             )
         )

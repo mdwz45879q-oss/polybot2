@@ -40,7 +40,7 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-_VALID_PROVIDERS = {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta"}
+_VALID_PROVIDERS = {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta", "pandascore"}
 
 
 def _resolve_provider_name(

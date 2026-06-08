@@ -24,6 +24,7 @@ class ProviderGameRecord:
     start_ts_utc: int | None = None
     parse_status: str = "ok"
     parse_reason: str = ""
+    extra_json: str = ""
     aliases: tuple[str, ...] = ()
     raw_payload: dict[str, Any] = field(default_factory=dict)
 

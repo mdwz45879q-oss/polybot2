@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS provider_games (
     away_raw                TEXT NOT NULL DEFAULT '',
     parse_status            TEXT NOT NULL DEFAULT '',
     parse_reason            TEXT NOT NULL DEFAULT '',
+    extra_json              TEXT NOT NULL DEFAULT '',
     updated_at              INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (provider, provider_game_id)
 );

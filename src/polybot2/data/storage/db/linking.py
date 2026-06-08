@@ -47,8 +47,8 @@ class LinkingAdapter:
                         (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
                          category_name, category_country_code,
                          when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
-                         parse_reason, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         parse_reason, extra_json, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         """,
                         filtered[i : i + bs],
                     )
