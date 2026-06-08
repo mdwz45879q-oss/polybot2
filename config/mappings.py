@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY
 from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -139,6 +139,24 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
+    "modena": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "bratislava": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "ilkley": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
@@ -183,6 +201,9 @@ PROVIDER_LEAGUE_ALIASES = {
         "atp stuttgart": "stuttgart",
         "atp s-hertogenbosch": "libema_m",
         "wta s-hertogenbosch": "libema_w",
+        "wta 125k modena": "modena",
+        "atp challenger bratislava": "bratislava",
+        "wta 125k ilkley": "ilkley",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
@@ -222,9 +243,43 @@ PROVIDER_LEAGUE_ALIASES = {
         "atp stuttgart - tennis": "stuttgart",
         "atp s-hertogenbosch - tennis": "libema_m",
         "wta s-hertogenbosch - tennis": "libema_w",
+        "wta modena - tennis": "modena",
+        "challenger bratislava - tennis": "bratislava",
+        "wta ilkley - tennis": "ilkley",
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
+    },
+    "pandascore": {
+        # Sport-level fallback (when league name is ambiguous across games)
+        "counter-strike": "cs2",
+        "lol": "lol",
+        "dota 2": "dota2",
+        # CS2
+        "iem": "cs2",
+        "esl pro league": "cs2",
+        "european pro league": "cs2",
+        "cct europe": "cs2",
+        "esea": "cs2",
+        "nodwin clutch series": "cs2",
+        "united21": "cs2",
+        "dfrag": "cs2",
+        "dust2.dk ligaen": "cs2",
+        "tesfed league": "cs2",
+        "dach cs masters": "cs2",
+        "exort series": "cs2",
+        "ukic": "cs2",
+        "xse pro league": "cs2",
+        # LoL
+        "lck": "lol",
+        "lpl": "lol",
+        "lcs": "lol",
+        "vcs": "lol",
+        "lrn": "lol",
+        "lrs": "lol",
+        "esports world cup": "lol",
+        # Dota 2
+        "winline star series": "dota2",
     },
 }
 
@@ -238,6 +293,12 @@ PROVIDER_LEAGUE_COUNTRY = {
         "atp|french open men singles": "rgm",
         "wta|french open women singles": "rgw",
         "international clubs|uefa champions league": "ucl",
+    },
+    "pandascore": {
+        # "European Pro League" appears in both CS2 and Dota 2.
+        # Disambiguate via sport_raw (stored in category_country_code... actually
+        # the linker uses category_name for country-qualified lookup, but PandaScore
+        # stores sport_raw separately). The sport_raw fallback in the linker handles this.
     },
 }
 
@@ -283,6 +344,9 @@ TEAM_MAP = {
     "stuttgart": PLAYER_MAP_STUTTGART,
     "libema_m": PLAYER_MAP_LIBEMA_M,
     "libema_w": PLAYER_MAP_LIBEMA_W,
+    "modena": PLAYER_MAP_MODENA,
+    "bratislava": PLAYER_MAP_BRATISLAVA,
+    "ilkley": PLAYER_MAP_ILKLEY,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
@@ -311,6 +375,9 @@ PM_LEAGUE_ORDERINGS = {
     "stuttgart": "home",
     "libema_m": "home",
     "libema_w": "home",
+    "modena": "home",
+    "bratislava": "home",
+    "ilkley": "home",
     "cs2": "home",
     "lol": "home",
     "dota2": "home",
