@@ -111,7 +111,7 @@ TEAM_MAP_CS2 = {
          "provider_aliases": {
             "kalstrop_v1": ["Banger Gang"],
         },
-        "pm_aliases": ["BG1"],     
+        "pm_aliases": ["BG1", "Banger Gang"],     
 
     },
     # BESTIA
@@ -174,7 +174,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["Donstu Esports"],
         },
-        "pm_aliases": ["DON", "Donstu"],
+        "pm_aliases": ["DON", "Donstu Esports", "DNT"],
     },
     # EA Copenhagen / Esport Academy Copenhagen
     "esport academy copenhagen": {
@@ -344,7 +344,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["Heroic Academy"],
         },
-        "pm_aliases": ["HEROIC Academy"],
+        "pm_aliases": ["HEROIC Academy", "HERO.A"],
     },
     "heroic":{
          "polymarket_code": "hero",
@@ -481,7 +481,7 @@ TEAM_MAP_CS2 = {
         "provider_aliases": {
             "kalstrop_v1": ["NEW VISION"],
         },
-        "pm_aliases": ["NEWVIS"],
+        "pm_aliases": ["NEWVIS", "NEW VISION"],
     },
     # Ninjas in Pyjamas / NIP
     "ninjas in pyjamas": {
