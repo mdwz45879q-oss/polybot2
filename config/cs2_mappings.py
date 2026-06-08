@@ -87,8 +87,16 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "ast",
         "provider_aliases": {
             "kalstrop_v1": ["ASTRAL Esports"],
+            "pandascore": ["ASTRAL"],
         },
         "pm_aliases": ["ASTRAL"],
+    },
+    "astralis":{
+        "polymarket_code": "ast10",
+        "provider_aliases": {
+            "kalstrop_v1": ["Astralis"],
+        },
+        "pm_aliases": ["AST10", "Astralis"],
     },
     #B8
     "b8":{
@@ -97,6 +105,14 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["B8"],
         },
         "pm_aliases": ["B8"],     
+    },
+    "banger gang":{
+        "polymarket_code": "bg1", 
+         "provider_aliases": {
+            "kalstrop_v1": ["Banger Gang"],
+        },
+        "pm_aliases": ["BG1"],     
+
     },
     # BESTIA
     "bestia": {
@@ -149,8 +165,16 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "cyb",
         "provider_aliases": {
             "kalstrop_v1": ["CYBERSHOKE"],
+            "pandascore": ["CYBERSHOKE Esports"],
         },
         "pm_aliases": ["CYBERSHOKE Prospects"],
+    },
+    "dontsu":{
+        "polymarket_code": "don",
+        "provider_aliases": {
+            "kalstrop_v1": ["Donstu Esports"],
+        },
+        "pm_aliases": ["DON", "Donstu"],
     },
     # EA Copenhagen / Esport Academy Copenhagen
     "esport academy copenhagen": {
@@ -377,6 +401,13 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["largadosypelados"],
     },
+    "last resort":{
+        "polymarket_code": "tlr", 
+        "provider_aliases": {
+            "kalstrop_v1": ["The Last Resort"],
+        },
+        "pm_aliases": ["TLR"],
+    },
     # Lavked
     "lavked": {
         "polymarket_code": "lavked",
@@ -384,6 +415,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Lavked"],
         },
         "pm_aliases": ["Lavked"],
+    },
+    "legacy":{
+        "polymarket_code": "lgc",
+        "provider_aliases": {
+            "kalstrop_v1": ["Legacy"],
+        },
+        "pm_aliases": ["LGC"],
     },
     "lynn vision":{
         "polymarket_code":"lvg" ,
@@ -423,6 +461,13 @@ TEAM_MAP_CS2 = {
         "pm_aliases": [],
 
     },
+    "monte":{
+        "polymarket_code": "mnte", 
+         "provider_aliases": {
+            "kalstrop_v1": ["Monte"],
+        },
+        "pm_aliases": ["MNTE"],
+    },
     # Nemiga Gaming
     "nemiga gaming": {
         "polymarket_code": "nemi1",
@@ -430,6 +475,13 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Nemiga Gaming"],
         },
         "pm_aliases": ["Nemiga"],
+    },
+    "new vision":{
+        "polymarket_code": "newvis", 
+        "provider_aliases": {
+            "kalstrop_v1": ["NEW VISION"],
+        },
+        "pm_aliases": ["NEWVIS"],
     },
     # Ninjas in Pyjamas / NIP
     "ninjas in pyjamas": {
@@ -439,6 +491,7 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["NIP"],
     },
+
     "nrg": {
     "polymarket_code": "nrg",
     "provider_aliases": {
@@ -446,14 +499,13 @@ TEAM_MAP_CS2 = {
     },
     "pm_aliases": ["nrg"],
     },
+
     "nuclear tigres":{
         "polymarket_code": "ntr", 
         "provider_aliases": {
         "kalstrop_v1": ["Nuclear TigeRES",],  # ← add "NRG Esports"
     },
     "pm_aliases": ["NTR"],
-
-
     },
     # ODDIK Academy
     "oddik academy": {
