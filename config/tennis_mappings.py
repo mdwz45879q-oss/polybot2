@@ -1771,6 +1771,18 @@ PLAYER_MAP_LIBEMA_M = {
         "provider_aliases": {"kalstrop_v1": ["Atmane, Terence"]},
         "pm_aliases": ["Terence Atmane"],
     },
+    # Zizou Bergs
+    "bergs, zizou": {
+        "polymarket_code": "bergs",
+        "provider_aliases": {"kalstrop_v1": ["Bergs, Zizou"]},
+        "pm_aliases": ["Zizou Bergs"],
+    },
+    # Thijs Boogaard
+    "boogaard, thijs": {
+        "polymarket_code": "boogaar",
+        "provider_aliases": {"kalstrop_v1": ["Boogaard, Thijs"]},
+        "pm_aliases": ["Thijs Boogaard"],
+    },
     # Benjamin Bonzi
     "bonzi, benjamin": {
         "polymarket_code": "bonzi",
@@ -1782,6 +1794,12 @@ PLAYER_MAP_LIBEMA_M = {
         "polymarket_code": "borges",
         "provider_aliases": {"kalstrop_v1": ["Borges, Nuno"]},
         "pm_aliases": ["Nuno Borges"],
+    },
+    # Jenson Brooksby
+    "brooksby, jenson": {
+        "polymarket_code": "brooksb",
+        "provider_aliases": {"kalstrop_v1": ["Brooksby, Jenson"]},
+        "pm_aliases": ["Jenson Brooksby"],
     },
     # Marin Cilic
     "cilic, marin": {
@@ -1795,11 +1813,41 @@ PLAYER_MAP_LIBEMA_M = {
         "provider_aliases": {"kalstrop_v1": ["Damm Jr, Martin"]},
         "pm_aliases": ["Martin Damm Jr"],
     },
+    # Gabriel Diallo
+    "diallo, gabriel": {
+        "polymarket_code": "diallo",
+        "provider_aliases": {"kalstrop_v1": ["Diallo, Gabriel"]},
+        "pm_aliases": ["Gabriel Diallo"],
+    },
     # Juan Pablo Ficovich
     "ficovich, juan pablo": {
         "polymarket_code": "ficovic",
         "provider_aliases": {"kalstrop_v1": ["Ficovich, Juan Pablo"]},
         "pm_aliases": ["Juan Pablo Ficovich"],
+    },
+    # Marton Fucsovics
+    "fucsovics, marton": {
+        "polymarket_code": "fucsovi",
+        "provider_aliases": {"kalstrop_v1": ["Fucsovics, Marton"]},
+        "pm_aliases": ["Marton Fucsovics"],
+    },
+    # Tallon Griekspoor
+    "griekspoor, tallon": {
+        "polymarket_code": "grieksp",
+        "provider_aliases": {"kalstrop_v1": ["Griekspoor, Tallon"]},
+        "pm_aliases": ["Tallon Griekspoor"],
+    },
+    # Ugo Humbert
+    "humbert, ugo": {
+        "polymarket_code": "humbert",
+        "provider_aliases": {"kalstrop_v1": ["Humbert, Ugo"]},
+        "pm_aliases": ["Ugo Humbert"],
+    },
+    # Hubert Hurkacz
+    "hurkacz, hubert": {
+        "polymarket_code": "hurkacz",
+        "provider_aliases": {"kalstrop_v1": ["Hurkacz, Hubert"]},
+        "pm_aliases": ["Hubert Hurkacz"],
     },
     # Sander Jong
     "jong, sander": {
@@ -1807,11 +1855,35 @@ PLAYER_MAP_LIBEMA_M = {
         "provider_aliases": {"kalstrop_v1": ["Jong, Sander"]},
         "pm_aliases": ["Sander Jong"],
     },
+    # Kamil Majchrzak
+    "majchrzak, kamil": {
+        "polymarket_code": "majchrz",
+        "provider_aliases": {"kalstrop_v1": ["Majchrzak, Kamil"]},
+        "pm_aliases": ["Kamil Majchrzak"],
+    },
+    # Adrian Mannarino
+    "mannarino, adrian": {
+        "polymarket_code": "mannari",
+        "provider_aliases": {"kalstrop_v1": ["Mannarino, Adrian"]},
+        "pm_aliases": ["Adrian Mannarino"],
+    },
     # James McCabe
     "mccabe, james": {
         "polymarket_code": "mccabe",
         "provider_aliases": {"kalstrop_v1": ["McCabe, James"]},
         "pm_aliases": ["James McCabe"],
+    },
+    # Jaume Munar
+    "munar, jaume": {
+        "polymarket_code": "munar",
+        "provider_aliases": {"kalstrop_v1": ["Munar, Jaume"]},
+        "pm_aliases": ["Jaume Munar"],
+    },
+    # Mees Rottgering
+    "rottgering, mees": {
+        "polymarket_code": "rottger",
+        "provider_aliases": {"kalstrop_v1": ["Rottgering, Mees"]},
+        "pm_aliases": ["Mees Rottgering"],
     },
     # Denis Shapovalov
     "shapovalov, denis": {
@@ -1832,10 +1904,34 @@ PLAYER_MAP_LIBEMA_M = {
         "pm_aliases": ["Niels Visker"],
     },
     # Elias Ymer
+    # Botic van de Zandschulp
+    "van de zandschulp, botic": {
+        "polymarket_code": "zandsch",
+        "provider_aliases": {"kalstrop_v1": ["Van de Zandschulp, Botic"]},
+        "pm_aliases": ["Botic van de Zandschulp"],
+    },
+    # Otto Virtanen
+    "virtanen, otto": {
+        "polymarket_code": "virtane",
+        "provider_aliases": {"kalstrop_v1": ["Virtanen, Otto"]},
+        "pm_aliases": ["Otto Virtanen"],
+    },
+    # Yibing Wu
+    "wu, yibing": {
+        "polymarket_code": "wu",
+        "provider_aliases": {"kalstrop_v1": ["Wu, Yibing"]},
+        "pm_aliases": ["Yibing Wu"],
+    },
     "ymer, elias": {
         "polymarket_code": "ymer",
         "provider_aliases": {"kalstrop_v1": ["Ymer, Elias"]},
         "pm_aliases": ["Elias Ymer"],
+    },
+    # Zhizhen Zhang
+    "zhang, zhizhen": {
+        "polymarket_code": "zhang",
+        "provider_aliases": {"kalstrop_v1": ["Zhang, Zhizhen"]},
+        "pm_aliases": ["Zhizhen Zhang"],
     },
 }
 
