@@ -1383,11 +1383,23 @@ PLAYER_MAP_QUEEN = {
         "provider_aliases": {"kalstrop_v1": ["Burrage, Jodie"]},
         "pm_aliases": ["Jodie Burrage"],
     },
+    # Marie Bouzkova
+    "bouzkova, marie": {
+        "polymarket_code": "bouzkov",
+        "provider_aliases": {"kalstrop_v1": ["Bouzkova, Marie"]},
+        "pm_aliases": ["Marie Bouzkova"],
+    },
     # Alina Charaeva
     "charaeva, alina": {
         "polymarket_code": "charaev",
         "provider_aliases": {"kalstrop_v1": ["Charaeva, Alina"]},
         "pm_aliases": ["Alina Charaeva"],
+    },
+    # Sorana Cirstea
+    "cirstea, sorana": {
+        "polymarket_code": "cirstea",
+        "provider_aliases": {"kalstrop_v1": ["Cirstea, Sorana"]},
+        "pm_aliases": ["Sorana Cirstea"],
     },
     # Jaqueline Cristian
     "cristian, jaqueline": {
@@ -1400,6 +1412,12 @@ PLAYER_MAP_QUEEN = {
         "polymarket_code": "dart",
         "provider_aliases": {"kalstrop_v1": ["Dart, Harriet"]},
         "pm_aliases": ["Harriet Dart"],
+    },
+    # Alexandra Eala
+    "eala, alexandra": {
+        "polymarket_code": "eala",
+        "provider_aliases": {"kalstrop_v1": ["Eala, Alexandra"]},
+        "pm_aliases": ["Alexandra Eala"],
     },
     # Leylah Fernandez
     "fernandez, leylah": {
@@ -1467,6 +1485,12 @@ PLAYER_MAP_QUEEN = {
         "provider_aliases": {"kalstrop_v1": ["Jones, Francesca"]},
         "pm_aliases": ["Francesca Jones"],
     },
+    # Iva Jovic
+    "jovic, iva": {
+        "polymarket_code": "jovic",
+        "provider_aliases": {"kalstrop_v1": ["Jovic, Iva"]},
+        "pm_aliases": ["Iva Jovic"],
+    },
     # McCartney Kessler
     "kessler, mccartney": {
         "polymarket_code": "kessler",
@@ -1527,11 +1551,23 @@ PLAYER_MAP_QUEEN = {
         "provider_aliases": {"kalstrop_v1": ["Rakhimova, Kamilla"]},
         "pm_aliases": ["Kamilla Rakhimova"],
     },
+    # Emma Raducanu
+    "raducanu, emma": {
+        "polymarket_code": "raducan",
+        "provider_aliases": {"kalstrop_v1": ["Raducanu, Emma"]},
+        "pm_aliases": ["Emma Raducanu"],
+    },
     # Antonia Ruzic
     "ruzic, antonia": {
         "polymarket_code": "ruzic",
         "provider_aliases": {"kalstrop_v1": ["Ruzic, Antonia"]},
         "pm_aliases": ["Antonia Ruzic"],
+    },
+    # Maria Sakkari
+    "sakkari, maria": {
+        "polymarket_code": "sakkari",
+        "provider_aliases": {"kalstrop_v1": ["Sakkari, Maria"]},
+        "pm_aliases": ["Maria Sakkari"],
     },
     # Liudmila Samsonova
     "samsonova, liudmila": {
@@ -1959,6 +1995,12 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Badosa, Paula"]},
         "pm_aliases": ["Paula Badosa"],
     },
+    # Nikola Bartunkova
+    "bartunkova, nikola": {
+        "polymarket_code": "bartunk",
+        "provider_aliases": {"kalstrop_v1": ["Bartunkova, Nikola"]},
+        "pm_aliases": ["Nikola Bartunkova"],
+    },
     # Kimberly Birrell
     "birrell, kimberly": {
         "polymarket_code": "birrell",
@@ -2030,6 +2072,18 @@ PLAYER_MAP_LIBEMA_W = {
         "polymarket_code": "tauson",
         "provider_aliases": {"kalstrop_v1": ["Tauson, Clara"]},
         "pm_aliases": ["Clara Tauson"],
+    },
+    # Zeynep Sonmez
+    "sonmez, zeynep": {
+        "polymarket_code": "sonmez",
+        "provider_aliases": {"kalstrop_v1": ["Sonmez, Zeynep"]},
+        "pm_aliases": ["Zeynep Sonmez"],
+    },
+    # Janice Tjen
+    "tjen, janice": {
+        "polymarket_code": "tjen",
+        "provider_aliases": {"kalstrop_v1": ["Tjen, Janice"]},
+        "pm_aliases": ["Janice Tjen"],
     },
     # Panna Udvardy
     "udvardy, panna": {
