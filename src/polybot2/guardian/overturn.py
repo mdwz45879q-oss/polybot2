@@ -199,25 +199,54 @@ class OverturnDetector:
     def on_var_action(self, game: Any, var_type: str, var_subtype: str, ts: int) -> None:
         """Called when a V2 VAR match action is detected in the log tick.
 
-        Provides early warning (VAR review started) and definitive confirmation
-        (GoalAwarded/GoalNotAwarded) without relying on score reversal timing.
+        BetGenius V2 VAR subtypes (from real captures):
+        - Var:Goal → VarEnded:GoalAwarded or VarEnded:NoGoal
+        - Var:Penalty → VarEnded:PenaltyAwarded or VarEnded:NoPenalty
+
+        On VarEnded:NoGoal/NoPenalty with an armed alert: instant-confirm
+        Signal 1 (skip the 10s hold window).  Signal 2 (market bid) is still
+        required before execution triggers.
+
+        On VarEnded:GoalAwarded/PenaltyAwarded with an armed alert: disarm
+        the alert — VAR confirmed the goal, so the score reversal was a
+        data wobble, not a real overturn.
+
+        Only top-tier leagues (EPL, La Liga, Bundesliga, UCL) emit VAR
+        match actions.  Lower-tier leagues fall back to the 10s timer.
         """
         game_id = game.game_id
-        if var_type == "Var" and var_subtype == "Goal":
+        if var_type == "Var" and var_subtype in ("Goal", "Penalty"):
             logger.warning(
-                "🔍 VAR review started for %s (goal under review)", game_id,
+                "🔍 VAR review started for %s (%s under review)", game_id, var_subtype,
             )
         elif var_type == "VarEnded":
-            if "NotAwarded" in var_subtype:
+            if var_subtype in ("NoGoal", "NoPenalty"):
                 logger.warning(
-                    "🚨 VAR: GOAL OVERTURNED for %s (%s)", game_id, var_subtype,
+                    "🚨 VAR: OVERTURNED for %s (%s)", game_id, var_subtype,
                 )
-                # TODO: this is a definitive overturn signal — can trigger
-                # sell/buy immediately without waiting for score reversal.
-            elif "Awarded" in var_subtype:
+                # If alert already armed for this game, instant-confirm Signal 1
+                alert = self.alerts.get(game_id)
+                if alert and not alert.acted and not alert.signal1_confirmed:
+                    alert.signal1_confirmed = True
+                    logger.warning(
+                        "⚠️  Signal 1 INSTANT-CONFIRMED for %s via VarEnded:%s (skipped %ds hold)",
+                        game_id, var_subtype, int(self._confirmation_window_s),
+                    )
+                    self._check_and_trigger(alert)
+            elif var_subtype in ("GoalAwarded", "PenaltyAwarded"):
                 logger.info(
-                    "✅ VAR: goal confirmed for %s (%s)", game_id, var_subtype,
+                    "✅ VAR: confirmed for %s (%s)", game_id, var_subtype,
                 )
+                # Goal/penalty upheld by VAR — disarm any alert for this game
+                # (score reversal was wobble, not a real overturn)
+                if game_id in self.alerts:
+                    alert = self.alerts[game_id]
+                    if not alert.acted:
+                        logger.info(
+                            "overturn alert DISARMED for %s — VAR confirmed the goal",
+                            game_id,
+                        )
+                        self._cleanup_alert(game_id)
 
     def check_confirmations(self) -> list[OverturnAlert]:
         """Check if any armed alerts have passed the confirmation window (Signal 1).

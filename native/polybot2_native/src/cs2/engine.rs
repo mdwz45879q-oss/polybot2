@@ -384,25 +384,42 @@ impl NativeCs2Engine {
     ) -> Option<GameIdx> {
         let gidx = *self.game_id_to_idx.get(fixture_id)?;
         let gi = gidx.0 as usize;
-        let new_row = Cs2StateRow {
+        if let Some(existing) = &self.rows[gi] {
+            // Most-volatile fields first for fastest short-circuit:
+            // rounds change every ~30s, free_text on phase changes, maps every 20-45min.
+            if existing.rounds_home_raw.as_str() == rounds_home_raw
+                && existing.rounds_away_raw.as_str() == rounds_away_raw
+                && existing.free_text_raw.as_str() == free_text_raw
+                && existing.maps_home_raw.as_str() == maps_home_raw
+                && existing.maps_away_raw.as_str() == maps_away_raw
+            {
+                return None; // deduped
+            }
+        }
+        // Construct row only on non-duplicate path (saves ~48 bytes of memcpy on ~95% of frames).
+        self.rows[gi] = Some(Cs2StateRow {
             maps_home_raw: InlineStr::from_str(maps_home_raw),
             maps_away_raw: InlineStr::from_str(maps_away_raw),
             rounds_home_raw: InlineStr::from_str(rounds_home_raw),
             rounds_away_raw: InlineStr::from_str(rounds_away_raw),
             free_text_raw: InlineStr::from_str(free_text_raw),
-        };
-        if let Some(existing) = &self.rows[gi] {
-            if existing.maps_home_raw.as_str() == maps_home_raw
-                && existing.maps_away_raw.as_str() == maps_away_raw
-                && existing.rounds_home_raw.as_str() == rounds_home_raw
-                && existing.rounds_away_raw.as_str() == rounds_away_raw
-                && existing.free_text_raw.as_str() == free_text_raw
-            {
-                return None; // deduped
-            }
-        }
-        self.rows[gi] = Some(new_row);
+        });
         Some(gidx)
+    }
+
+    /// Check if phase scores need to be scanned for this tick.
+    /// True when Signal 2 will fire (maps-won increment) or pending
+    /// phase verification is active. ~5ns — avoids the ~300ns phases scan
+    /// on the ~99% of ticks that don't need it.
+    pub(crate) fn needs_phase_scores(&self, gidx: GameIdx, maps_home: i64, maps_away: i64) -> bool {
+        let gi = gidx.0 as usize;
+        if self.pending_phase_verify.get(gi).copied().flatten().is_some() {
+            return true;
+        }
+        let prev = &self.game_states[gi];
+        let prev_home = prev.maps_home.unwrap_or(0);
+        let prev_away = prev.maps_away.unwrap_or(0);
+        maps_home > prev_home || maps_away > prev_away
     }
 
     pub(crate) fn process_tick_live(

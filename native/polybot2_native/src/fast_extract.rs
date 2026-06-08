@@ -571,9 +571,9 @@ pub(crate) struct Cs2V1Extract<'a> {
     pub rounds_away: &'a str,       // currentPhase.awayScore
     pub free_text: &'a str,         // matchStatusDisplay[0].freeText ("1st map", "Closed")
     pub current_phase: Option<i64>, // currentPhase.phase (map number, None if null)
-    /// Per-map round scores from the phases array. Index 0 = map 1.
-    /// (-1, -1) = phase not present (distinguishes from (0, 0) on forfeit).
-    pub phase_scores: [(i64, i64); 5],
+    /// Byte offset past the "phases" key for deferred scanning.
+    /// None = no phases key found. Use `scan_phases_cs2(bytes, offset)` to extract.
+    pub phases_offset: Option<usize>,
 }
 
 /// Dedicated CS2 V1 frame extractor. Same frame structure as tennis
@@ -669,12 +669,9 @@ pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
         }
     }
 
-    // Scan phases array for per-map round scores (forfeit detection).
+    // Capture phases offset for deferred scanning (only scanned when needed).
     // Search from pos (past currentPhase) to avoid matching "phases" inside a string value.
-    let mut phase_scores = [(-1i64, -1i64); 5];
-    if let Some(phases_pos) = find_with(&FINDER_PHASES, bytes, pos) {
-        phase_scores = scan_phases_cs2(bytes, phases_pos + 8);
-    }
+    let phases_offset = find_with(&FINDER_PHASES, bytes, pos).map(|p| p + 8);
 
     Some(Cs2V1Extract {
         fixture_id: fixture_id?,
@@ -684,7 +681,7 @@ pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
         rounds_away,
         free_text,
         current_phase,
-        phase_scores,
+        phases_offset,
     })
 }
 
@@ -879,14 +876,17 @@ mod tests {
     }
 
     #[test]
-    fn test_cs2_v1_extract_includes_phases() {
+    fn test_cs2_v1_extract_includes_phases_offset() {
         let frame = r#"{"id":"sub","type":"next","payload":{"data":{"sportsMatchStateUpdatedV2":{"fixtureId":"abc-123","matchSummary":{"matchStatusDisplay":[{"freeText":"2nd map"}],"homeScore":"1","awayScore":"0","currentPhase":{"phase":2,"homeScore":"5","awayScore":"3"},"phases":[{"phase":1,"homeScore":"13","awayScore":"7"},{"phase":2,"homeScore":"5","awayScore":"3"}]}}}}}"#;
         let result = fast_extract_cs2_v1(frame).unwrap();
         assert_eq!(result.fixture_id, "abc-123");
         assert_eq!(result.maps_home, "1");
         assert_eq!(result.maps_away, "0");
-        assert_eq!(result.phase_scores[0], (13, 7));
-        assert_eq!(result.phase_scores[1], (5, 3));
-        assert_eq!(result.phase_scores[2], (-1, -1));
+        // phases_offset is set (not None) — deferred scan works
+        assert!(result.phases_offset.is_some());
+        let scores = scan_phases_cs2(frame.as_bytes(), result.phases_offset.unwrap());
+        assert_eq!(scores[0], (13, 7));
+        assert_eq!(scores[1], (5, 3));
+        assert_eq!(scores[2], (-1, -1));
     }
 }

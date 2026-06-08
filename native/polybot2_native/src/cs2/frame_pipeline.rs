@@ -38,10 +38,9 @@ pub(crate) fn process_decoded_frame_sync(
                     let home_str = summary.and_then(|s| s.home_score).unwrap_or("");
                     let away_str = summary.and_then(|s| s.away_score).unwrap_or("");
                     let free_text = summary.and_then(|s| s.first_free_text).unwrap_or("");
-                    let no_phases = [(-1i64, -1i64); 5];
                     if let Some(tl) = process_extracted_fields(
                         engine, u.fixture_id, home_str, away_str, free_text,
-                        "", "", None, &no_phases, // rounds/phase/phases not available from serde path
+                        "", "", None, None, frame_text.as_bytes(), // rounds/phase/phases not available from serde
                         recv_monotonic_ns, dispatch_handle, log, &mut batch,
                     ) {
                         pending_logs.push(tl);
@@ -64,7 +63,8 @@ pub(crate) fn process_decoded_frame_sync(
             extract.rounds_home,
             extract.rounds_away,
             extract.current_phase,
-            &extract.phase_scores,
+            extract.phases_offset,
+            frame_text.as_bytes(),
             recv_monotonic_ns,
             dispatch_handle,
             log,
@@ -125,7 +125,8 @@ fn process_extracted_fields(
     rounds_home_str: &str,
     rounds_away_str: &str,
     current_phase: Option<i64>,
-    phase_scores: &[(i64, i64); 5],
+    phases_offset: Option<usize>,
+    frame_bytes: &[u8],
     recv_monotonic_ns: i64,
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
@@ -155,6 +156,19 @@ fn process_extracted_fields(
         "LIVE"
     };
 
+    // Deferred phases scan: only scan when Signal 2 or pending verification
+    // needs the data (~1% of ticks). Saves ~200-400ns on the other ~99%.
+    let no_phases = [(-1i64, -1i64); 5];
+    let phase_scores = if engine.needs_phase_scores(gidx, maps_home, maps_away) {
+        if let Some(offset) = phases_offset {
+            fast_extract::scan_phases_cs2(frame_bytes, offset)
+        } else {
+            no_phases
+        }
+    } else {
+        no_phases
+    };
+
     let result = engine.process_tick_live(
         gidx,
         maps_home,
@@ -164,7 +178,7 @@ fn process_extracted_fields(
         current_map,
         match_completed,
         game_state,
-        phase_scores,
+        &phase_scores,
         recv_monotonic_ns,
     )?;
 
