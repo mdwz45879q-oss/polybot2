@@ -2377,7 +2377,7 @@ PLAYER_MAP_BRATISLAVA = {
 # WTA 125K ILKLEY (Best of 3 sets)
 # =============================================================================
 
-PLAYER_MAP_ILKLEY = {
+PLAYER_MAP_ILKLEY_W = {
     "britton, daniella": {
         "polymarket_code": "britton",
         "provider_aliases": {"kalstrop_v1": ["Britton, Daniella"]},
@@ -2855,5 +2855,221 @@ PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES = {
                 "kalstrop_v1": ["Wang, Xiyu"],
             },
             "pm_aliases": ["Xiyu Wang"],
+    },
+}
+
+
+# =============================================================================
+# ATP CHALLENGER CATTOLICA (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_CATTOLICA = {
+    "bondioli, federico": {
+        "polymarket_code": "bondiol",
+        "provider_aliases": {"kalstrop_v1": ["Bondioli, Federico"]},
+        "pm_aliases": ["Federico Bondioli"],
+    },
+    "bueno, gonzalo": {
+        "polymarket_code": "bueno",
+        "provider_aliases": {"kalstrop_v1": ["Bueno, Gonzalo"]},
+        "pm_aliases": ["Gonzalo Bueno"],
+    },
+    "caniato, carlo alberto": {
+        "polymarket_code": "caniato",
+        "provider_aliases": {"kalstrop_v1": ["Caniato, Carlo Alberto"]},
+        "pm_aliases": ["Carlo Alberto Caniato"],
+    },
+    "carballes baena, roberto": {
+        "polymarket_code": "baena",
+        "provider_aliases": {"kalstrop_v1": ["Carballes Baena, Roberto"]},
+        "pm_aliases": ["Roberto Carballes Baena"],
+    },
+    "cecchinato, marco": {
+        "polymarket_code": "cecchin",
+        "provider_aliases": {"kalstrop_v1": ["Cecchinato, Marco"]},
+        "pm_aliases": ["Marco Cecchinato"],
+    },
+    "dalla valle, enrico": {
+        "polymarket_code": "valle",
+        "provider_aliases": {"kalstrop_v1": ["Dalla Valle, Enrico"]},
+        "pm_aliases": ["Enrico Dalla Valle"],
+    },
+    "de jong, jesper": {
+        "polymarket_code": "jong",
+        "provider_aliases": {"kalstrop_v1": ["De Jong, Jesper"]},
+        "pm_aliases": ["Jesper De Jong"],
+    },
+    "dodig, matej": {
+        "polymarket_code": "dodig",
+        "provider_aliases": {"kalstrop_v1": ["Dodig, Matej"]},
+        "pm_aliases": ["Matej Dodig"],
+    },
+    "ferrari, gianmarco": {
+        "polymarket_code": "ferrari",
+        "provider_aliases": {"kalstrop_v1": ["Ferrari, Gianmarco"]},
+        "pm_aliases": ["Gianmarco Ferrari"],
+    },
+    "forejtek, jonas": {
+        "polymarket_code": "forejte",
+        "provider_aliases": {"kalstrop_v1": ["Forejtek, Jonas"]},
+        "pm_aliases": ["Jonas Forejtek"],
+    },
+    "forti, francesco": {
+        "polymarket_code": "forti",
+        "provider_aliases": {"kalstrop_v1": ["Forti, Francesco"]},
+        "pm_aliases": ["Francesco Forti"],
+    },
+    "guerrieri, andrea": {
+        "polymarket_code": "guerrie",
+        "provider_aliases": {"kalstrop_v1": ["Guerrieri, Andrea"]},
+        "pm_aliases": ["Andrea Guerrieri"],
+    },
+    "guillen meza, alvaro": {
+        "polymarket_code": "meza",
+        "provider_aliases": {"kalstrop_v1": ["Guillen Meza, Alvaro"]},
+        "pm_aliases": ["Alvaro Guillen Meza"],
+    },
+    "kasnikowski, maks": {
+        "polymarket_code": "kasniko",
+        "provider_aliases": {"kalstrop_v1": ["Kasnikowski, Maks"]},
+        "pm_aliases": ["Maks Kasnikowski"],
+    },
+    "lajovic, dusan": {
+        "polymarket_code": "lajovic",
+        "provider_aliases": {"kalstrop_v1": ["Lajovic, Dusan"]},
+        "pm_aliases": ["Dusan Lajovic"],
+    },
+    "mikrut, luka": {
+        "polymarket_code": "mikrut",
+        "provider_aliases": {"kalstrop_v1": ["Mikrut, Luka"]},
+        "pm_aliases": ["Luka Mikrut"],
+    },
+    "milic, ognjen": {
+        "polymarket_code": "milic",
+        "provider_aliases": {"kalstrop_v1": ["Milic, Ognjen"]},
+        "pm_aliases": ["Ognjen Milic"],
+    },
+    "nesterov, pyotr": {
+        "polymarket_code": "nestero",
+        "provider_aliases": {"kalstrop_v1": ["Nesterov, Pyotr"]},
+        "pm_aliases": ["Pyotr Nesterov"],
+    },
+    "pieri, samuele": {
+        "polymarket_code": "pieri",
+        "provider_aliases": {"kalstrop_v1": ["Pieri, Samuele"]},
+        "pm_aliases": ["Samuele Pieri"],
+    },
+    "rehberg, max hans": {
+        "polymarket_code": "rehberg",
+        "provider_aliases": {"kalstrop_v1": ["Rehberg, Max Hans"]},
+        "pm_aliases": ["Max Hans Rehberg"],
+    },
+    "roca batalla, oriol": {
+        "polymarket_code": "batalla",
+        "provider_aliases": {"kalstrop_v1": ["Roca Batalla, Oriol"]},
+        "pm_aliases": ["Oriol Roca Batalla"],
+    },
+    "sanchez jover, carlos": {
+        "polymarket_code": "jover",
+        "provider_aliases": {"kalstrop_v1": ["Sanchez Jover, Carlos"]},
+        "pm_aliases": ["Carlos Sanchez Jover"],
+    },
+    "simakin, ilia": {
+        "polymarket_code": "simakin",
+        "provider_aliases": {"kalstrop_v1": ["Simakin, Ilia"]},
+        "pm_aliases": ["Ilia Simakin"],
+    },
+    "svrcina, dalibor": {
+        "polymarket_code": "svrcina",
+        "provider_aliases": {"kalstrop_v1": ["Svrcina, Dalibor"]},
+        "pm_aliases": ["Dalibor Svrcina"],
+    },
+    "tobon, miguel": {
+        "polymarket_code": "tobon",
+        "provider_aliases": {"kalstrop_v1": ["Tobon, Miguel"]},
+        "pm_aliases": ["Miguel Tobon"],
+    },
+    "vasilev, alexander": {
+        "polymarket_code": "vasilev",
+        "provider_aliases": {"kalstrop_v1": ["Vasilev, Alexander"]},
+        "pm_aliases": ["Alexander Vasilev"],
+    },
+}
+
+
+# =============================================================================
+# ATP CHALLENGER ILKLEY (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_ILKLEY_M = {
+    "blanch, darwin": {
+        "polymarket_code": "blanc",
+        "provider_aliases": {"kalstrop_v1": ["Blanch, Darwin"]},
+        "pm_aliases": ["Darwin Blanch"],
+    },
+    "blanchet, ugo": {
+        "polymarket_code": "blanche",
+        "provider_aliases": {"kalstrop_v1": ["Blanchet, Ugo"]},
+        "pm_aliases": ["Ugo Blanchet"],
+    },
+    "bu, yunchaokete": {
+        "polymarket_code": "bu",
+        "provider_aliases": {"kalstrop_v1": ["Bu, Yunchaokete"]},
+        "pm_aliases": ["Yunchaokete Bu"],
+    },
+    "chidekh, clement": {
+        "polymarket_code": "chidekh",
+        "provider_aliases": {"kalstrop_v1": ["Chidekh, Clement"]},
+        "pm_aliases": ["Clement Chidekh"],
+    },
+    "fearnley, jacob": {
+        "polymarket_code": "fearnle",
+        "provider_aliases": {"kalstrop_v1": ["Fearnley, Jacob"]},
+        "pm_aliases": ["Jacob Fearnley"],
+    },
+    "gea, arthur": {
+        "polymarket_code": "gea",
+        "provider_aliases": {"kalstrop_v1": ["Gea, Arthur"]},
+        "pm_aliases": ["Arthur Gea"],
+    },
+    "harris, billy": {
+        "polymarket_code": "harris",
+        "provider_aliases": {"kalstrop_v1": ["Harris, Billy"]},
+        "pm_aliases": ["Billy Harris"],
+    },
+    "jacquet, kyrian": {
+        "polymarket_code": "jacquet",
+        "provider_aliases": {"kalstrop_v1": ["Jacquet, Kyrian"]},
+        "pm_aliases": ["Kyrian Jacquet"],
+    },
+    "maestrelli, francesco": {
+        "polymarket_code": "maestre",
+        "provider_aliases": {"kalstrop_v1": ["Maestrelli, Francesco"]},
+        "pm_aliases": ["Francesco Maestrelli"],
+    },
+    "nardi, luca": {
+        "polymarket_code": "nardi",
+        "provider_aliases": {"kalstrop_v1": ["Nardi, Luca"]},
+        "pm_aliases": ["Luca Nardi"],
+    },
+    "o'connell, christopher": {
+        "polymarket_code": "oconnel",
+        "provider_aliases": {"kalstrop_v1": ["O'Connell, Christopher"]},
+        "pm_aliases": ["Christopher O'Connell"],
+    },
+    "rodesch, chris": {
+        "polymarket_code": "rodesch",
+        "provider_aliases": {"kalstrop_v1": ["Rodesch, Chris"]},
+        "pm_aliases": ["Chris Rodesch"],
+    },
+    "samuel, toby": {
+        "polymarket_code": "samuel",
+        "provider_aliases": {"kalstrop_v1": ["Samuel, Toby"]},
+        "pm_aliases": ["Toby Samuel"],
+    },
+    "tarvet, oliver": {
+        "polymarket_code": "tarvet",
+        "provider_aliases": {"kalstrop_v1": ["Tarvet, Oliver"]},
+        "pm_aliases": ["Oliver Tarvet"],
     },
 }

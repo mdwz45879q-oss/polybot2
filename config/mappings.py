@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M
 from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -151,8 +151,20 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
-    "ilkley": {
+    "ilkley_w": {
         "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "cattolica": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "ilkley_m": {
+        "polymarket_league_code": "atp",
         "sport_family": "tennis",
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
@@ -203,7 +215,9 @@ PROVIDER_LEAGUE_ALIASES = {
         "wta s-hertogenbosch": "libema_w",
         "wta 125k modena": "modena",
         "atp challenger bratislava": "bratislava",
-        "wta 125k ilkley": "ilkley",
+        "wta 125k ilkley": "ilkley_w",
+        "atp challenger cattolica": "cattolica",
+        "atp challenger ilkley": "ilkley_m",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
@@ -245,7 +259,9 @@ PROVIDER_LEAGUE_ALIASES = {
         "wta s-hertogenbosch - tennis": "libema_w",
         "wta modena - tennis": "modena",
         "challenger bratislava - tennis": "bratislava",
-        "wta ilkley - tennis": "ilkley",
+        "wta ilkley - tennis": "ilkley_w",
+        "challenger cattolica - tennis": "cattolica",
+        "challenger ilkley - tennis": "ilkley_m",
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
@@ -346,7 +362,9 @@ TEAM_MAP = {
     "libema_w": PLAYER_MAP_LIBEMA_W,
     "modena": PLAYER_MAP_MODENA,
     "bratislava": PLAYER_MAP_BRATISLAVA,
-    "ilkley": PLAYER_MAP_ILKLEY,
+    "ilkley_w": PLAYER_MAP_ILKLEY_W,
+    "cattolica": PLAYER_MAP_CATTOLICA,
+    "ilkley_m": PLAYER_MAP_ILKLEY_M,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
@@ -377,7 +395,9 @@ PM_LEAGUE_ORDERINGS = {
     "libema_w": "home",
     "modena": "home",
     "bratislava": "home",
-    "ilkley": "home",
+    "ilkley_w": "home",
+    "cattolica": "home",
+    "ilkley_m": "home",
     "cs2": "home",
     "lol": "home",
     "dota2": "home",
