@@ -2113,6 +2113,385 @@ PLAYER_MAP_LIBEMA_W = {
 
 
 # =============================================================================
+# WTA 125K MODENA (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_MODENA = {
+    "basiletti, noemi": {
+        "polymarket_code": "basilet",
+        "provider_aliases": {"kalstrop_v1": ["Basiletti, Noemi"]},
+        "pm_aliases": ["Noemi Basiletti"],
+    },
+    "bassols ribera, marina": {
+        "polymarket_code": "ribera",
+        "provider_aliases": {"kalstrop_v1": ["Bassols Ribera, Marina"]},
+        "pm_aliases": ["Marina Bassols Ribera"],
+    },
+    "bosio, victoria": {
+        "polymarket_code": "bosio",
+        "provider_aliases": {"kalstrop_v1": ["Bosio, Victoria"]},
+        "pm_aliases": ["Victoria Bosio"],
+    },
+    "brancaccio, nuria": {
+        "polymarket_code": "brancac",
+        "provider_aliases": {"kalstrop_v1": ["Brancaccio, Nuria"]},
+        "pm_aliases": ["Nuria Brancaccio"],
+    },
+    "bronzetti, lucia": {
+        "polymarket_code": "bronzet",
+        "provider_aliases": {"kalstrop_v1": ["Bronzetti, Lucia"]},
+        "pm_aliases": ["Lucia Bronzetti"],
+    },
+    "fita boluda, angela": {
+        "polymarket_code": "boluda",
+        "provider_aliases": {"kalstrop_v1": ["Fita Boluda, Angela"]},
+        "pm_aliases": ["Angela Fita Boluda"],
+    },
+    "gao, xinyu": {
+        "polymarket_code": "gao",
+        "provider_aliases": {"kalstrop_v1": ["Gao, Xinyu"]},
+        "pm_aliases": ["Xinyu Gao"],
+    },
+    "grabher, julia": {
+        "polymarket_code": "grabher",
+        "provider_aliases": {"kalstrop_v1": ["Grabher, Julia"]},
+        "pm_aliases": ["Julia Grabher"],
+    },
+    "jimenez kasintseva, victoria": {
+        "polymarket_code": "kasints",
+        "provider_aliases": {"kalstrop_v1": ["Jimenez Kasintseva, Victoria"]},
+        "pm_aliases": ["Victoria Jimenez Kasintseva"],
+    },
+    "kawa, katarzyna": {
+        "polymarket_code": "kawa",
+        "provider_aliases": {"kalstrop_v1": ["Kawa, Katarzyna"]},
+        "pm_aliases": ["Katarzyna Kawa"],
+    },
+    "lazaro garcia, andrea": {
+        "polymarket_code": "garcia",
+        "provider_aliases": {"kalstrop_v1": ["Lazaro Garcia, Andrea"]},
+        "pm_aliases": ["Andrea Lazaro Garcia"],
+    },
+    "lepchenko, varvara": {
+        "polymarket_code": "lepchen",
+        "provider_aliases": {"kalstrop_v1": ["Lepchenko, Varvara"]},
+        "pm_aliases": ["Varvara Lepchenko"],
+    },
+    "noha akugue, noma": {
+        "polymarket_code": "akugue",
+        "provider_aliases": {"kalstrop_v1": ["Noha Akugue, Noma"]},
+        "pm_aliases": ["Noma Noha Akugue"],
+    },
+    "ortenzi, jazmin": {
+        "polymarket_code": "ortenzi",
+        "provider_aliases": {"kalstrop_v1": ["Ortenzi, Jazmin"]},
+        "pm_aliases": ["Jazmin Ortenzi"],
+    },
+    "pedone, giorgia": {
+        "polymarket_code": "pedone",
+        "provider_aliases": {"kalstrop_v1": ["Pedone, Giorgia"]},
+        "pm_aliases": ["Giorgia Pedone"],
+    },
+    "pieri, jessica": {
+        "polymarket_code": "pieri",
+        "provider_aliases": {"kalstrop_v1": ["Pieri, Jessica"]},
+        "pm_aliases": ["Jessica Pieri"],
+    },
+    "pigato, lisa": {
+        "polymarket_code": "pigato",
+        "provider_aliases": {"kalstrop_v1": ["Pigato, Lisa"]},
+        "pm_aliases": ["Lisa Pigato"],
+    },
+    "quevedo, kaitlin": {
+        "polymarket_code": "quevedo",
+        "provider_aliases": {"kalstrop_v1": ["Quevedo, Kaitlin"]},
+        "pm_aliases": ["Kaitlin Quevedo"],
+    },
+    "rakotomanga rajaonah, tiantsoa sarah": {
+        "polymarket_code": "rakotom",
+        "provider_aliases": {"kalstrop_v1": ["Rakotomanga Rajaonah, Tiantsoa Sarah"]},
+        "pm_aliases": ["Tiantsoa Sarah Rakotomanga Rajaonah"],
+    },
+    "romero gormaz, leyre": {
+        "polymarket_code": "gormaz",
+        "provider_aliases": {"kalstrop_v1": ["Romero Gormaz, Leyre"]},
+        "pm_aliases": ["Leyre Romero Gormaz"],
+    },
+    "ruggeri, jennifer": {
+        "polymarket_code": "ruggeri",
+        "provider_aliases": {"kalstrop_v1": ["Ruggeri, Jennifer"]},
+        "pm_aliases": ["Jennifer Ruggeri"],
+    },
+    "salkova, dominika": {
+        "polymarket_code": "salkova",
+        "provider_aliases": {"kalstrop_v1": ["Salkova, Dominika"]},
+        "pm_aliases": ["Dominika Salkova"],
+    },
+    "semenistaja, darja": {
+        "polymarket_code": "semenis",
+        "provider_aliases": {"kalstrop_v1": ["Semenistaja, Darja"]},
+        "pm_aliases": ["Darja Semenistaja"],
+    },
+    "sherif ahmed abdelaziz, maiar": {
+        "polymarket_code": "sherif",
+        "provider_aliases": {"kalstrop_v1": ["Sherif Ahmed Abdelaziz, Maiar"]},
+        "pm_aliases": ["Maiar Sherif Ahmed Abdelaziz"],
+    },
+    "trevisan, martina": {
+        "polymarket_code": "trevisa",
+        "provider_aliases": {"kalstrop_v1": ["Trevisan, Martina"]},
+        "pm_aliases": ["Martina Trevisan"],
+    },
+    "tubello, alice": {
+        "polymarket_code": "tubello",
+        "provider_aliases": {"kalstrop_v1": ["Tubello, Alice"]},
+        "pm_aliases": ["Alice Tubello"],
+    },
+    "urgesi, federica": {
+        "polymarket_code": "urgesi",
+        "provider_aliases": {"kalstrop_v1": ["Urgesi, Federica"]},
+        "pm_aliases": ["Federica Urgesi"],
+    },
+    "vandromme, jeline": {
+        "polymarket_code": "vandrom",
+        "provider_aliases": {"kalstrop_v1": ["Vandromme, Jeline"]},
+        "pm_aliases": ["Jeline Vandromme"],
+    },
+    "you, xiaodi": {
+        "polymarket_code": "you",
+        "provider_aliases": {"kalstrop_v1": ["You, Xiaodi"]},
+        "pm_aliases": ["Xiaodi You"],
+    },
+    "zidansek, tamara": {
+        "polymarket_code": "zidanse",
+        "provider_aliases": {"kalstrop_v1": ["Zidansek, Tamara"]},
+        "pm_aliases": ["Tamara Zidansek"],
+    },
+}
+
+
+# =============================================================================
+# ATP CHALLENGER BRATISLAVA (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_BRATISLAVA = {
+    "barrena, alex": {
+        "polymarket_code": "barrena",
+        "provider_aliases": {"kalstrop_v1": ["Barrena, Alex"]},
+        "pm_aliases": ["Alex Barrena"],
+    },
+    "barton, hynek": {
+        "polymarket_code": "barton",
+        "provider_aliases": {"kalstrop_v1": ["Barton, Hynek"]},
+        "pm_aliases": ["Hynek Barton"],
+    },
+    "boscardin dias, pedro": {
+        "polymarket_code": "dias",
+        "provider_aliases": {"kalstrop_v1": ["Boscardin Dias, Pedro"]},
+        "pm_aliases": ["Pedro Boscardin Dias"],
+    },
+    "choinski, jan": {
+        "polymarket_code": "choinsk",
+        "provider_aliases": {"kalstrop_v1": ["Choinski, Jan"]},
+        "pm_aliases": ["Jan Choinski"],
+    },
+    "cina, federico": {
+        "polymarket_code": "cina",
+        "provider_aliases": {"kalstrop_v1": ["Cina, Federico"]},
+        "pm_aliases": ["Federico Cina"],
+    },
+    "daniel, taro": {
+        "polymarket_code": "daniel",
+        "provider_aliases": {"kalstrop_v1": ["Daniel, Taro"]},
+        "pm_aliases": ["Taro Daniel"],
+    },
+    "donski, alexander": {
+        "polymarket_code": "donski",
+        "provider_aliases": {"kalstrop_v1": ["Donski, Alexander"]},
+        "pm_aliases": ["Alexander Donski"],
+    },
+    "gombos, norbert": {
+        "polymarket_code": "gombos",
+        "provider_aliases": {"kalstrop_v1": ["Gombos, Norbert"]},
+        "pm_aliases": ["Norbert Gombos"],
+    },
+    "jianu, filip cristian": {
+        "polymarket_code": "jianu",
+        "provider_aliases": {"kalstrop_v1": ["Jianu, Filip Cristian"]},
+        "pm_aliases": ["Filip Cristian Jianu"],
+    },
+    "jung, jason": {
+        "polymarket_code": "jung",
+        "provider_aliases": {"kalstrop_v1": ["Jung, Jason"]},
+        "pm_aliases": ["Jason Jung"],
+    },
+    "kokkinakis, thanasi": {
+        "polymarket_code": "kokkina",
+        "provider_aliases": {"kalstrop_v1": ["Kokkinakis, Thanasi"]},
+        "pm_aliases": ["Thanasi Kokkinakis"],
+    },
+    "kolar, zdenek": {
+        "polymarket_code": "kolar",
+        "provider_aliases": {"kalstrop_v1": ["Kolar, Zdenek"]},
+        "pm_aliases": ["Zdenek Kolar"],
+    },
+    "molcan, alex": {
+        "polymarket_code": "molcan",
+        "provider_aliases": {"kalstrop_v1": ["Molcan, Alex"]},
+        "pm_aliases": ["Alex Molcan"],
+    },
+    "nava, emilio": {
+        "polymarket_code": "nava",
+        "provider_aliases": {"kalstrop_v1": ["Nava, Emilio"]},
+        "pm_aliases": ["Emilio Nava"],
+    },
+    "olivieri, genaro alberto": {
+        "polymarket_code": "olivier",
+        "provider_aliases": {"kalstrop_v1": ["Olivieri, Genaro Alberto"]},
+        "pm_aliases": ["Genaro Alberto Olivieri"],
+    },
+    "pokorny, lukas": {
+        "polymarket_code": "pokorny",
+        "provider_aliases": {"kalstrop_v1": ["Pokorny, Lukas"]},
+        "pm_aliases": ["Lukas Pokorny"],
+    },
+    "shevchenko, alexander": {
+        "polymarket_code": "shevche",
+        "provider_aliases": {"kalstrop_v1": ["Shevchenko, Alexander"]},
+        "pm_aliases": ["Alexander Shevchenko"],
+    },
+    "topo, marko": {
+        "polymarket_code": "topo",
+        "provider_aliases": {"kalstrop_v1": ["ToPo, Marko"]},
+        "pm_aliases": ["Marko ToPo"],
+    },
+    "tseng, chun hsin": {
+        "polymarket_code": "tseng",
+        "provider_aliases": {"kalstrop_v1": ["Tseng, Chun Hsin"]},
+        "pm_aliases": ["Chun Hsin Tseng"],
+    },
+}
+
+
+# =============================================================================
+# WTA 125K ILKLEY (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_ILKLEY = {
+    "britton, daniella": {
+        "polymarket_code": "britton",
+        "provider_aliases": {"kalstrop_v1": ["Britton, Daniella"]},
+        "pm_aliases": ["Daniella Britton"],
+    },
+    "day, kayla": {
+        "polymarket_code": "day",
+        "provider_aliases": {"kalstrop_v1": ["Day, Kayla"]},
+        "pm_aliases": ["Kayla Day"],
+    },
+    "dudeney, alicia": {
+        "polymarket_code": "dudeney",
+        "provider_aliases": {"kalstrop_v1": ["Dudeney, Alicia"]},
+        "pm_aliases": ["Alicia Dudeney"],
+    },
+    "fruhvirtova, linda": {
+        "polymarket_code": "fruhvir",
+        "provider_aliases": {"kalstrop_v1": ["Fruhvirtova, Linda"]},
+        "pm_aliases": ["Linda Fruhvirtova"],
+    },
+    "galfi, dalma": {
+        "polymarket_code": "galfi",
+        "provider_aliases": {"kalstrop_v1": ["Galfi, Dalma"]},
+        "pm_aliases": ["Dalma Galfi"],
+    },
+    "golubic, viktorija": {
+        "polymarket_code": "golubic",
+        "provider_aliases": {"kalstrop_v1": ["Golubic, Viktorija"]},
+        "pm_aliases": ["Viktorija Golubic"],
+    },
+    "jones, emerson": {
+        "polymarket_code": "jone",
+        "provider_aliases": {"kalstrop_v1": ["Jones, Emerson"]},
+        "pm_aliases": ["Emerson Jones"],
+    },
+    "kalieva, elvina": {
+        "polymarket_code": "kalieva",
+        "provider_aliases": {"kalstrop_v1": ["Kalieva, Elvina"]},
+        "pm_aliases": ["Elvina Kalieva"],
+    },
+    "klimovicova, linda": {
+        "polymarket_code": "klimovi",
+        "provider_aliases": {"kalstrop_v1": ["Klimovicova, Linda"]},
+        "pm_aliases": ["Linda Klimovicova"],
+    },
+    "kraus, sinja": {
+        "polymarket_code": "kraus",
+        "provider_aliases": {"kalstrop_v1": ["Kraus, Sinja"]},
+        "pm_aliases": ["Sinja Kraus"],
+    },
+    "krueger, ashlyn": {
+        "polymarket_code": "krueger",
+        "provider_aliases": {"kalstrop_v1": ["Krueger, Ashlyn"]},
+        "pm_aliases": ["Ashlyn Krueger"],
+    },
+    "mandlik, elizabeth": {
+        "polymarket_code": "mandlik",
+        "provider_aliases": {"kalstrop_v1": ["Mandlik, Elizabeth"]},
+        "pm_aliases": ["Elizabeth Mandlik"],
+    },
+    "martincova, tereza": {
+        "polymarket_code": "martinc",
+        "provider_aliases": {"kalstrop_v1": ["Martincova, Tereza"]},
+        "pm_aliases": ["Tereza Martincova"],
+    },
+    "naef, celine": {
+        "polymarket_code": "naef",
+        "provider_aliases": {"kalstrop_v1": ["Naef, Celine"]},
+        "pm_aliases": ["Celine Naef"],
+    },
+    "podrez, veronika": {
+        "polymarket_code": "podrez",
+        "provider_aliases": {"kalstrop_v1": ["Podrez, Veronika"]},
+        "pm_aliases": ["Veronika Podrez"],
+    },
+    "prozorova, tatiana": {
+        "polymarket_code": "prozoro",
+        "provider_aliases": {"kalstrop_v1": ["Prozorova, Tatiana"]},
+        "pm_aliases": ["Tatiana Prozorova"],
+    },
+    "sakatsume, himeno": {
+        "polymarket_code": "sakatsu",
+        "provider_aliases": {"kalstrop_v1": ["Sakatsume, Himeno"]},
+        "pm_aliases": ["Himeno Sakatsume"],
+    },
+    "sawangkaew, mananchaya": {
+        "polymarket_code": "sawangk",
+        "provider_aliases": {"kalstrop_v1": ["Sawangkaew, Mananchaya"]},
+        "pm_aliases": ["Mananchaya Sawangkaew"],
+    },
+    "stoiana, mary": {
+        "polymarket_code": "stoiana",
+        "provider_aliases": {"kalstrop_v1": ["Stoiana, Mary"]},
+        "pm_aliases": ["Mary Stoiana"],
+    },
+    "urhobo, akasha": {
+        "polymarket_code": "urhobo",
+        "provider_aliases": {"kalstrop_v1": ["Urhobo, Akasha"]},
+        "pm_aliases": ["Akasha Urhobo"],
+    },
+    "vidmanova, darja": {
+        "polymarket_code": "vidmano",
+        "provider_aliases": {"kalstrop_v1": ["Vidmanova, Darja"]},
+        "pm_aliases": ["Darja Vidmanova"],
+    },
+    "xu, mingge": {
+        "polymarket_code": "xu",
+        "provider_aliases": {"kalstrop_v1": ["Xu, Mingge"]},
+        "pm_aliases": ["Mingge Xu"],
+    },
+}
+
+
+# =============================================================================
 # WTA 125K FOGGIA (Best of 3 sets)
 # =============================================================================
 
