@@ -393,10 +393,20 @@ impl NativeCs2Engine {
                 && existing.maps_home_raw.as_str() == maps_home_raw
                 && existing.maps_away_raw.as_str() == maps_away_raw
             {
-                return None; // deduped
+                // Bypass dedup if a pending phase verification needs
+                // re-checking. Phases data updates even when top-level
+                // fields don't change — without this, the pending
+                // re-check would be stuck until the next non-duplicate
+                // frame (up to 17+ minutes during intermission).
+                if self.pending_phase_verify[gi].is_none() {
+                    return None; // deduped
+                }
+                // Pending active — let frame through for re-check.
+                // Don't update the dedup row (state hasn't changed).
+                return Some(gidx);
             }
         }
-        // Construct row only on non-duplicate path (saves ~48 bytes of memcpy on ~95% of frames).
+        // Construct row only on non-duplicate path.
         self.rows[gi] = Some(Cs2StateRow {
             maps_home_raw: InlineStr::from_str(maps_home_raw),
             maps_away_raw: InlineStr::from_str(maps_away_raw),

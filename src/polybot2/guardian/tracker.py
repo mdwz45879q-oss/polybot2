@@ -86,10 +86,34 @@ class OrderStateTracker:
         self,
         token_to_condition: dict[str, str],
         game_id_map: dict[str, str],
+        token_to_sk: dict[str, str] | None = None,
     ) -> None:
-        """Merge new mappings into the tracker (thread-safe for CPython GIL)."""
+        """Merge new mappings into the tracker (thread-safe for CPython GIL).
+
+        If new tokens are detected that the market WS has not yet subscribed,
+        adds them to the token set and requests a reconnect so the WS
+        re-subscribes with the full set at connection time.
+        """
+        # Detect genuinely new tokens before merging
+        new_tokens = set(token_to_condition.keys()) - set(self._token_to_condition.keys())
+
         self._token_to_condition.update(token_to_condition)
         self._game_id_map.update(game_id_map)
+        if token_to_sk:
+            self._token_to_sk.update(token_to_sk)
+
+        # Subscribe new tokens to market WS (requires reconnect)
+        if new_tokens and self.market_ws:
+            unseen = new_tokens - self._subscribed_market_tokens
+            if unseen:
+                self._subscribed_market_tokens.update(unseen)
+                # Add to market_ws._token_ids (thread-safe set.update via GIL)
+                self.market_ws._token_ids.update(unseen)
+                self.market_ws.request_reconnect()
+                logger.info(
+                    "guardian: %d new tokens queued for market WS reconnect",
+                    len(unseen),
+                )
 
     def request_stop(self) -> None:
         """Signal the run_watch loop to stop."""
@@ -555,4 +579,19 @@ def build_game_id_map(compiled_plan: Any) -> dict[str, str]:
             alt = str(alt_id or "").strip()
             if alt:
                 mapping[alt] = gid
+    return mapping
+
+
+def build_token_to_sk_map(compiled_plan: Any) -> dict[str, str]:
+    """Build a token_id → strategy_key mapping from a compiled plan."""
+    mapping: dict[str, str] = {}
+    if compiled_plan is None:
+        return mapping
+    for game in getattr(compiled_plan, "games", ()):
+        for market in getattr(game, "markets", ()):
+            for target in getattr(market, "targets", ()):
+                tok = str(getattr(target, "token_id", "") or "")
+                sk = str(getattr(target, "strategy_key", "") or "")
+                if tok and sk:
+                    mapping[tok] = sk
     return mapping

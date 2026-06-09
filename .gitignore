@@ -14,3 +14,4 @@ artifacts/
 .env.*
 /captures/
 /docs/
+/random/

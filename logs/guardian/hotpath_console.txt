@@ -1,0 +1,38 @@
+2026-06-08 18:47:49,050 [INFO] polybot2 | Kalstrop V2 credentials source=legacy_generic
+2026-06-08 18:47:49,095 [INFO] polybot2 | V2 leagues fifa_friendly: waiting for game(s) to go live before starting hotpath (run_id=2, refresh=900s)
+2026-06-08 18:51:27,437 [INFO] polybot2 | V2 resolved: 7720563 → fixture_id=13883165 (Netherlands vs Uzbekistan, status=IN_PROGRESS, time_delta=361s)
+2026-06-08 18:51:27,445 [INFO] polybot2 | hotpath starting (V2 first game): run_id=2 targets=34 fixture_id=13883165
+[presign] cache primed: 34 unique tokens in 236ms (0 errors)
+[presign] warmup: 34 orders, 34 ok, cache=236ms, sign=61ms, wall=0.3s
+2026-06-08 18:51:27,757 [INFO] polybot2 | guardian: log_path=./2/hotpath_soccer_20260608T185127Z.jsonl, is_soccer=True, mode_arg=live
+2026-06-08 18:51:27,757 [INFO] polybot2.guardian | guardian mappings: 34 token→condition, 1 game-id entries
+2026-06-08 18:51:27,883 [INFO] polybot2.guardian | SDK client initialized for order signing
+2026-06-08 18:51:27,883 [INFO] polybot2.guardian | guardian event log: ./guardian_logs/guardian_20260608T185127Z.jsonl
+2026-06-08 18:51:27,884 [INFO] polybot2.guardian | guardian price log: ./guardian_logs/guardian_prices_20260608T185127Z.jsonl
+2026-06-08 18:51:27,884 [INFO] polybot2 | guardian started (LIVE, V2): ./2/hotpath_soccer_20260608T185127Z.jsonl
+2026-06-08 18:51:27,884 [INFO] polybot2.guardian | market WS: queued 34 tokens (connection pending)
+2026-06-08 18:51:27,884 [INFO] polybot2.guardian | guardian: subscribed 34 startup tokens to market WS
+2026-06-08 18:51:27,884 [INFO] polybot2.guardian | guardian: subscribed 17 startup condition IDs to user WS
+2026-06-08 18:51:27,889 [INFO] polybot2.guardian | confirmation check loop started
+2026-06-08 18:51:27,889 [INFO] polybot2 | incremental refresh cycle=1: no new markets (events_fetched=0)
+2026-06-08 18:51:27,943 [INFO] polybot2.guardian | market WS connected, monitoring 34 tokens
+2026-06-08 18:51:28,135 [INFO] polybot2.guardian | user WS connected, subscribed to 17 condition IDs
+2026-06-08 19:06:26,008 [INFO] polybot2 | incremental refresh cycle=2: no new markets (events_fetched=0)
+2026-06-08 19:10:27,995 [INFO] polybot2 | V2 resolved: 7727198 → fixture_id=13816366 (France vs Northern Ireland, status=IN_PROGRESS, time_delta=1s)
+2026-06-08 19:10:28,086 [INFO] polybot2 | V2 game patched: fixture_id=13816366 targets=34 presigned=34
+[polybot2] merge_plan: 1 new game(s) added
+2026-06-08 19:21:26,175 [INFO] polybot2 | incremental refresh cycle=3: no new markets (events_fetched=0)
+2026-06-08 19:30:05,272 [INFO] polybot2.guardian | market WS: subscribed to 35 total tokens (+1 new)
+2026-06-08 19:30:27,848 [WARNING] polybot2.guardian | ⚠️   OVERTURN ALERT ARMED: 13816366 score 1-0 → 0-0 (reversal of 0-0 → 1-0), 1 affected orders
+2026-06-08 19:30:38,596 [WARNING] polybot2.guardian | ⚠️   Signal 1 CONFIRMED for 13816366 — score reversal held for 10.8s
+2026-06-08 19:36:26,297 [INFO] polybot2 | incremental refresh cycle=4: no new markets (events_fetched=0)
+2026-06-08 19:51:26,422 [INFO] polybot2 | incremental refresh cycle=5: no new markets (events_fetched=0)
+2026-06-08 19:52:16,012 [INFO] polybot2.guardian | overturn alert DISARMED for 13816366 — score restored to 1-0 (wobble)
+2026-06-08 19:56:32,952 [INFO] polybot2.guardian | market WS: subscribed to 36 total tokens (+1 new)
+2026-06-08 19:56:32,952 [INFO] polybot2.guardian | market WS: subscribed to 37 total tokens (+1 new)
+2026-06-08 19:57:02,055 [WARNING] polybot2.guardian | ⚠️   OVERTURN ALERT ARMED: 13816366 score 1-1 → 1-0 (reversal of 1-0 → 1-1), 2 affected orders
+2026-06-08 19:57:12,767 [WARNING] polybot2.guardian | ⚠️   Signal 1 CONFIRMED for 13816366 — score reversal held for 10.8s
+2026-06-08 20:06:26,547 [INFO] polybot2 | incremental refresh cycle=6: no new markets (events_fetched=0)
+^Cclear2026-06-08 20:10:03,576 [WARNING] polybot2.guardian | guardian thread did not stop within 5s
+2026-06-08 20:10:03,576 [INFO] polybot2 | guardian stopped
+2026-06-08 20:10:03,627 [INFO] polybot2 | orchestrator stopped after 6 refresh cycles

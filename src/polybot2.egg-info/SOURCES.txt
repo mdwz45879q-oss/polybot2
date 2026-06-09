@@ -39,6 +39,7 @@ src/polybot2/guardian/__init__.py
 src/polybot2/guardian/cli.py
 src/polybot2/guardian/clob_client.py
 src/polybot2/guardian/executor.py
+src/polybot2/guardian/guardian_logger.py
 src/polybot2/guardian/log_tailer.py
 src/polybot2/guardian/manager.py
 src/polybot2/guardian/market_ws.py
@@ -76,6 +77,8 @@ src/polybot2/sports/kalstrop_auth.py
 src/polybot2/sports/kalstrop_opta.py
 src/polybot2/sports/kalstrop_v1.py
 src/polybot2/sports/kalstrop_v2.py
+src/polybot2/sports/pandascore.py
+tests/test_guardian_overturn.py
 tests/test_polybot2_cli_smoke.py
 tests/test_polybot2_execution_hotpath_imports.py
 tests/test_polybot2_hotpath_compiler_mlb.py

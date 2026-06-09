@@ -39,6 +39,7 @@ class PolymarketMarketWS:
         self._ws: Any = None
         self._connected = False
         self._stop = False
+        self._reconnect_requested = False
 
     def _build_subscription_msg(self, token_ids: list[str]) -> str:
         return json.dumps({
@@ -62,6 +63,16 @@ class PolymarketMarketWS:
                 logger.warning("market WS subscribe failed: %s", exc)
         else:
             logger.info("market WS: queued %d tokens (connection pending)", len(new_ids))
+
+    def request_reconnect(self) -> None:
+        """Signal that new tokens need a fresh connection.
+
+        Thread-safe: sets a boolean flag checked by the receive loop on
+        the daemon event loop.  The next message-receive iteration exits
+        _run_session cleanly, and the run() reconnect loop re-subscribes
+        with the complete _token_ids set.
+        """
+        self._reconnect_requested = True
 
     async def run(
         self,
@@ -127,6 +138,13 @@ class PolymarketMarketWS:
                 async for raw in ws:
                     if self._stop:
                         break
+                    if self._reconnect_requested:
+                        self._reconnect_requested = False
+                        logger.info(
+                            "market WS: reconnect requested (%d tokens now)",
+                            len(self._token_ids),
+                        )
+                        return  # clean exit → run() loop reconnects immediately
                     try:
                         data = json.loads(raw)
                     except json.JSONDecodeError:

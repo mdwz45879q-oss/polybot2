@@ -303,3 +303,98 @@ def test_wobble_disarm_unaffected_by_c2():
     detector.on_score_change(game, 0, 0, 1, 0, ts=3000)
 
     assert game.game_id not in detector.alerts
+
+
+# ── Market WS reconnect on patch_plan ──────────────────────────────
+
+
+def test_update_mappings_triggers_reconnect_for_new_tokens():
+    """update_mappings with new tokens triggers market WS reconnect."""
+    from polybot2.guardian.market_ws import PolymarketMarketWS
+    from polybot2.guardian.tracker import OrderStateTracker
+
+    market_ws = PolymarketMarketWS()
+    tracker = OrderStateTracker(
+        log_path="/dev/null",
+        market_ws=market_ws,
+        token_to_condition={"tok_existing": "cond_1"},
+    )
+    tracker._subscribed_market_tokens.add("tok_existing")
+
+    # New token arrives via update_plan
+    tracker.update_mappings(
+        {"tok_existing": "cond_1", "tok_new": "cond_2"},
+        {"g1": "g1"},
+    )
+
+    assert "tok_new" in market_ws._token_ids
+    assert market_ws._reconnect_requested
+
+
+def test_update_mappings_no_reconnect_for_existing_tokens():
+    """update_mappings with only known tokens does not trigger reconnect."""
+    from polybot2.guardian.market_ws import PolymarketMarketWS
+    from polybot2.guardian.tracker import OrderStateTracker
+
+    market_ws = PolymarketMarketWS()
+    tracker = OrderStateTracker(
+        log_path="/dev/null",
+        market_ws=market_ws,
+        token_to_condition={"tok_1": "cond_1"},
+    )
+    tracker._subscribed_market_tokens.add("tok_1")
+
+    # Re-pass the same token — no reconnect needed
+    tracker.update_mappings({"tok_1": "cond_1"}, {"g1": "g1"})
+
+    assert not market_ws._reconnect_requested
+
+
+def test_update_mappings_updates_token_to_sk():
+    """update_mappings updates _token_to_sk when parameter provided."""
+    from polybot2.guardian.tracker import OrderStateTracker
+
+    tracker = OrderStateTracker(log_path="/dev/null")
+    assert tracker._token_to_sk == {}
+
+    tracker.update_mappings(
+        {"tok_a": "cond_1"},
+        {"g1": "g1"},
+        token_to_sk={"tok_a": "g1:TOTAL:OVER:1.5"},
+    )
+
+    assert tracker._token_to_sk["tok_a"] == "g1:TOTAL:OVER:1.5"
+
+
+def test_request_reconnect_is_threadsafe():
+    """request_reconnect() can be called from a non-event-loop thread."""
+    import threading
+    from polybot2.guardian.market_ws import PolymarketMarketWS
+
+    ws = PolymarketMarketWS()
+    assert not ws._reconnect_requested
+
+    # Simulate main-thread call (same as update_plan calling from orchestrator)
+    t = threading.Thread(target=ws.request_reconnect)
+    t.start()
+    t.join(timeout=2.0)
+
+    assert ws._reconnect_requested
+
+
+def test_build_token_to_sk_map():
+    """build_token_to_sk_map extracts token→strategy_key from compiled plan."""
+    from polybot2.guardian.tracker import build_token_to_sk_map
+    from types import SimpleNamespace
+
+    plan = SimpleNamespace(games=[
+        SimpleNamespace(markets=[
+            SimpleNamespace(targets=[
+                SimpleNamespace(token_id="tok_1", strategy_key="g1:TOTAL:OVER:1.5"),
+                SimpleNamespace(token_id="tok_2", strategy_key="g1:BTTS:YES"),
+            ]),
+        ]),
+    ])
+
+    result = build_token_to_sk_map(plan)
+    assert result == {"tok_1": "g1:TOTAL:OVER:1.5", "tok_2": "g1:BTTS:YES"}

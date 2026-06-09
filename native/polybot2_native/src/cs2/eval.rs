@@ -332,6 +332,7 @@ mod tests {
 
     fn make_engine(maps_to_win: i64, setup: impl FnOnce(&mut Cs2GameTargets)) -> NativeCs2Engine {
         let mut engine = NativeCs2Engine::new();
+        engine.game_id_to_idx.insert("g1".to_string(), GameIdx(0));
         engine.game_ids.push("g1".to_string());
         engine.game_leagues.push(std::sync::Arc::from("cs2"));
         engine.kickoff_ts.push(None);
@@ -711,6 +712,38 @@ mod tests {
         assert!(out.is_empty(), "forfeit phases should NOT fire");
         // Pending stays set — not resolved
         assert!(engine.pending_phase_verify[0].is_some(), "pending should persist for forfeit");
+    }
+
+    #[test]
+    fn child_ml_pending_fires_on_duplicate_frame() {
+        // Behavior B: maps increment with lagged phases → pending set.
+        // Then a "duplicate" frame (same maps/rounds) arrives with updated phases.
+        // The dedup bypass lets pending re-check fire on this frame.
+        let t_away = TargetIdx(1);
+        let mut engine = make_engine(2, |tgt| {
+            tgt.map_moneyline.push((Some(TargetIdx(0)), Some(t_away)));
+            tgt.map_moneyline.push((Some(TargetIdx(2)), Some(TargetIdx(3))));
+        });
+        // Tick 0: pre-match — go through check_duplicate to populate dedup row.
+        engine.check_duplicate("g1", "0", "0", "1st map", "0", "0");
+        engine.process_tick_live(GameIdx(0), 0, 0, 0, 0, 1, false, "LIVE", &NO_PHASES, 0);
+        // Tick 1: maps=0-1, rounds=0-0 (Behavior B). Phases lag: (8,12) not (8,13).
+        engine.check_duplicate("g1", "0", "1", "2nd map", "0", "0");
+        let lag_phases = [(8, 12), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let r1 = engine.process_tick_live(GameIdx(0), 0, 1, 0, 0, 2, false, "LIVE", &lag_phases, 0);
+        let i1: Vec<TargetIdx> = r1.unwrap().intents.iter().map(|i| i.target_idx).collect();
+        assert!(i1.is_empty(), "lagged phases — should not fire");
+        assert!(engine.pending_phase_verify[0].is_some(), "pending should be set");
+        // Tick 2: DUPLICATE frame — same maps=0-1, rounds=0-0, same freeText.
+        // Without the dedup bypass, this would be rejected and pending stuck for 17+ minutes.
+        let r2 = engine.check_duplicate("g1", "0", "1", "2nd map", "0", "0");
+        assert!(r2.is_some(), "dedup should be bypassed when pending is active");
+        // Process with updated phases (8,13) — phases caught up.
+        let fixed_phases = [(8, 13), (-1, -1), (-1, -1), (-1, -1), (-1, -1)];
+        let r2 = engine.process_tick_live(GameIdx(0), 0, 1, 0, 0, 2, false, "LIVE", &fixed_phases, 0);
+        let i2: Vec<TargetIdx> = r2.unwrap().intents.iter().map(|i| i.target_idx).collect();
+        assert_eq!(i2, vec![t_away], "pending re-check should fire on duplicate frame");
+        assert!(engine.pending_phase_verify[0].is_none(), "pending should be cleared");
     }
 
     // ── Moneyline ───────────────────────────────────────────────────

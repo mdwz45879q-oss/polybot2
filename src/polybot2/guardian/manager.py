@@ -25,6 +25,7 @@ from polybot2.guardian.tracker import (
     OrderStateTracker,
     build_game_id_map,
     build_token_to_condition_map,
+    build_token_to_sk_map,
 )
 
 logger = logging.getLogger("polybot2.guardian")
@@ -187,7 +188,8 @@ class GuardianManager:
     def update_plan(self, compiled_plan: Any) -> None:
         new_tok = build_token_to_condition_map(compiled_plan)
         new_gid = build_game_id_map(compiled_plan)
-        self._tracker.update_mappings(new_tok, new_gid)
+        new_sk = build_token_to_sk_map(compiled_plan)
+        self._tracker.update_mappings(new_tok, new_gid, token_to_sk=new_sk)
         logger.debug(
             "guardian mappings updated: +%d token→condition, +%d game-id entries",
             len(new_tok), len(new_gid),
