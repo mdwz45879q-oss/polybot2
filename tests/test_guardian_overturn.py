@@ -398,3 +398,53 @@ def test_build_token_to_sk_map():
 
     result = build_token_to_sk_map(plan)
     assert result == {"tok_1": "g1:TOTAL:OVER:1.5", "tok_2": "g1:BTTS:YES"}
+
+
+# ── Game ID alias for V2 startup game ──────────────────────────────
+
+
+def test_game_id_alias_unifies_ticks_and_orders():
+    """Without add_game_id_alias, ticks and orders land in different GameStates.
+    With the alias, they converge — orders have trigger_score."""
+    from polybot2.guardian.tracker import OrderStateTracker
+
+    # Simulate: fixture_id=13941517, prematch_event_id=7737375
+    tracker = OrderStateTracker(
+        log_path="/dev/null",
+        game_id_map={"13941517": "13941517"},  # only identity, no alias
+        token_to_condition={"tok_over": "cond_1"},
+    )
+
+    # Tick arrives with fixture ID
+    tracker.process_event({
+        "ev": "tick", "gid": "13941517",
+        "goals_home": 1, "goals_away": 0, "half": "1H", "gs": "LIVE", "ts": 1000,
+    })
+
+    # Order arrives with prematch event ID (from strategy key gid_from_sk)
+    tracker.process_event({
+        "ev": "order", "gid": "7737375", "sk": "7737375:TOTAL:OVER:0.5",
+        "tok": "tok_over", "ok": True, "eid": "eid_1", "ts": 1001,
+    })
+
+    # Without alias: order lands in GameState("7737375"), tick in GameState("13941517")
+    order = tracker.state.games["7737375"].orders[0]
+    assert order.triggered_by is None  # no score timeline in "7737375" game state
+
+    # Now add the alias (what the fix does)
+    tracker._game_id_map["7737375"] = "13941517"
+
+    # New tick + new order — this time they converge
+    tracker.process_event({
+        "ev": "tick", "gid": "13941517",
+        "goals_home": 2, "goals_away": 0, "half": "1H", "gs": "LIVE", "ts": 2000,
+    })
+    tracker.process_event({
+        "ev": "order", "gid": "7737375", "sk": "7737375:TOTAL:OVER:1.5",
+        "tok": "tok_over2", "ok": True, "eid": "eid_2", "ts": 2001,
+    })
+
+    # Order now lands in GameState("13941517") alongside the ticks
+    order2 = tracker.state.games["13941517"].orders[0]
+    assert order2.triggered_by is not None
+    assert order2.triggered_by.home == 2

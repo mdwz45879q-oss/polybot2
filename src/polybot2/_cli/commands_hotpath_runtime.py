@@ -558,6 +558,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                                 dry_run=_guardian_dry_run,
                                             )
                                             guardian.start()
+                                            guardian.add_game_id_alias(
+                                                resolved.pending.prematch_event_id,
+                                                resolved.fixture_id,
+                                            )
                                             _guardian_mode_label = "dry-run" if _guardian_dry_run else "LIVE"
                                             logger.info("guardian started (%s, V2): %s", _guardian_mode_label, _guardian_log)
                                     except Exception as exc:
