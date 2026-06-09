@@ -1365,6 +1365,12 @@ PLAYER_MAP_PROSTEJOV = {
 # =============================================================================
 
 PLAYER_MAP_QUEEN = {
+    # Belinda Bencic
+    "bencic, belinda": {
+        "polymarket_code": "bencic",
+        "provider_aliases": {"kalstrop_v1": ["Bencic, Belinda"]},
+        "pm_aliases": ["Belinda Bencic"],
+    },
     # Anna Blinkova
     "blinkova, anna": {
         "polymarket_code": "blinkov",
@@ -1521,6 +1527,12 @@ PLAYER_MAP_QUEEN = {
         "provider_aliases": {"kalstrop_v1": ["Maria, Tatjana"]},
         "pm_aliases": ["Tatjana Maria"],
     },
+    # Victoria Mboko
+    "mboko, victoria": {
+        "polymarket_code": "mboko",
+        "provider_aliases": {"kalstrop_v1": ["Mboko, Victoria"]},
+        "pm_aliases": ["Victoria Mboko"],
+    },
     # Yuriko Lily Miyazaki
     "miyazaki, yuriko lily": {
         "polymarket_code": "miyazak",
@@ -1666,6 +1678,12 @@ PLAYER_MAP_STUTTGART = {
         "polymarket_code": "duckwor",
         "provider_aliases": {"kalstrop_v1": ["Duckworth, James"]},
         "pm_aliases": ["James Duckworth"],
+    },
+    # Taylor Fritz
+    "fritz, taylor": {
+        "polymarket_code": "fritz",
+        "provider_aliases": {"kalstrop_v1": ["Fritz, Taylor"]},
+        "pm_aliases": ["Taylor Fritz"],
     },
     # Alexis Galarneau
     "galarneau, alexis": {
@@ -2001,11 +2019,29 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Bartunkova, Nikola"]},
         "pm_aliases": ["Nikola Bartunkova"],
     },
+    # Sara Bejlek
+    "bejlek, sara": {
+        "polymarket_code": "bejlek",
+        "provider_aliases": {"kalstrop_v1": ["Bejlek, Sara"]},
+        "pm_aliases": ["Sara Bejlek"],
+    },
     # Kimberly Birrell
     "birrell, kimberly": {
         "polymarket_code": "birrell",
         "provider_aliases": {"kalstrop_v1": ["Birrell, Kimberly"]},
         "pm_aliases": ["Kimberly Birrell"],
+    },
+    # Lois Boisson
+    "boisson, lois": {
+        "polymarket_code": "boisson",
+        "provider_aliases": {"kalstrop_v1": ["Boisson, Lois"]},
+        "pm_aliases": ["Lois Boisson"],
+    },
+    # Jessica Bouzas Maneiro
+    "bouzas maneiro, jessica": {
+        "polymarket_code": "maneiro",
+        "provider_aliases": {"kalstrop_v1": ["Bouzas Maneiro, Jessica"]},
+        "pm_aliases": ["Jessica Bouzas Maneiro"],
     },
     # Joanna Garland
     "garland, joanna": {
@@ -2013,17 +2049,35 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Garland, Joanna"]},
         "pm_aliases": ["Joanna Garland"],
     },
+    # Daria Kasatkina
+    "kasatkina, daria": {
+        "polymarket_code": "kasatki",
+        "provider_aliases": {"kalstrop_v1": ["Kasatkina, Daria"]},
+        "pm_aliases": ["Daria Kasatkina"],
+    },
     # Anouk Koevermans
     "koevermans, anouk": {
         "polymarket_code": "koeverm",
         "provider_aliases": {"kalstrop_v1": ["Koevermans, Anouk"]},
         "pm_aliases": ["Anouk Koevermans"],
     },
-    # Daria Kasatkina
-    "kasatkina, daria": {
-        "polymarket_code": "kasatki",
-        "provider_aliases": {"kalstrop_v1": ["Kasatkina, Daria"]},
-        "pm_aliases": ["Daria Kasatkina"],
+    # Tamara Korpatsch
+    "korpatsch, tamara": {
+        "polymarket_code": "korpats",
+        "provider_aliases": {"kalstrop_v1": ["Korpatsch, Tamara"]},
+        "pm_aliases": ["Tamara Korpatsch"],
+    },
+    # Barbora Krejcikova
+    "krejcikova, barbora": {
+        "polymarket_code": "krejcik",
+        "provider_aliases": {"kalstrop_v1": ["Krejcikova, Barbora"]},
+        "pm_aliases": ["Barbora Krejcikova"],
+    },
+    # Suzan Lamens
+    "lamens, suzan": {
+        "polymarket_code": "lamens",
+        "provider_aliases": {"kalstrop_v1": ["Lamens, Suzan"]},
+        "pm_aliases": ["Suzan Lamens"],
     },
     # Magda Linette
     "linette, magda": {
@@ -2031,11 +2085,11 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Linette, Magda"]},
         "pm_aliases": ["Magda Linette"],
     },
-    # Greet Minnen
-    "minnen, greet": {
-        "polymarket_code": "minnen",
-        "provider_aliases": {"kalstrop_v1": ["Minnen, Greet"]},
-        "pm_aliases": ["Greet Minnen"],
+    # Caty McNally
+    "mcnally, caty": {
+        "polymarket_code": "mcnally",
+        "provider_aliases": {"kalstrop_v1": ["McNally, Caty"]},
+        "pm_aliases": ["Caty McNally"],
     },
     # Elise Mertens
     "mertens, elise": {
@@ -2043,11 +2097,23 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Mertens, Elise"]},
         "pm_aliases": ["Elise Mertens"],
     },
+    # Greet Minnen
+    "minnen, greet": {
+        "polymarket_code": "minnen",
+        "provider_aliases": {"kalstrop_v1": ["Minnen, Greet"]},
+        "pm_aliases": ["Greet Minnen"],
+    },
     # Robin Montgomery
     "montgomery, robin": {
         "polymarket_code": "montgom",
         "provider_aliases": {"kalstrop_v1": ["Montgomery, Robin"]},
         "pm_aliases": ["Robin Montgomery"],
+    },
+    # Emma Navarro
+    "navarro, emma": {
+        "polymarket_code": "navarro",
+        "provider_aliases": {"kalstrop_v1": ["Navarro, Emma"]},
+        "pm_aliases": ["Emma Navarro"],
     },
     # Mia Pohankova
     "pohankova, mia": {
@@ -2055,11 +2121,29 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Pohankova, Mia"]},
         "pm_aliases": ["Mia Pohankova"],
     },
+    # Anastasia Potapova
+    "potapova, anastasia": {
+        "polymarket_code": "potapov",
+        "provider_aliases": {"kalstrop_v1": ["Potapova, Anastasia"]},
+        "pm_aliases": ["Anastasia Potapova"],
+    },
+    # Elena-Gabriela Ruse
+    "ruse, elena-gabriela": {
+        "polymarket_code": "ruse",
+        "provider_aliases": {"kalstrop_v1": ["Ruse, Elena-Gabriela"]},
+        "pm_aliases": ["Elena-Gabriela Ruse"],
+    },
     # Ella Seidel
     "seidel, ella": {
         "polymarket_code": "seidel",
         "provider_aliases": {"kalstrop_v1": ["Seidel, Ella"]},
         "pm_aliases": ["Ella Seidel"],
+    },
+    # Solana Sierra
+    "sierra, solana": {
+        "polymarket_code": "sierra",
+        "provider_aliases": {"kalstrop_v1": ["Sierra, Solana"]},
+        "pm_aliases": ["Solana Sierra"],
     },
     # Daria Snigur
     "snigur, daria": {
@@ -2085,6 +2169,12 @@ PLAYER_MAP_LIBEMA_W = {
         "provider_aliases": {"kalstrop_v1": ["Tjen, Janice"]},
         "pm_aliases": ["Janice Tjen"],
     },
+    # Ajla Tomljanovic
+    "tomljanovic, ajla": {
+        "polymarket_code": "tomljan",
+        "provider_aliases": {"kalstrop_v1": ["Tomljanovic, Ajla"]},
+        "pm_aliases": ["Ajla Tomljanovic"],
+    },
     # Panna Udvardy
     "udvardy, panna": {
         "polymarket_code": "udvardy",
@@ -2102,6 +2192,18 @@ PLAYER_MAP_LIBEMA_W = {
         "polymarket_code": "volynet",
         "provider_aliases": {"kalstrop_v1": ["Volynets, Katie"]},
         "pm_aliases": ["Katie Volynets"],
+    },
+    # Dayana Yastremska
+    "yastremska, dayana": {
+        "polymarket_code": "yastrem",
+        "provider_aliases": {"kalstrop_v1": ["Yastremska, Dayana"]},
+        "pm_aliases": ["Dayana Yastremska"],
+    },
+    # Renata Zarazua
+    "zarazua, renata": {
+        "polymarket_code": "zarazua",
+        "provider_aliases": {"kalstrop_v1": ["Zarazua, Renata"]},
+        "pm_aliases": ["Renata Zarazua"],
     },
     # Lin Zhu
     "zhu, lin": {
@@ -2290,6 +2392,11 @@ PLAYER_MAP_BRATISLAVA = {
         "provider_aliases": {"kalstrop_v1": ["Boscardin Dias, Pedro"]},
         "pm_aliases": ["Pedro Boscardin Dias"],
     },
+    "brunclik, petr": {
+        "polymarket_code": "bruncli",
+        "provider_aliases": {"kalstrop_v1": ["Brunclik, Petr"]},
+        "pm_aliases": ["Petr Brunclik"],
+    },
     "choinski, jan": {
         "polymarket_code": "choinsk",
         "provider_aliases": {"kalstrop_v1": ["Choinski, Jan"]},
@@ -2309,6 +2416,11 @@ PLAYER_MAP_BRATISLAVA = {
         "polymarket_code": "donski",
         "provider_aliases": {"kalstrop_v1": ["Donski, Alexander"]},
         "pm_aliases": ["Alexander Donski"],
+    },
+    "gadamauri, buvaysar": {
+        "polymarket_code": "gadamau",
+        "provider_aliases": {"kalstrop_v1": ["Gadamauri, Buvaysar"]},
+        "pm_aliases": ["Buvaysar Gadamauri"],
     },
     "gombos, norbert": {
         "polymarket_code": "gombos",
@@ -2335,10 +2447,25 @@ PLAYER_MAP_BRATISLAVA = {
         "provider_aliases": {"kalstrop_v1": ["Kolar, Zdenek"]},
         "pm_aliases": ["Zdenek Kolar"],
     },
+    "krumich, martin": {
+        "polymarket_code": "krumich",
+        "provider_aliases": {"kalstrop_v1": ["Krumich, Martin"]},
+        "pm_aliases": ["Martin Krumich"],
+    },
+    "martin, andrej": {
+        "polymarket_code": "mar",
+        "provider_aliases": {"kalstrop_v1": ["Martin, Andrej"]},
+        "pm_aliases": ["Andrej Martin"],
+    },
     "molcan, alex": {
         "polymarket_code": "molcan",
         "provider_aliases": {"kalstrop_v1": ["Molcan, Alex"]},
         "pm_aliases": ["Alex Molcan"],
+    },
+    "mrva, maxim": {
+        "polymarket_code": "mrva",
+        "provider_aliases": {"kalstrop_v1": ["Mrva, Maxim"]},
+        "pm_aliases": ["Maxim Mrva"],
     },
     "nava, emilio": {
         "polymarket_code": "nava",
@@ -2350,15 +2477,40 @@ PLAYER_MAP_BRATISLAVA = {
         "provider_aliases": {"kalstrop_v1": ["Olivieri, Genaro Alberto"]},
         "pm_aliases": ["Genaro Alberto Olivieri"],
     },
+    "pereira, tiago": {
+        "polymarket_code": "pereira",
+        "provider_aliases": {"kalstrop_v1": ["Pereira, Tiago"]},
+        "pm_aliases": ["Tiago Pereira"],
+    },
+    "piros, zsombor": {
+        "polymarket_code": "piros",
+        "provider_aliases": {"kalstrop_v1": ["Piros, Zsombor"]},
+        "pm_aliases": ["Zsombor Piros"],
+    },
     "pokorny, lukas": {
         "polymarket_code": "pokorny",
         "provider_aliases": {"kalstrop_v1": ["Pokorny, Lukas"]},
         "pm_aliases": ["Lukas Pokorny"],
     },
+    "santillan, akira": {
+        "polymarket_code": "santill",
+        "provider_aliases": {"kalstrop_v1": ["Santillan, Akira"]},
+        "pm_aliases": ["Akira Santillan"],
+    },
+    "shelbayh, abdullah": {
+        "polymarket_code": "shelbay",
+        "provider_aliases": {"kalstrop_v1": ["Shelbayh, Abdullah"]},
+        "pm_aliases": ["Abdullah Shelbayh"],
+    },
     "shevchenko, alexander": {
         "polymarket_code": "shevche",
         "provider_aliases": {"kalstrop_v1": ["Shevchenko, Alexander"]},
         "pm_aliases": ["Alexander Shevchenko"],
+    },
+    "skatov, timofey": {
+        "polymarket_code": "skatov",
+        "provider_aliases": {"kalstrop_v1": ["Skatov, Timofey"]},
+        "pm_aliases": ["Timofey Skatov"],
     },
     "topo, marko": {
         "polymarket_code": "topo",
@@ -2423,6 +2575,11 @@ PLAYER_MAP_ILKLEY_W = {
         "provider_aliases": {"kalstrop_v1": ["Klimovicova, Linda"]},
         "pm_aliases": ["Linda Klimovicova"],
     },
+    "korneeva, alina": {
+        "polymarket_code": "korneev",
+        "provider_aliases": {"kalstrop_v1": ["Korneeva, Alina"]},
+        "pm_aliases": ["Alina Korneeva"],
+    },
     "kraus, sinja": {
         "polymarket_code": "kraus",
         "provider_aliases": {"kalstrop_v1": ["Kraus, Sinja"]},
@@ -2443,6 +2600,11 @@ PLAYER_MAP_ILKLEY_W = {
         "provider_aliases": {"kalstrop_v1": ["Martincova, Tereza"]},
         "pm_aliases": ["Tereza Martincova"],
     },
+    "mcdonald, ella": {
+        "polymarket_code": "mcdonal",
+        "provider_aliases": {"kalstrop_v1": ["McDonald, Ella"]},
+        "pm_aliases": ["Ella McDonald"],
+    },
     "naef, celine": {
         "polymarket_code": "naef",
         "provider_aliases": {"kalstrop_v1": ["Naef, Celine"]},
@@ -2452,6 +2614,11 @@ PLAYER_MAP_ILKLEY_W = {
         "polymarket_code": "podrez",
         "provider_aliases": {"kalstrop_v1": ["Podrez, Veronika"]},
         "pm_aliases": ["Veronika Podrez"],
+    },
+    "preston, taylah": {
+        "polymarket_code": "preston",
+        "provider_aliases": {"kalstrop_v1": ["Preston, Taylah"]},
+        "pm_aliases": ["Taylah Preston"],
     },
     "prozorova, tatiana": {
         "polymarket_code": "prozoro",
@@ -2468,15 +2635,50 @@ PLAYER_MAP_ILKLEY_W = {
         "provider_aliases": {"kalstrop_v1": ["Sawangkaew, Mananchaya"]},
         "pm_aliases": ["Mananchaya Sawangkaew"],
     },
+    "shymanovich, iryna": {
+        "polymarket_code": "shymano",
+        "provider_aliases": {"kalstrop_v1": ["Shymanovich, Iryna"]},
+        "pm_aliases": ["Iryna Shymanovich"],
+    },
+    "stefanini, lucrezia": {
+        "polymarket_code": "stefani",
+        "provider_aliases": {"kalstrop_v1": ["Stefanini, Lucrezia"]},
+        "pm_aliases": ["Lucrezia Stefanini"],
+    },
     "stoiana, mary": {
         "polymarket_code": "stoiana",
         "provider_aliases": {"kalstrop_v1": ["Stoiana, Mary"]},
         "pm_aliases": ["Mary Stoiana"],
     },
+    "sun, lulu": {
+        "polymarket_code": "sun",
+        "provider_aliases": {"kalstrop_v1": ["Sun, Lulu"]},
+        "pm_aliases": ["Lulu Sun"],
+    },
+    "swan, katie": {
+        "polymarket_code": "swan",
+        "provider_aliases": {"kalstrop_v1": ["Swan, Katie"]},
+        "pm_aliases": ["Katie Swan"],
+    },
+    "tan, harmony": {
+        "polymarket_code": "tan",
+        "provider_aliases": {"kalstrop_v1": ["Tan, Harmony"]},
+        "pm_aliases": ["Harmony Tan"],
+    },
+    "tararudee, lanlana": {
+        "polymarket_code": "tararud",
+        "provider_aliases": {"kalstrop_v1": ["Tararudee, Lanlana"]},
+        "pm_aliases": ["Lanlana Tararudee"],
+    },
     "urhobo, akasha": {
         "polymarket_code": "urhobo",
         "provider_aliases": {"kalstrop_v1": ["Urhobo, Akasha"]},
         "pm_aliases": ["Akasha Urhobo"],
+    },
+    "valdmannova, vendula": {
+        "polymarket_code": "valdman",
+        "provider_aliases": {"kalstrop_v1": ["Valdmannova, Vendula"]},
+        "pm_aliases": ["Vendula Valdmannova"],
     },
     "vidmanova, darja": {
         "polymarket_code": "vidmano",
@@ -3012,6 +3214,16 @@ PLAYER_MAP_ILKLEY_M = {
         "provider_aliases": {"kalstrop_v1": ["Blanchet, Ugo"]},
         "pm_aliases": ["Ugo Blanchet"],
     },
+    "bolt, alex": {
+        "polymarket_code": "bolt",
+        "provider_aliases": {"kalstrop_v1": ["Bolt, Alex"]},
+        "pm_aliases": ["Alex Bolt"],
+    },
+    "broom, charles": {
+        "polymarket_code": "broom",
+        "provider_aliases": {"kalstrop_v1": ["Broom, Charles"]},
+        "pm_aliases": ["Charles Broom"],
+    },
     "bu, yunchaokete": {
         "polymarket_code": "bu",
         "provider_aliases": {"kalstrop_v1": ["Bu, Yunchaokete"]},
@@ -3032,6 +3244,11 @@ PLAYER_MAP_ILKLEY_M = {
         "provider_aliases": {"kalstrop_v1": ["Gea, Arthur"]},
         "pm_aliases": ["Arthur Gea"],
     },
+    "gill, felix": {
+        "polymarket_code": "gill",
+        "provider_aliases": {"kalstrop_v1": ["Gill, Felix"]},
+        "pm_aliases": ["Felix Gill"],
+    },
     "harris, billy": {
         "polymarket_code": "harris",
         "provider_aliases": {"kalstrop_v1": ["Harris, Billy"]},
@@ -3041,6 +3258,16 @@ PLAYER_MAP_ILKLEY_M = {
         "polymarket_code": "jacquet",
         "provider_aliases": {"kalstrop_v1": ["Jacquet, Kyrian"]},
         "pm_aliases": ["Kyrian Jacquet"],
+    },
+    "jubb, paul": {
+        "polymarket_code": "jubb",
+        "provider_aliases": {"kalstrop_v1": ["Jubb, Paul"]},
+        "pm_aliases": ["Paul Jubb"],
+    },
+    "lajal, mark": {
+        "polymarket_code": "lajal",
+        "provider_aliases": {"kalstrop_v1": ["Lajal, Mark"]},
+        "pm_aliases": ["Mark Lajal"],
     },
     "maestrelli, francesco": {
         "polymarket_code": "maestre",
@@ -3057,19 +3284,64 @@ PLAYER_MAP_ILKLEY_M = {
         "provider_aliases": {"kalstrop_v1": ["O'Connell, Christopher"]},
         "pm_aliases": ["Christopher O'Connell"],
     },
+    "okonkwo, oliver": {
+        "polymarket_code": "okonkwo",
+        "provider_aliases": {"kalstrop_v1": ["Okonkwo, Oliver"]},
+        "pm_aliases": ["Oliver Okonkwo"],
+    },
+    "riedi, leandro": {
+        "polymarket_code": "riedi",
+        "provider_aliases": {"kalstrop_v1": ["Riedi, Leandro"]},
+        "pm_aliases": ["Leandro Riedi"],
+    },
+    "rocha, henrique": {
+        "polymarket_code": "rocha",
+        "provider_aliases": {"kalstrop_v1": ["Rocha, Henrique"]},
+        "pm_aliases": ["Henrique Rocha"],
+    },
     "rodesch, chris": {
         "polymarket_code": "rodesch",
         "provider_aliases": {"kalstrop_v1": ["Rodesch, Chris"]},
         "pm_aliases": ["Chris Rodesch"],
+    },
+    "romano, filippo": {
+        "polymarket_code": "romano",
+        "provider_aliases": {"kalstrop_v1": ["Romano, Filippo"]},
+        "pm_aliases": ["Filippo Romano"],
     },
     "samuel, toby": {
         "polymarket_code": "samuel",
         "provider_aliases": {"kalstrop_v1": ["Samuel, Toby"]},
         "pm_aliases": ["Toby Samuel"],
     },
+    "schoolkate, tristan": {
+        "polymarket_code": "schoolk",
+        "provider_aliases": {"kalstrop_v1": ["Schoolkate, Tristan"]},
+        "pm_aliases": ["Tristan Schoolkate"],
+    },
+    "smith, keegan": {
+        "polymarket_code": "smit",
+        "provider_aliases": {"kalstrop_v1": ["Smith, Keegan"]},
+        "pm_aliases": ["Keegan Smith"],
+    },
+    "stewart, hamish": {
+        "polymarket_code": "stewart",
+        "provider_aliases": {"kalstrop_v1": ["Stewart, Hamish"]},
+        "pm_aliases": ["Hamish Stewart"],
+    },
+    "sweeny, dane": {
+        "polymarket_code": "sweeny",
+        "provider_aliases": {"kalstrop_v1": ["Sweeny, Dane"]},
+        "pm_aliases": ["Dane Sweeny"],
+    },
     "tarvet, oliver": {
         "polymarket_code": "tarvet",
         "provider_aliases": {"kalstrop_v1": ["Tarvet, Oliver"]},
         "pm_aliases": ["Oliver Tarvet"],
+    },
+    "zheng, michael": {
+        "polymarket_code": "zheng",
+        "provider_aliases": {"kalstrop_v1": ["Zheng, Michael"]},
+        "pm_aliases": ["Michael Zheng"],
     },
 }
