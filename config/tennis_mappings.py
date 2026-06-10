@@ -3111,6 +3111,11 @@ PLAYER_MAP_CATTOLICA = {
         "provider_aliases": {"kalstrop_v1": ["Ferrari, Gianmarco"]},
         "pm_aliases": ["Gianmarco Ferrari"],
     },
+    "agamenone, franco": {
+        "polymarket_code": "agameno",
+        "provider_aliases": {"kalstrop_v1": ["Agamenone, Franco"]},
+        "pm_aliases": ["Franco Agamenone"],
+    },
     "forejtek, jonas": {
         "polymarket_code": "forejte",
         "provider_aliases": {"kalstrop_v1": ["Forejtek, Jonas"]},
@@ -3343,5 +3348,201 @@ PLAYER_MAP_ILKLEY_M = {
         "polymarket_code": "zheng",
         "provider_aliases": {"kalstrop_v1": ["Zheng, Michael"]},
         "pm_aliases": ["Michael Zheng"],
+    },
+}
+
+PLAYER_MAP_LYON = {
+    "balshaw, felix": {
+        "polymarket_code": "balshaw",
+        "provider_aliases": {"kalstrop_v1": ["Balshaw, Felix"]},
+        "pm_aliases": ["Felix Balshaw"],
+    },
+    "bax, florent": {
+        "polymarket_code": "bax",
+        "provider_aliases": {"kalstrop_v1": ["Bax, Florent"]},
+        "pm_aliases": ["Florent Bax"],
+    },
+    "blanch, dali": {
+        "polymarket_code": "blan",
+        "provider_aliases": {"kalstrop_v1": ["Blanch, Dali"]},
+        "pm_aliases": ["Dali Blanch"],
+    },
+    "boyer, tristan": {
+        "polymarket_code": "boyer",
+        "provider_aliases": {"kalstrop_v1": ["Boyer, Tristan"]},
+        "pm_aliases": ["Tristan Boyer"],
+    },
+    "coppejans, kimmer": {
+        "polymarket_code": "coppeja",
+        "provider_aliases": {"kalstrop_v1": ["Coppejans, Kimmer"]},
+        "pm_aliases": ["Kimmer Coppejans"],
+    },
+    "damas, miguel": {
+        "polymarket_code": "damas",
+        "provider_aliases": {"kalstrop_v1": ["Damas, Miguel"]},
+        "pm_aliases": ["Miguel Damas"],
+    },
+    "faurel, thomas": {
+        "polymarket_code": "faurel",
+        "provider_aliases": {"kalstrop_v1": ["Faurel, Thomas"]},
+        "pm_aliases": ["Thomas Faurel"],
+    },
+    "galan, daniel elahi": {
+        "polymarket_code": "galan",
+        "provider_aliases": {"kalstrop_v1": ["Galan, Daniel Elahi"]},
+        "pm_aliases": ["Daniel Galan"],
+    },
+    "jorda sanchis, david": {
+        "polymarket_code": "sanchis",
+        "provider_aliases": {"kalstrop_v1": ["Jorda Sanchis, David"]},
+        "pm_aliases": ["David Jorda Sanchis"],
+    },
+    "martineau, matteo": {
+        "polymarket_code": "martin",
+        "provider_aliases": {"kalstrop_v1": ["Martineau, Matteo"]},
+        "pm_aliases": ["Matteo Martineau"],
+    },
+    "martinez, pedro": {
+        "polymarket_code": "martine",
+        "provider_aliases": {"kalstrop_v1": ["Martinez, Pedro"]},
+        "pm_aliases": ["Pedro Martinez"],
+    },
+    "moro canas, alejandro": {
+        "polymarket_code": "canas",
+        "provider_aliases": {"kalstrop_v1": ["Moro Canas, Alejandro"]},
+        "pm_aliases": ["Alejandro Moro Canas"],
+    },
+    "rincon, daniel": {
+        "polymarket_code": "rincon",
+        "provider_aliases": {"kalstrop_v1": ["Rincon, Daniel"]},
+        "pm_aliases": ["Daniel Rincon"],
+    },
+    "sanchez izquierdo, nikolas": {
+        "polymarket_code": "izquier",
+        "provider_aliases": {"kalstrop_v1": ["Sanchez Izquierdo, Nikolas"]},
+        "pm_aliases": ["Nikolas Sanchez Izquierdo"],
+    },
+    "trungelliti, marco": {
+        "polymarket_code": "trungel",
+        "provider_aliases": {"kalstrop_v1": ["Trungelliti, Marco"]},
+        "pm_aliases": ["Marco Trungelliti"],
+    },
+    "van assche, luca": {
+        "polymarket_code": "assche",
+        "provider_aliases": {"kalstrop_v1": ["Van Assche, Luca"]},
+        "pm_aliases": ["Luca Van Assche"],
+    },
+}
+
+PLAYER_MAP_TUCUMAN = {
+    "aboian, valerio": {
+        "polymarket_code": "aboian",
+        "provider_aliases": {"kalstrop_v1": ["Aboian, Valerio"]},
+        "pm_aliases": ["Valerio Aboian"],
+    },
+    "ambrogi, luciano emanuel": {
+        "polymarket_code": "ambrogi",
+        "provider_aliases": {"kalstrop_v1": ["Ambrogi, Luciano Emanuel"]},
+        "pm_aliases": ["Luciano Emanuel Ambrogi"],
+    },
+    "casanova, hernan": {
+        "polymarket_code": "casanov",
+        "provider_aliases": {"kalstrop_v1": ["Casanova, Hernan"]},
+        "pm_aliases": ["Hernan Casanova"],
+    },
+    "cigarran, thiago": {
+        "polymarket_code": "cigarra",
+        "provider_aliases": {"kalstrop_v1": ["Cigarran, Thiago"]},
+        "pm_aliases": ["Thiago Cigarran"],
+    },
+    "collarini, andrea": {
+        "polymarket_code": "collari",
+        "provider_aliases": {"kalstrop_v1": ["Collarini, Andrea"]},
+        "pm_aliases": ["Andrea Collarini"],
+    },
+    "coria, federico": {
+        "polymarket_code": "coria",
+        "provider_aliases": {"kalstrop_v1": ["Coria, Federico"]},
+        "pm_aliases": ["Federico Coria"],
+    },
+    "cundom, julian": {
+        "polymarket_code": "cundom",
+        "provider_aliases": {"kalstrop_v1": ["Cundom, Julian"]},
+        "pm_aliases": ["Julian Cundom"],
+    },
+    "del pino, arklon": {
+        "polymarket_code": "pin",
+        "provider_aliases": {"kalstrop_v1": ["Del Pino, Arklon"]},
+        "pm_aliases": ["Arklon Del Pino"],
+    },
+    "fernandez, bruno": {
+        "polymarket_code": "fernand",
+        "provider_aliases": {"kalstrop_v1": ["Fernandez, Bruno"]},
+        "pm_aliases": ["Bruno Fernandez"],
+    },
+    "goity zapico, segundo": {
+        "polymarket_code": "zapico",
+        "provider_aliases": {"kalstrop_v1": ["Goity Zapico, Segundo"]},
+        "pm_aliases": ["Segundo Goity Zapico"],
+    },
+    "hardt, nick": {
+        "polymarket_code": "hardt",
+        "provider_aliases": {"kalstrop_v1": ["Hardt, Nick"]},
+        "pm_aliases": ["Nick Hardt"],
+    },
+    "heredia, samuel": {
+        "polymarket_code": "heredia",
+        "provider_aliases": {"kalstrop_v1": ["Heredia, Samuel"]},
+        "pm_aliases": ["Samuel Heredia"],
+    },
+    "kicker, nicolas": {
+        "polymarket_code": "kicker",
+        "provider_aliases": {"kalstrop_v1": ["Kicker, Nicolas"]},
+        "pm_aliases": ["Nicolas Kicker"],
+    },
+    "la serna, juan manuel": {
+        "polymarket_code": "serna",
+        "provider_aliases": {"kalstrop_v1": ["La Serna, Juan Manuel"]},
+        "pm_aliases": ["Juan Manuel La Serna"],
+    },
+    "martinez, tomas": {
+        "polymarket_code": "tomasma",
+        "provider_aliases": {"kalstrop_v1": ["Martinez, Tomas"]},
+        "pm_aliases": ["Tomas Martinez"],
+    },
+    "rodriguez, lorenzo joaquin": {
+        "polymarket_code": "rodrig",
+        "provider_aliases": {"kalstrop_v1": ["Rodriguez, Lorenzo Joaquin"]},
+        "pm_aliases": ["Lorenzo Joaquin Rodriguez"],
+    },
+    "rodriguez rodriguez, johan alexander": {
+        "polymarket_code": "rodr",
+        "provider_aliases": {"kalstrop_v1": ["Rodriguez Rodriguez, Johan Alexander"]},
+        "pm_aliases": ["Johan Alexander Rodriguez"],
+    },
+    "rodriguez taverna, santiago": {
+        "polymarket_code": "taverna",
+        "provider_aliases": {"kalstrop_v1": ["Rodriguez Taverna, Santiago"]},
+        "pm_aliases": ["Santiago Rodriguez Taverna"],
+    },
+    "torres, juan bautista": {
+        "polymarket_code": "torres",
+        "provider_aliases": {"kalstrop_v1": ["Torres, Juan Bautista"]},
+        "pm_aliases": ["Juan Bautista Torres"],
+    },
+    "villalon, nicolas": {
+        "polymarket_code": "villalo",
+        "provider_aliases": {"kalstrop_v1": ["Villalon, Nicolas"]},
+        "pm_aliases": ["Nicolas Villalon"],
+    },
+    "zarate, carlos maria": {
+        "polymarket_code": "zarate",
+        "provider_aliases": {"kalstrop_v1": ["Zarate, Carlos Maria"]},
+        "pm_aliases": ["Carlos Maria Zarate"],
+    },
+    "zeitune, maximo": {
+        "polymarket_code": "zeitune",
+        "provider_aliases": {"kalstrop_v1": ["Zeitune, Maximo"]},
+        "pm_aliases": ["Maximo Zeitune"],
     },
 }

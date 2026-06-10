@@ -369,6 +369,7 @@ def evaluate_hotpath_scope(
     live_policy: LoadedLiveTradingPolicy | None = None,
     now_ts_utc: int | None = None,
     include_inactive: bool = False,
+    sport_family: str = "",
 ) -> ScopedLaunchCheck:
     p = _norm(provider)
     lk = _norm(league)
@@ -440,7 +441,8 @@ def evaluate_hotpath_scope(
         scope_rows = scope_rows_all
     else:
         policy = live_policy or load_live_trading_policy()
-        runtime_cfg = dict((policy.hotpath_runtime_by_league or {}).get(lk, {}) or {})
+        _rt_by_league = policy.hotpath_runtime_by_league or {}
+        runtime_cfg = dict(_rt_by_league.get(lk, _rt_by_league.get(sport_family, {})) or {})
         max_age_seconds = int(runtime_cfg.get("provider_catalog_max_age_seconds", 600))
         effective_now_ts: int | None = None
         try:
@@ -519,13 +521,15 @@ def evaluate_hotpath_scope(
     )
 
 
-def _load_allowed_market_types(*, policy: LoadedLiveTradingPolicy, league: str) -> set[str]:
+def _load_allowed_market_types(*, policy: LoadedLiveTradingPolicy, league: str, sport_family: str = "") -> set[str]:
     lk = _norm(league)
     allowed = policy.live_betting_market_types_by_league.get(lk)
+    if not allowed and sport_family:
+        allowed = policy.live_betting_market_types_by_league.get(sport_family)
     if not allowed:
         raise HotPathPlanError(
             "missing_policy_market_types",
-            f"LIVE_BETTING_MARKET_TYPES does not define league={lk}",
+            f"LIVE_BETTING_MARKET_TYPES does not define league={lk} or sport_family={sport_family}",
         )
     return {normalize_sports_market_type(x) for x in allowed if normalize_sports_market_type(x) != "other"}
 
@@ -555,6 +559,7 @@ def compile_hotpath_plan(
         live_policy=policy,
         now_ts_utc=now_ts_utc,
         include_inactive=include_inactive,
+        sport_family=sport,
     )
     if not scope.run_found:
         raise HotPathPlanError("no_link_run", f"link run not found for provider={provider} run_id={run_id}")
@@ -565,7 +570,7 @@ def compile_hotpath_plan(
             f"scope blockers={','.join(blockers)} provider={scope.provider} league={scope.league} run_id={scope.run_id}",
         )
 
-    allowed_market_types = _load_allowed_market_types(policy=policy, league=scope.league)
+    allowed_market_types = _load_allowed_market_types(policy=policy, league=scope.league, sport_family=sport)
 
     selected_ids = [x for x in scope.eligible_game_ids if x]
     dropped_missing_kickoff = 0

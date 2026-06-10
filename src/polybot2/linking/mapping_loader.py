@@ -396,11 +396,8 @@ def validate_loaded_live_trading_policy(policy: LoadedLiveTradingPolicy) -> None
             raise MappingValidationError(f"LIVE_BETTING_MARKET_TYPES league key must be normalized: {league!r}")
         if not market_types:
             raise MappingValidationError(f"LIVE_BETTING_MARKET_TYPES[{league!r}] must not be empty")
-    missing = sorted(x for x in policy.live_betting_leagues if x not in policy.live_betting_market_types_by_league)
-    if missing:
-        raise MappingValidationError(
-            f"LIVE_BETTING_MARKET_TYPES missing league keys for LIVE_BETTING_LEAGUES: {','.join(missing)}"
-        )
+    # Note: leagues without their own market type entry are resolved at compile time
+    # via sport_family fallback (e.g., "tennis" covers all tennis leagues).
     if not policy.live_betting_market_types:
         raise MappingValidationError("LIVE_BETTING_MARKET_TYPES must not be empty")
     for league, cfg in policy.hotpath_execution_by_league.items():

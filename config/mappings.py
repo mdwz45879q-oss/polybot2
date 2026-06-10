@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M, PLAYER_MAP_LYON, PLAYER_MAP_TUCUMAN
 from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
@@ -169,6 +169,18 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
+    "lyon": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "tucuman": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
@@ -218,6 +230,8 @@ PROVIDER_LEAGUE_ALIASES = {
         "wta 125k ilkley": "ilkley_w",
         "atp challenger cattolica": "cattolica",
         "atp challenger ilkley": "ilkley_m",
+        "atp challenger lyon": "lyon",
+        "atp challenger san miguel de tucuman": "tucuman",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
@@ -262,6 +276,8 @@ PROVIDER_LEAGUE_ALIASES = {
         "wta ilkley - tennis": "ilkley_w",
         "challenger cattolica - tennis": "cattolica",
         "challenger ilkley - tennis": "ilkley_m",
+        "challenger lyon - tennis": "lyon",
+        "challenger san miguel de tucuman - tennis": "tucuman",
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
@@ -365,6 +381,8 @@ TEAM_MAP = {
     "ilkley_w": PLAYER_MAP_ILKLEY_W,
     "cattolica": PLAYER_MAP_CATTOLICA,
     "ilkley_m": PLAYER_MAP_ILKLEY_M,
+    "lyon": PLAYER_MAP_LYON,
+    "tucuman": PLAYER_MAP_TUCUMAN,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,

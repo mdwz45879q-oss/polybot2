@@ -225,14 +225,15 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         logger.info("using latest link run: run_id=%d league=%s", run_id, league_key)
     execution_mode = str(getattr(args, "execution_mode", "live") or "live").strip().lower()
     runtime = _runtime_from_args(args)
-    runtime_policy = _hotpath_runtime_policy_for_league(live_policy=live_policy, league_key=league_key)
+    runtime_policy = _hotpath_runtime_policy_for_league(live_policy=live_policy, league_key=league_key, sport_family=sport_family)
     cli_refresh = getattr(args, "refresh_interval", None)
     config_refresh = int(runtime_policy.get("refresh_interval_seconds", 300))
     refresh_interval = int(cli_refresh) if cli_refresh is not None else config_refresh
     order_policies: dict[str, Any] = {}
     require_presign = False
     for _lk in league_keys:
-        _p, _rp, _ = _hotpath_order_policy_for_league(live_policy=live_policy, league_key=_lk)
+        _sf = str(mapping.leagues.get(_lk, {}).get("sport_family", "")).strip().lower()
+        _p, _rp, _ = _hotpath_order_policy_for_league(live_policy=live_policy, league_key=_lk, sport_family=_sf)
         order_policies[_lk] = _p
         if _rp:
             require_presign = True
@@ -707,11 +708,10 @@ def run_hotpath_compile(args: Any, *, logger: logging.Logger) -> int:
         logger.info("using latest link run: run_id=%d league=%s", run_id, league_key)
 
     runtime = _runtime_from_args(args)
-    runtime_policy = _hotpath_runtime_policy_for_league(
-        live_policy=live_policy, league_key=league_key,
-    )
-
     sport_family = str(league_cfg.get("sport_family", "baseball")).strip().lower()
+    runtime_policy = _hotpath_runtime_policy_for_league(
+        live_policy=live_policy, league_key=league_key, sport_family=sport_family,
+    )
     league_sets_to_win = int(league_cfg.get("sets_to_win", 2))
 
     try:

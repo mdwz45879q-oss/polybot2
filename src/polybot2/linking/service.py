@@ -99,7 +99,11 @@ class LinkService:
         self._db = db
 
     def _load_match_rules(self, *, mapping: LoadedMapping, league: str) -> _LeagueMatchRules:
-        cfg = mapping.league_match_rules.get(_norm(league), mapping.league_match_rules.get("default", {}))
+        lk = _norm(league)
+        cfg = mapping.league_match_rules.get(lk)
+        if cfg is None:
+            sf = str(mapping.leagues.get(lk, {}).get("sport_family", "")).strip().lower()
+            cfg = mapping.league_match_rules.get(sf, mapping.league_match_rules.get("default", {}))
         if not isinstance(cfg, dict):
             cfg = {}
         return _LeagueMatchRules(
@@ -756,8 +760,15 @@ class LinkService:
             raise MappingValidationError(
                 f"LIVE_BETTING_LEAGUES contains unknown league(s): {','.join(unknown_live_leagues)}"
             )
+        # Sport-family keys (e.g., "tennis") are valid in market types —
+        # they act as fallback for leagues without their own entry.
+        known_sport_families = {
+            str(cfg.get("sport_family", "")).strip().lower()
+            for cfg in mapping.leagues.values() if cfg.get("sport_family")
+        }
         unknown_policy_market_type_leagues = sorted(
-            x for x in policy.live_betting_market_types_by_league if x not in mapping.leagues
+            x for x in policy.live_betting_market_types_by_league
+            if x not in mapping.leagues and x not in known_sport_families
         )
         if unknown_policy_market_type_leagues:
             raise MappingValidationError(

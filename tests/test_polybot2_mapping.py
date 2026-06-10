@@ -24,7 +24,8 @@ def test_load_live_trading_repo_file() -> None:
     assert "moneyline" in loaded.live_betting_market_types_by_league["mlb"]
     assert "moneyline" in loaded.live_betting_market_types
     assert "mlb" in loaded.hotpath_execution_by_league
-    assert float(loaded.hotpath_execution_by_league["mlb"]["amount_usdc"]) > 0
+    mlb_exec = loaded.hotpath_execution_by_league["mlb"]
+    assert float(mlb_exec.get("amount_usdc", 0) or mlb_exec.get("size_shares", 0)) > 0
     assert "mlb" in loaded.hotpath_runtime_by_league
     assert int(loaded.hotpath_runtime_by_league["mlb"]["plan_horizon_hours"]) > 0
     assert int(loaded.hotpath_runtime_by_league["mlb"]["reload_interval_seconds"]) > 0

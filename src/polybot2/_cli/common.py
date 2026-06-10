@@ -69,8 +69,9 @@ def _resolve_provider_name(
     return default_provider
 
 
-def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tuple[OrderPolicy, bool, bool]:
-    cfg = dict((getattr(live_policy, "hotpath_execution_by_league", {}) or {}).get(str(league_key), {}) or {})
+def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str, sport_family: str = "") -> tuple[OrderPolicy, bool, bool]:
+    by_league = getattr(live_policy, "hotpath_execution_by_league", {}) or {}
+    cfg = dict(by_league.get(str(league_key), by_league.get(sport_family, {})) or {})
     market_overrides = dict(cfg.get("market_overrides", {}) or {})
     retirement = dict(cfg.get("retirement", {}) or {})
     return (
@@ -95,8 +96,9 @@ def _hotpath_order_policy_for_league(*, live_policy: Any, league_key: str) -> tu
     )
 
 
-def _hotpath_runtime_policy_for_league(*, live_policy: Any, league_key: str) -> dict[str, int]:
-    cfg = dict((getattr(live_policy, "hotpath_runtime_by_league", {}) or {}).get(str(league_key), {}) or {})
+def _hotpath_runtime_policy_for_league(*, live_policy: Any, league_key: str, sport_family: str = "") -> dict[str, int]:
+    by_league = getattr(live_policy, "hotpath_runtime_by_league", {}) or {}
+    cfg = dict(by_league.get(str(league_key), by_league.get(sport_family, {})) or {})
     refresh_seconds = int(cfg.get("subscription_refresh_seconds", cfg.get("reload_interval_seconds", 120)))
     return {
         "plan_horizon_hours": int(cfg.get("plan_horizon_hours", 24)),
