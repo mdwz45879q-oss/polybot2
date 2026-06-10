@@ -235,13 +235,14 @@ pub(crate) async fn warm_presign_startup_into(
     // ── Phase 1: Prime SDK caches (GET /tick-size + GET /version) ──
     //
     // The SDK's .build() calls GET /tick-size per unique token_id and
-    // GET /version once. These are cached after the first call, but under
-    // high concurrency the first call per token blocks on HTTP while
-    // subsequent callers queue on the DashMap lock. Pre-warming all
-    // unique tokens here serializes the HTTP phase (50 concurrent) so
-    // that phase 2 signing is pure CPU with zero network waits.
+    // GET /version once. These are cached after the first call, but the
+    // first call per token hits the network. With 700+ tokens, concurrent
+    // requests trigger Cloudflare 429s regardless of semaphore tuning.
+    //
+    // Fix: sequential rate-limited fetching. One request every
+    // TICK_SIZE_INTERVAL_MS milliseconds. At 15 req/s, 700 tokens = ~47s,
+    // 1000 tokens = ~67s. Predictable, never triggers 429s, scales linearly.
     {
-        // Collect unique token_id strings and parse them.
         let mut unique_tokens: Vec<SdkU256> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for (_, tpl) in &key_work {
@@ -252,66 +253,66 @@ pub(crate) async fn warm_presign_startup_into(
             }
         }
 
-        // Fetch tick-size for all unique tokens with rate-limit-aware
-        // concurrency. Cloudflare returns 429 (code 1015) above ~20
-        // concurrent requests from the same IP. On 429, the permit is
-        // DROPPED before sleeping — this frees a slot so the entire
-        // pipeline slows down, not just the failed request. Combined
-        // with exponential backoff, this adapts to any rate limit
-        // without being overly conservative on concurrency.
-        const CACHE_CONCURRENT: usize = 10;
-        const MAX_RETRIES: usize = 5;
-
-        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(CACHE_CONCURRENT));
-        let cache_handles: Vec<_> = unique_tokens
-            .into_iter()
-            .map(|tid| {
-                let c = client.clone();
-                let s = sem.clone();
-                tokio::spawn(async move {
-                    for attempt in 0..=MAX_RETRIES {
-                        let permit = s.acquire().await.expect("semaphore closed");
-                        match c.tick_size(tid).await {
-                            Ok(v) => return Ok(v),
-                            Err(e) => {
-                                let msg = format!("{}", e);
-                                if msg.contains("429") && attempt < MAX_RETRIES {
-                                    // Drop permit BEFORE sleeping — frees a slot
-                                    // so the whole pipeline slows down.
-                                    drop(permit);
-                                    let backoff_ms = 1000u64 * (1u64 << attempt); // 1s, 2s, 4s, 8s, 16s
-                                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                                    continue;
-                                }
-                                return Err(e);
-                            }
-                        }
-                    }
-                    unreachable!()
-                })
-            })
-            .collect();
-        let cache_results = tokio::time::timeout(
-            Duration::from_secs(90),
-            futures_util::future::join_all(cache_handles),
-        )
-        .await
-        .map_err(|_| "presign_cache_warm_timeout".to_string())?;
+        const TICK_SIZE_RATE_PER_SEC: u64 = 15;
+        const TICK_SIZE_INTERVAL_MS: u64 = 1000 / TICK_SIZE_RATE_PER_SEC;
+        const MAX_RETRIES: usize = 3;
 
         let mut cache_errs = 0usize;
-        for r in cache_results {
-            match r {
-                Ok(Ok(_)) => {}
-                Ok(Err(e)) => {
-                    eprintln!("[presign] tick-size cache error: {}", e);
-                    cache_errs += 1;
+        let n_tokens = unique_tokens.len();
+
+        for (i, tid) in unique_tokens.into_iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(Duration::from_millis(TICK_SIZE_INTERVAL_MS)).await;
+            }
+
+            let mut last_err = None;
+            for attempt in 0..=MAX_RETRIES {
+                if attempt > 0 {
+                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
                 }
-                Err(e) => {
-                    eprintln!("[presign] tick-size task panic: {}", e);
-                    cache_errs += 1;
+                match client.tick_size(tid).await {
+                    Ok(_) => {
+                        last_err = None;
+                        break;
+                    }
+                    Err(e) => {
+                        let msg = format!("{}", e);
+                        if msg.contains("429") {
+                            last_err = Some(msg);
+                            continue;
+                        }
+                        eprintln!(
+                            "[presign] tick-size error for token {}/{}: {}",
+                            i + 1,
+                            n_tokens,
+                            e
+                        );
+                        cache_errs += 1;
+                        last_err = None;
+                        break;
+                    }
                 }
             }
+            if let Some(err) = last_err {
+                eprintln!(
+                    "[presign] tick-size retries exhausted for token {}/{}: {}",
+                    i + 1,
+                    n_tokens,
+                    err
+                );
+                cache_errs += 1;
+            }
+
+            if (i + 1) % 100 == 0 || i + 1 == n_tokens {
+                eprintln!(
+                    "[presign] tick-size progress: {}/{} ({}ms elapsed)",
+                    i + 1,
+                    n_tokens,
+                    warmup_start.elapsed().as_millis()
+                );
+            }
         }
+
         let cache_ms = warmup_start.elapsed().as_millis();
         eprintln!(
             "[presign] cache primed: {} unique tokens in {}ms ({} errors)",
