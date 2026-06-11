@@ -1661,6 +1661,11 @@ PLAYER_MAP_STUTTGART = {
         "provider_aliases": {"kalstrop_v1": ["Bellucci, Mattia"]},
         "pm_aliases": ["Mattia Bellucci"],
     },
+    "bublik, alexander": {
+        "polymarket_code": "bublik",
+        "provider_aliases": {"kalstrop_v1": ["Bublik, Alexander"]},
+        "pm_aliases": ["Alexander Bublik"],
+    },
     # Alejandro Davidovich Fokina
     "davidovich fokina, alejandro": {
         "polymarket_code": "fokina",
@@ -1751,6 +1756,11 @@ PLAYER_MAP_STUTTGART = {
         "provider_aliases": {"kalstrop_v1": ["Landaluce, Martin"]},
         "pm_aliases": ["Martin Landaluce"],
     },
+    "lehecka, jiri": {
+        "polymarket_code": "lehecka",
+        "provider_aliases": {"kalstrop_v1": ["Lehecka, Jiri"]},
+        "pm_aliases": ["Jiri Lehecka"],
+    },
     # Fabian Marozsan
     "marozsan, fabian": {
         "polymarket_code": "marozsa",
@@ -1799,6 +1809,11 @@ PLAYER_MAP_STUTTGART = {
         "provider_aliases": {"kalstrop_v1": ["Shimabukuro, Sho"]},
         "pm_aliases": ["Sho Shimabukuro"],
     },
+    "shelton, ben": {
+        "polymarket_code": "shelton",
+        "provider_aliases": {"kalstrop_v1": ["Shelton, Ben"]},
+        "pm_aliases": ["Ben Shelton"],
+    },
     # Jan-Lennard Struff
     "struff, jan-lennard": {
         "polymarket_code": "struff",
@@ -1819,6 +1834,11 @@ PLAYER_MAP_STUTTGART = {
 # =============================================================================
 
 PLAYER_MAP_LIBEMA_M = {
+    "auger-aliassime, felix": {
+        "polymarket_code": "augeral",
+        "provider_aliases": {"kalstrop_v1": ["Auger-Aliassime, Felix"]},
+        "pm_aliases": ["Felix Auger-Aliassime"],
+    },
     # Terence Atmane
     "atmane, terence": {
         "polymarket_code": "atmane",
@@ -1927,11 +1947,21 @@ PLAYER_MAP_LIBEMA_M = {
         "provider_aliases": {"kalstrop_v1": ["McCabe, James"]},
         "pm_aliases": ["James McCabe"],
     },
+    "medvedev, daniil": {
+        "polymarket_code": "medvede",
+        "provider_aliases": {"kalstrop_v1": ["Medvedev, Daniil"]},
+        "pm_aliases": ["Daniil Medvedev"],
+    },
     # Jaume Munar
     "munar, jaume": {
         "polymarket_code": "munar",
         "provider_aliases": {"kalstrop_v1": ["Munar, Jaume"]},
         "pm_aliases": ["Jaume Munar"],
+    },
+    "rinderknech, arthur": {
+        "polymarket_code": "rinderk",
+        "provider_aliases": {"kalstrop_v1": ["Rinderknech, Arthur"]},
+        "pm_aliases": ["Arthur Rinderknech"],
     },
     # Mees Rottgering
     "rottgering, mees": {
@@ -3259,6 +3289,11 @@ PLAYER_MAP_ILKLEY_M = {
         "provider_aliases": {"kalstrop_v1": ["Harris, Billy"]},
         "pm_aliases": ["Billy Harris"],
     },
+    "holmgren, august": {
+        "polymarket_code": "holmgre",
+        "provider_aliases": {"kalstrop_v1": ["Holmgren, August"]},
+        "pm_aliases": ["August Holmgren"],
+    },
     "jacquet, kyrian": {
         "polymarket_code": "jacquet",
         "provider_aliases": {"kalstrop_v1": ["Jacquet, Kyrian"]},
@@ -3293,6 +3328,11 @@ PLAYER_MAP_ILKLEY_M = {
         "polymarket_code": "okonkwo",
         "provider_aliases": {"kalstrop_v1": ["Okonkwo, Oliver"]},
         "pm_aliases": ["Oliver Okonkwo"],
+    },
+    "pinnington jones, jack": {
+        "polymarket_code": "jones",
+        "provider_aliases": {"kalstrop_v1": ["Pinnington Jones, Jack"]},
+        "pm_aliases": ["Jack Pinnington Jones"],
     },
     "riedi, leandro": {
         "polymarket_code": "riedi",
@@ -3422,6 +3462,11 @@ PLAYER_MAP_LYON = {
         "provider_aliases": {"kalstrop_v1": ["Sanchez Izquierdo, Nikolas"]},
         "pm_aliases": ["Nikolas Sanchez Izquierdo"],
     },
+    "tabur, clement": {
+        "polymarket_code": "tabur",
+        "provider_aliases": {"kalstrop_v1": ["Tabur, Clement"]},
+        "pm_aliases": ["Clement Tabur"],
+    },
     "trungelliti, marco": {
         "polymarket_code": "trungel",
         "provider_aliases": {"kalstrop_v1": ["Trungelliti, Marco"]},
@@ -3475,6 +3520,11 @@ PLAYER_MAP_TUCUMAN = {
         "provider_aliases": {"kalstrop_v1": ["Del Pino, Arklon"]},
         "pm_aliases": ["Arklon Del Pino"],
     },
+    "estevez, juan": {
+        "polymarket_code": "estevez",
+        "provider_aliases": {"kalstrop_v1": ["Estevez, Juan"]},
+        "pm_aliases": ["Juan Estevez"],
+    },
     "fernandez, bruno": {
         "polymarket_code": "fernand",
         "provider_aliases": {"kalstrop_v1": ["Fernandez, Bruno"]},
@@ -3495,6 +3545,11 @@ PLAYER_MAP_TUCUMAN = {
         "provider_aliases": {"kalstrop_v1": ["Heredia, Samuel"]},
         "pm_aliases": ["Samuel Heredia"],
     },
+    "justo, guido ivan": {
+        "polymarket_code": "justo",
+        "provider_aliases": {"kalstrop_v1": ["Justo, Guido Ivan"]},
+        "pm_aliases": ["Guido Ivan Justo"],
+    },
     "kicker, nicolas": {
         "polymarket_code": "kicker",
         "provider_aliases": {"kalstrop_v1": ["Kicker, Nicolas"]},
@@ -3509,6 +3564,16 @@ PLAYER_MAP_TUCUMAN = {
         "polymarket_code": "tomasma",
         "provider_aliases": {"kalstrop_v1": ["Martinez, Tomas"]},
         "pm_aliases": ["Tomas Martinez"],
+    },
+    "pucinelli de almeida, matheus": {
+        "polymarket_code": "almeida",
+        "provider_aliases": {"kalstrop_v1": ["Pucinelli de Almeida, Matheus"]},
+        "pm_aliases": ["Matheus Pucinelli de Almeida"],
+    },
+    "ribeiro, eduardo": {
+        "polymarket_code": "ribeiro",
+        "provider_aliases": {"kalstrop_v1": ["Ribeiro, Eduardo"]},
+        "pm_aliases": ["Eduardo Ribeiro"],
     },
     "rodriguez, lorenzo joaquin": {
         "polymarket_code": "rodrig",
