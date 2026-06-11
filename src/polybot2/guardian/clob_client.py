@@ -48,6 +48,9 @@ class ClobClient:
         self._private_key = private_key
         self._client = httpx.AsyncClient(timeout=timeout)
 
+        # Cache: condition_id → (neg_risk, tick_size)
+        self._market_info_cache: dict[str, tuple[bool, str]] = {}
+
         # SDK client for EIP-712 signed order submission (sell orders)
         self._sdk_client = None
         if private_key and api_key:
@@ -109,16 +112,42 @@ class ClobClient:
             logger.warning("get_order %s failed: %s", order_id, exc)
             return None
 
+    async def get_market_info(self, condition_id: str) -> tuple[bool, str]:
+        """Fetch neg_risk and tick_size for a market from the CLOB.
+
+        Caches results per condition_id. Returns (neg_risk, tick_size).
+        Falls back to (True, "0.01") on failure.
+        """
+        if condition_id in self._market_info_cache:
+            return self._market_info_cache[condition_id]
+        url = f"{self._host}clob-markets/{condition_id}"
+        try:
+            resp = await self._client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                neg_risk = bool(data.get("neg_risk", True))
+                tick_size = str(data.get("minimum_tick_size", "0.01") or "0.01")
+                self._market_info_cache[condition_id] = (neg_risk, tick_size)
+                logger.info("market info: condition=%s… neg_risk=%s tick_size=%s", condition_id[:16], neg_risk, tick_size)
+                return (neg_risk, tick_size)
+            logger.warning("get_market_info %s…: status=%d", condition_id[:16], resp.status_code)
+        except Exception as exc:
+            logger.warning("get_market_info %s… failed: %s", condition_id[:16], exc)
+        fallback = (True, "0.01")
+        self._market_info_cache[condition_id] = fallback
+        return fallback
+
     async def submit_sell_order(
         self,
         token_id: str,
         size: float,
         price: float,
-        neg_risk: bool = True,
+        condition_id: str = "",
     ) -> dict[str, Any] | None:
         """Submit a GTC sell order at the given price.
 
         Uses py_clob_client_v2 SDK for EIP-712 signing + submission.
+        Fetches neg_risk and tick_size from the CLOB per condition_id.
         Returns the response dict or None on failure.
         """
         if not self._sdk_client:
@@ -127,13 +156,16 @@ class ClobClient:
         try:
             import asyncio
             from py_clob_client_v2 import OrderArgsV2, OrderType, PartialCreateOrderOptions
+
+            neg_risk, tick_size = await self.get_market_info(condition_id) if condition_id else (True, "0.01")
+
             order_args = OrderArgsV2(
                 token_id=token_id,
                 price=price,
                 size=size,
                 side="SELL",
             )
-            options = PartialCreateOrderOptions(neg_risk=neg_risk)
+            options = PartialCreateOrderOptions(neg_risk=neg_risk, tick_size=tick_size)
             signed_order = await asyncio.to_thread(
                 self._sdk_client.create_order, order_args, options,
             )
@@ -141,12 +173,12 @@ class ClobClient:
                 self._sdk_client.post_order, signed_order, OrderType.GTC,
             )
             logger.info(
-                "sell order submitted: token=%s size=%.4f price=%.4f resp=%s",
-                token_id[:20] + "...", size, price, str(resp)[:200],
+                "sell order submitted: token=%s… size=%.4f price=%.4f neg_risk=%s tick_size=%s resp=%s",
+                token_id[:20], size, price, neg_risk, tick_size, str(resp)[:200],
             )
             return resp if isinstance(resp, dict) else {"raw": str(resp)}
         except Exception as exc:
-            logger.warning("sell order failed: token=%s size=%.4f price=%.4f error=%s", token_id[:20] + "...", size, price, exc)
+            logger.warning("sell order failed: token=%s… size=%.4f price=%.4f error=%s", token_id[:20], size, price, exc)
             return None
 
     async def cancel_order_by_id(self, order_id: str) -> bool:

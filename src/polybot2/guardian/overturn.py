@@ -23,8 +23,8 @@ from polybot2.guardian.state import (
 
 logger = logging.getLogger("polybot2.guardian")
 
-DEFAULT_CONFIRMATION_WINDOW_S = 10.0
-DEFAULT_BID_THRESHOLD = 0.80
+DEFAULT_CONFIRMATION_WINDOW_S = 5.0
+DEFAULT_BID_THRESHOLD = 0.985
 
 
 class OverturnDetector:
@@ -281,7 +281,7 @@ class OverturnDetector:
 
     def _check_and_trigger(self, alert: OverturnAlert) -> bool:
         """If both signals confirmed, trigger the overturn response."""
-        if alert.signal1_confirmed and alert.signal2_confirmed and not alert.acted:
+        if alert.signal1_confirmed and alert.signal2_confirmed and not alert.acted and not alert.execution_in_progress:
             logger.warning(
                 "🚨 OVERTURN CONFIRMED for %s — TRIGGERING sell/cancel for %d orders",
                 alert.game_id, len(alert.affected_orders),
@@ -302,6 +302,7 @@ class OverturnDetector:
             if self._on_overturn_triggered:
                 result = self._on_overturn_triggered(alert)
                 if asyncio.iscoroutine(result):
+                    alert.execution_in_progress = True
                     task = asyncio.ensure_future(result)
                     task.add_done_callback(
                         lambda t, a=alert: self._on_execution_done(t, a)
@@ -316,6 +317,7 @@ class OverturnDetector:
 
     def _on_execution_done(self, task: asyncio.Task, alert: OverturnAlert) -> None:
         """Callback after async overturn execution completes or fails."""
+        alert.execution_in_progress = False
         exc = task.exception()
         if exc is None:
             alert.acted = True

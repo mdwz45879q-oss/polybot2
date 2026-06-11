@@ -73,6 +73,7 @@ class OverturnAlert:
     signal1_confirmed: bool = False  # score held reversed for >N seconds
     signal2_confirmed: bool = False  # market bid dropped below threshold
     acted: bool = False  # sell/cancel already triggered
+    execution_in_progress: bool = False  # async execution task is running
     # Orders triggered by the now-reversed goal
     affected_orders: list[TrackedOrder] = field(default_factory=list)
     # Token IDs from affected orders (for market WS monitoring)

@@ -92,6 +92,7 @@ class OverturnExecutor:
             token_id=order.token_id,
             size=order.fill_amount,
             price=price,
+            condition_id=order.condition_id,
         )
         ok = result is not None
         sell_eid = ""
