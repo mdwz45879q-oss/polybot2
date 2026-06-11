@@ -1,7 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M, PLAYER_MAP_LYON, PLAYER_MAP_TUCUMAN
-from tennis_birmingham_mappings import PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M, PLAYER_MAP_LYON, PLAYER_MAP_TUCUMAN
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
 from dota2_mappings import TEAM_MAP_DOTA2
@@ -45,6 +44,13 @@ LEAGUES = {
     ## Bundesliga (catalog-only, not in LIVE_BETTING_LEAGUES — team mappings incomplete)
     "laliga": {
         "polymarket_league_code": "lal",
+        "sport_family": "soccer",
+        "provider": ["boltodds", "kalstrop_v2", "kalstrop_v1"],
+    },
+
+    ## Bundesliga (catalog-only, not in LIVE_BETTING_LEAGUES — team mappings incomplete)
+    "fifwc": {
+        "polymarket_league_code": "fifwc",
         "sport_family": "soccer",
         "provider": ["boltodds", "kalstrop_v2", "kalstrop_v1"],
     },
@@ -236,12 +242,14 @@ PROVIDER_LEAGUE_ALIASES = {
         "dota2": "dota2",
         "lol": "lol",
         "uefa champions league": "ucl",
+        "fifa world cup": "fifwc",
     },
     "kalstrop_v2":{
         "uefa-champions-league": "ucl",
         "english-premier-league": "epl",
         "spanish-la-liga-primera": "laliga",
         "international-friendlies": "fifa_friendly",
+        "world-cup-2026": "fifwc",
     },
     "kalstrop_opta": {
         "premier league": "epl",
@@ -255,6 +263,7 @@ PROVIDER_LEAGUE_ALIASES = {
         "mlb": "mlb",
         "bundesliga": "bundesliga",
         "champions league": "ucl",
+        "world cup": "fifwc",
         "la liga": "laliga",
         "roland garros (m) - tennis": "rgm",
         "roland garros (w) - tennis": "rgw",
@@ -351,6 +360,10 @@ KALSTROP_V2_SLUGS = {
         "category_slug": "international",
         "tournament_slug": "international-friendlies",
     },
+    "fifwc": {
+        "category_slug": "international",
+        "tournament_slug": "world-cup-2026",
+    },
 }
 # =============================================================================
 # TEAM ABBREVIATIONS - LEAGUE SPECIFIC
@@ -387,6 +400,7 @@ TEAM_MAP = {
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
     "fifa_friendly": TEAM_MAP_FIFA_FRIENDLY,
+    "fifwc": TEAM_MAP_WC,
 }
 
 # =============================================================================
@@ -420,6 +434,7 @@ PM_LEAGUE_ORDERINGS = {
     "lol": "home",
     "dota2": "home",
     "fifa_friendly": "home",
+    "fifwc": "home",
 }
 
 # =============================================================================

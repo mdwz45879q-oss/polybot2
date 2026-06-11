@@ -6,6 +6,7 @@ DEFAULT_PROVIDER = None
 
 LIVE_BETTING_LEAGUES = {
     "mlb",
+    "fifwc",
     "epl",
     "ucl",
     "laliga",
@@ -48,6 +49,12 @@ LIVE_BETTING_MARKET_TYPES = {
            "soccer_halftime_result",
            "total_corners"],
     "ucl": ["moneyline",
+            "totals",
+            "both_teams_to_score",
+            "spreads",
+            "soccer_halftime_result",
+            "total_corners",],
+    "fifwc": ["moneyline",
             "totals",
             "both_teams_to_score",
             "spreads",
@@ -102,6 +109,28 @@ HOTPATH_EXECUTION_POLICY = {
 	    "moneyline": {"amount_usdc": 2000.0, "size_shares": 2000.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 2000.0, "secondary_size_shares": 2000.0, "secondary_limit_price": 0.99,},
         }
+    },
+    "fifwc": {
+        "amount_usdc": 50.0,
+        "size_shares": 50.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.90,
+        "secondary_amount_usdc": 50.0,
+        "secondary_size_shares": 50.0,
+        "secondary_time_in_force": "FAK",
+        "secondary_limit_price": 0.95,
+        "market_overrides": {
+	    "total_corners": {"amount_usdc": 1000.0, "size_shares": 1000.0, "limit_price": 0.99,
+                    "secondary_amount_usdc": 1000.0, "secondary_size_shares": 1000.0, "secondary_limit_price": 0.99,},
+        "soccer_halftime_result": {"amount_usdc": 250.0, "size_shares": 250.0, "limit_price": 0.99,
+                    "secondary_amount_usdc": 1000.0, "secondary_size_shares": 1000.0, "secondary_limit_price": 0.99,},
+        "moneyline":{"amount_usdc": 1000.0, "size_shares": 1000.0,  "limit_price": 0.99,
+                    "secondary_amount_usdc": 1000.0, "secondary_size_shares": 1000.0, "secondary_limit_price": 0.99,},
+        "spreads":{"amount_usdc": 1000.0, "size_shares": 1000.0, "limit_price": 0.99,
+                    "secondary_amount_usdc": 1000.0, "secondary_size_shares": 1000.0, "secondary_limit_price": 0.99,},
+                    },
+
     },
     "epl": {
         "amount_usdc": 25.0,
@@ -303,5 +332,14 @@ HOTPATH_RUNTIME_POLICY = {
         "refresh_interval_seconds": 300,
         "ws_core_idx": 3,
         "submitter_core_idx": 4,
+    },
+    "fifwc": {
+        "plan_horizon_hours": 12,
+        "subscribe_lead_minutes": 30,
+        "reload_interval_seconds": 120,
+        "provider_catalog_max_age_seconds": 20000,
+        "refresh_interval_seconds": 300,
+        "ws_core_idx": 1,
+        "submitter_core_idx": 2,
     },
 }
