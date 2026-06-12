@@ -47,6 +47,12 @@ except ImportError:
     sys.exit(2)
 
 
+def _map_winner(h: int, a: int) -> bool:
+    """CS2 closed-form map winner condition. True if the score is a decided map."""
+    big, small, d = max(h, a), min(h, a), abs(h - a)
+    return (big == 13 and small <= 11) or (big >= 16 and big % 3 == 1 and d >= 2 and d <= 4)
+
+
 # ─── Credentials ──────────────────────────────────────────────────────
 
 PS_TOKEN = os.environ.get("PANDASCORE_API_TOKEN", "")
@@ -72,12 +78,17 @@ def _v1_auth_qs() -> str:
 
 async def capture_pandascore_feed(
     match_id: str,
-    feed_type: str,  # "frames" or "events"
+    feed_type: str,  # "frames", "events", or "low_latency"
     out_path: Path,
     token: str,
     stop: asyncio.Event,
+    start_ts_utc: int | None = None,
 ):
-    """Capture one PandaScore WebSocket feed with reconnection."""
+    """Capture one PandaScore WebSocket feed with reconnection.
+
+    If `start_ts_utc` is provided and the WS isn't open yet (4004),
+    waits until ~20 minutes before start then retries every 60s.
+    """
     url = f"wss://live.pandascore.co/matches/{match_id}"
     if feed_type == "events":
         url += "/events"
@@ -89,6 +100,7 @@ async def capture_pandascore_feed(
     count = 0
     backoff = 2.0
     last_frame_at = time.monotonic()
+    last_heartbeat = time.monotonic()
 
     with out_path.open("a") as f:
         while not stop.is_set():
@@ -98,6 +110,7 @@ async def capture_pandascore_feed(
                 ) as ws:
                     backoff = 2.0
                     last_frame_at = time.monotonic()
+                    prev_score = None
                     async for raw in ws:
                         if stop.is_set():
                             break
@@ -108,27 +121,78 @@ async def capture_pandascore_feed(
                         except Exception:
                             frame = raw if isinstance(raw, str) else raw.decode("utf-8", errors="replace")
 
-                        # Hello message — log but don't write to JSONL
+                        # Hello message — write to JSONL and log
                         if isinstance(frame, dict) and frame.get("type") == "hello":
-                            print(f"[{source}] connected to match {match_id}")
+                            payload = frame.get("payload", {})
+                            print(f"[{source}] connected to match {match_id} (status={payload.get('status')}, game={payload.get('videogame')})")
+                            f.write(json.dumps({"ts_ns": ts_ns, "source": source, "frame": frame}) + "\n")
+                            f.flush()
                             continue
 
                         f.write(json.dumps({"ts_ns": ts_ns, "source": source, "frame": frame}) + "\n")
                         f.flush()
                         count += 1
 
-                        # Heartbeat check
-                        if count % 100 == 0:
-                            print(f"[{source}] {count} frames captured")
+                        # Score-reset detection (low_latency feed only)
+                        if feed_type == "low_latency" and isinstance(frame, dict) and "home_team" in frame:
+                            h = frame.get("home_team", {}).get("score")
+                            a = frame.get("away_team", {}).get("score")
+                            if h is not None and a is not None:
+                                cur = (h, a)
+                                if prev_score and cur == (0, 0) and prev_score != (0, 0):
+                                    ph, pa = prev_score
+                                    if _map_winner(ph + 1, pa):
+                                        print(f"*** [{source}] MAP DECIDED: {ph}-{pa} → 0-0 (home wins) at ts={ts_ns} (match {match_id}) ***")
+                                    elif _map_winner(ph, pa + 1):
+                                        print(f"*** [{source}] MAP DECIDED: {ph}-{pa} → 0-0 (away wins) at ts={ts_ns} (match {match_id}) ***")
+                                    else:
+                                        print(f"*** [{source}] ANOMALOUS RESET: {ph}-{pa} → 0-0 at ts={ts_ns} (match {match_id}) — possible forfeit ***")
+                                prev_score = cur
+
+                        # Periodic heartbeat every 60s
+                        now_mono = time.monotonic()
+                        if now_mono - last_heartbeat >= 60:
+                            silence = now_mono - last_frame_at
+                            if silence > 120:
+                                print(f"[{source}] WARNING: no data for {silence:.0f}s — connection may be stale (match {match_id})")
+                            else:
+                                print(f"[{source}] {count} frames captured (match {match_id})")
+                            last_heartbeat = now_mono
 
             except websockets.exceptions.ConnectionClosedError as e:
                 err_str = str(e)
-                # 4003 = insufficient permissions (wrong plan)
-                # 4004 = match unavailable (WS not open yet — opens 15min before start)
-                if "4003" in err_str or "4004" in err_str or "Unsufficient" in err_str:
-                    reason = "access denied" if "4003" in err_str else "match WS not open yet"
-                    print(f"[{source}] {reason} — skipping (match {match_id})")
+                # 4003 = insufficient permissions (wrong plan) — skip permanently
+                if "4003" in err_str or "Unsufficient" in err_str:
+                    print(f"[{source}] access denied — skipping (match {match_id})")
                     return
+                # 4004 = match unavailable (WS not open yet — opens 15min before start)
+                if "4004" in err_str:
+                    if start_ts_utc:
+                        wait_until = start_ts_utc - 20 * 60  # 20 min before start
+                        now = int(time.time())
+                        if now < wait_until:
+                            delay = wait_until - now
+                            print(f"[{source}] match {match_id} not open yet — waiting {delay//60}min until ~20min before start")
+                            try:
+                                await asyncio.wait_for(stop.wait(), timeout=delay)
+                            except asyncio.TimeoutError:
+                                pass
+                            if stop.is_set():
+                                break
+                            continue  # retry connection
+                        else:
+                            # We're within 20min of start — retry every 60s
+                            print(f"[{source}] match {match_id} not open yet — retrying in 60s")
+                            try:
+                                await asyncio.wait_for(stop.wait(), timeout=60)
+                            except asyncio.TimeoutError:
+                                pass
+                            if stop.is_set():
+                                break
+                            continue
+                    else:
+                        print(f"[{source}] match WS not open yet — skipping (match {match_id}, no start time)")
+                        return
                 if stop.is_set():
                     break
                 print(f"[{source}] connection closed: {e} — reconnecting in {backoff:.0f}s")
@@ -298,15 +362,16 @@ async def capture_game(game: dict, out_dir: Path, token: str, stop: asyncio.Even
 
     tasks = []
     ps_id = game.get("pandascore_match_id")
+    start_ts = game.get("start_ts_utc")
     if ps_id and token:
         tasks.append(asyncio.create_task(
-            capture_pandascore_feed(ps_id, "low_latency", game_dir / "pandascore_low_latency.jsonl", token, stop)
+            capture_pandascore_feed(ps_id, "low_latency", game_dir / "pandascore_low_latency.jsonl", token, stop, start_ts)
         ))
         tasks.append(asyncio.create_task(
-            capture_pandascore_feed(ps_id, "frames", game_dir / "pandascore_frames.jsonl", token, stop)
+            capture_pandascore_feed(ps_id, "frames", game_dir / "pandascore_frames.jsonl", token, stop, start_ts)
         ))
         tasks.append(asyncio.create_task(
-            capture_pandascore_feed(ps_id, "events", game_dir / "pandascore_events.jsonl", token, stop)
+            capture_pandascore_feed(ps_id, "events", game_dir / "pandascore_events.jsonl", token, stop, start_ts)
         ))
 
     v1_id = game.get("v1_fixture_id")
