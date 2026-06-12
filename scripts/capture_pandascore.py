@@ -81,6 +81,8 @@ async def capture_pandascore_feed(
     url = f"wss://live.pandascore.co/matches/{match_id}"
     if feed_type == "events":
         url += "/events"
+    elif feed_type == "low_latency":
+        url += "/low_latency_feed"
     url += f"?token={token}"
 
     source = f"ps:{feed_type}"
@@ -287,6 +289,9 @@ async def capture_game(game: dict, out_dir: Path, token: str, stop: asyncio.Even
     tasks = []
     ps_id = game.get("pandascore_match_id")
     if ps_id and token:
+        tasks.append(asyncio.create_task(
+            capture_pandascore_feed(ps_id, "low_latency", game_dir / "pandascore_low_latency.jsonl", token, stop)
+        ))
         tasks.append(asyncio.create_task(
             capture_pandascore_feed(ps_id, "frames", game_dir / "pandascore_frames.jsonl", token, stop)
         ))
