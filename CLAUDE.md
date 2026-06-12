@@ -54,7 +54,7 @@ The hot path is split across two threads. The **WS thread** parses frames, evalu
 | Module | Role |
 |--------|------|
 | `kalstrop_types.rs` | Zero-copy serde structs for Kalstrop WS frames (`KalstropFrame<'a>`, etc.) |
-| `baseball/` | Sport-specific: `engine.rs` (NativeMlbEngine, process_tick_live, merge_plan), `eval.rs` (totals, NRFI, walkoff, moneyline, spreads), `parse.rs` (inning parsing), `frame_pipeline.rs` (zero-alloc live path), `types.rs` (GameState, GameTargets, etc.) |
+| `baseball/` | Sport-specific: `engine.rs` (NativeMlbEngine, process_tick_live, merge_plan), `eval.rs` (totals, NRFI, walkoff, moneyline, spreads, F5 totals/winner/spreads, extra innings), `parse.rs` (inning parsing), `frame_pipeline.rs` (zero-alloc live path), `types.rs` (GameState, GameTargets, etc.) |
 | `soccer/` | Sport-specific: `engine.rs` (NativeSoccerEngine), `eval.rs` (totals, three-way moneyline, BTTS, spreads, corners, halftime result, exact score with early NO), `parse.rs` (half parsing), `frame_pipeline.rs`, `types.rs` |
 | `tennis/` | Sport-specific: `engine.rs` (NativeTennisEngine, 4 evaluators: set totals, moneyline, first-set winner, set handicap — match totals and first-set totals evaluators removed, those market types are retirement-pool-only), `frame_pipeline.rs` (includes `detect_retirement` for 4-string exact match), `types.rs` (includes `RetirementTarget`, `RetirementResult`). Per-game `sets_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot`. Separate retirement presign pool for 50/50 orders on retirement. Option A: set totals and set handicap fire only at match end (no mid-match guaranteed-certainty over or early not_covers). |
 | `cs2/` | Sport-specific: `engine.rs` (NativeCs2Engine, process_tick_live, merge_plan), `eval.rs` (closed-form map winner via `map_winner()`, child moneyline with dual-signal detection, match moneyline, totals with guaranteed-certainty, map handicap with early not_covers — 40 tests), `frame_pipeline.rs` (uses `"Closed"` not `"Ended"` for match completion), `types.rs` (Cs2GameTargets, Cs2GameState, SpreadSlot). Per-game `maps_to_win` (2 for BO3, 3 for BO5). Own `SpreadSlot` (no cross-sport imports). Effective-maps optimization: calls `map_winner()` directly in `process_tick_live` (no dependency on `map_winner_resolved` flag) to fire match-end bets on round-13 tick for ALL maps, including those without child_moneyline markets (BO3 map 3, BO1). |
@@ -152,6 +152,10 @@ The Python compiler (`compiler.py`) produces strategy keys (`"gid:TOTAL:OVER:5.5
 | **Moneyline (tennis)** | PM code in label (fallback after team-name match) | `home`, `away` |
 | **Child moneyline (CS2)** | Map number from slug suffix + team name in label, cross-validated against question text | `home`, `away` |
 | **Map handicap (CS2)** | Slug (`-handicap-home-` / `-handicap-away-`) + question text determines favored side for both outcomes | `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers` |
+| **F5 winner (baseball)** | `_three_way_side_from_slug` (`-home`/`-away`/`-draw`) + outcome_index | `home_yes`, `home_no`, `away_yes`, `away_no`, `draw_yes`, `draw_no` |
+| **F5 total (baseball)** | Label "Over"/"Under" or outcome_index fallback | `over`, `under` |
+| **F5 spread (baseball)** | `_spread_side_from_slug` (`-f5-spread-home-`/`-f5-spread-away-`) + outcome_index | `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers` |
+| **Extra innings (baseball)** | outcome_index (0=yes, 1=no) | `yes`, `no` |
 
 Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exact_score_from_slug`. Polymarket codes looked up from `TEAM_MAP_*` / `PLAYER_MAP_*` via the mapping at compile time.
 
@@ -165,6 +169,10 @@ Slug helpers: `_three_way_side_from_slug`, `_spread_side_from_slug`, `_parse_exa
 - `{gid}:TENNIS_SET_HANDICAP:HOME_COVERS:-2.5`, `{gid}:TENNIS_SET_HANDICAP:AWAY_NOT_COVERS:-1.5`
 - `{gid}:CHILD_MONEYLINE:MAP1:HOME`, `{gid}:CHILD_MONEYLINE:MAP2:AWAY`
 - `{gid}:MAP_HANDICAP:HOME_COVERS:-1.5`, `{gid}:MAP_HANDICAP:AWAY_NOT_COVERS:1.5`
+- `{gid}:F5_WINNER:HOME_YES`, `{gid}:F5_WINNER:DRAW_NO`
+- `{gid}:F5_TOTAL:OVER:4.5`, `{gid}:F5_TOTAL:UNDER:4.5`
+- `{gid}:F5_SPREAD:HOME_COVERS:-0.5`, `{gid}:F5_SPREAD:AWAY_NOT_COVERS:-0.5`
+- `{gid}:EXTRA_INNINGS:YES`, `{gid}:EXTRA_INNINGS:NO`
 
 The Rust plan loader has `eprintln!` warnings on unhandled semantics — visible at startup. The serializer emits per-target `line` (required for exact scores where `market.line` is NULL).
 
@@ -272,17 +280,25 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 7. **NRFI first-inning gate:** `nrfi_first_inning_observed: Vec<bool>` indexed by `GameIdx`. Late subscriptions (inning > 1) are permanently skipped. Ticks without inning data defer evaluation. Extra innings use `inning_number = Some(10)` as sentinel (walkoff `>= 9` fires correctly). Kalstrop freeText patterns: `"Extra inning top"`, `"Extra inning bottom"`, `"Break top EI bottom 9"`, `"Break top EI bottom EI"` — all map to `(Some(10), half)`. Regular inning: `"Break top 1 bottom 1"` = mid-inning break (bottom of 1st not yet played, first inning NOT over); `"Break top 2 bottom 1"` = first inning fully done (NRFI NO can fire here if total=0).
 
-8. **Zero-copy parsing:** The live WS path deserializes directly into borrowed `KalstropFrame<'a>` structs and extracts fields without constructing a `Tick` or allocating any strings. The `fixture_id` is looked up as `&str` directly from the serde struct.
+8. **F5 (first 5 innings) two-tier evaluation:** Same pattern as walkoff partial spreads. After top 5th, away's score is locked — home margin can only grow. **Tier 1 (mid-5th):** fire F5 winner (home leads only) + mathematically locked F5 spread sides. **Tier 2 (F5 completion, bottom 5th ends):** fire all remaining F5 winner/spread/under/over tokens. Presign pool prevents double-fire across tiers. Detection is provider-split: BoltOdds requires `outs==3 && inning==5 && top` OR confirming `period_detail` (`AT_MID_5TH_INNING`/`AT_BOT_5TH_INNING` for mid-5th, `AT_END_5TH_INNING` for completion); V1 uses `inning==5 && half=="bottom"` for mid-5th, `inning>=6` for completion. The bare `(inning==5 && half=="bottom")` condition is unsafe on BoltOdds because BoltOdds advances `state.inning` before the period string updates — an `AT_END_4TH` frame with `inning=5, top=false` would match prematurely. Cold-start gate: `f5_first_five_observed` — late subscriptions (inning > 5) permanently skip all F5 evaluation. F5 totals have no tie guarantee (F5 can end tied). Design document: `docs/baseball_f5_design.md`.
 
-9. **Submitter thread isolation:** The WS thread never owns or references the SDK client or HTTP client. Submitter ownership is established at startup; the SPSC ring is the only communication path. `ArcSwap<TargetRegistry>` is the shared registry pointer (updated atomically on patch, loaded per batch by submitter for log attribution).
+9. **Extra innings evaluation:** YES fires when game enters extras — BoltOdds primary (`outs==3 && inning==9 && bottom && home==away`), V1/BoltOdds fallback (`inning >= 10`). `evaluate_extra_innings_into` runs BEFORE `evaluate_walkoff_into` in both chains so YES fires before any game-end evaluator can fire NO on the same frame. NO fires alongside existing game-end evaluators, guarded by `has_extra_innings[gi] && !extra_innings_resolved[gi] && state.inning_number.is_some_and(|i| i <= 9)`. The inning guard blocks NO on V1 cold-start at "Ended" (`inning=None`) and on extras games (`inning >= 10`). The walkoff NO site additionally checks `!period_detail.contains("_EXTRA_")` as belt-and-suspenders. When game goes to extras then ends, game-end evaluators fire moneyline/spreads/unders but NOT extra_innings NO (resolved flag blocks). BoltOdds uses `AT_TOP_EXTRA_INNING`/`AT_MID_EXTRA_INNING`/`AT_BOT_EXTRA_INNING` period strings for all extra innings (no numbered inning in the period — the numeric `state.inning` field still carries the actual inning number 10, 11, etc.).
 
-10. **Frame-preserving batch:** `process_decoded_frame_sync` builds exactly one `SubmitWork::Batch` per material WS frame. All intents from the same frame ride together in one ring push. The submitter processes batches inline (strict serialized queue) via 3-tier dispatch: single order → `POST /order`, 2–15 orders → one `POST /orders` batch, >15 → chunked concurrent `join_all`.
+10. **BoltOdds period-based fallbacks:** BoltOdds sometimes skips the `outs=3` frame and jumps straight to a period transition (break frame). The break guard suppresses all evaluators on break frames. Three fallback evaluator calls run **after** the `if !is_break` block: `evaluate_f5_mid5_into` (catches `AT_MID_5TH_INNING`), `evaluate_f5_completion_into` (catches `AT_END_5TH_INNING` via `period_detail` parameter), `evaluate_nrfi_period_into` (catches `AT_END_1ST_INNING` with `total==0`). `MATCH_COMPLETED` is handled earlier by setting `match_completed: Some(true)` on the GameState. `BoltOddsBaseballRow` includes `is_break: bool` so break frames always pass dedup even when outs/inning/scores match the preceding active frame. Resolution flags prevent double-fire when both `outs=3` and the subsequent period transition are received. BoltOdds advances `state.inning` before the period string updates (captures show `AT_END_4TH_INNING` with `inning=5` and "limbo" frames like `AT_BOT_8TH` with `inning=9`); the walkoff evaluator and F5 mid-5th evaluator have provider-split detection guards to reject these frames on BoltOdds.
 
-11. **Monotonic clock:** Engine timestamps use `worker_clock_origin: Instant` set at WS-worker startup, sourced via `Instant::elapsed().as_nanos()`. Wall-clock (`now_unix_ns`) is used only for log timestamps and L2 auth headers — never for engine math.
+10a. **BoltOdds state-ahead invariant:** BoltOdds advances `state.inning` and clears `topOfInning` before the `matchPeriod` string updates. All break frames have `topOfInning=false` and `out=0`. The engine maps `topOfInning=false` to `inning_half="bottom"`, so between-innings frames masquerade as bottom-half frames. Evaluators that gate on `inning_half=="bottom"` (walkoff, F5 mid-5th) must validate via `period_detail` on BoltOdds frames (`state.outs.is_some()`) to avoid premature firing. `period_inning_number()` helper extracts the inning number from the period string for cross-validation; returns `None` for `_EXTRA_INNING` strings (no embedded number), causing the inning-match check to be skipped — safe because home can never lead at a live extras between-innings boundary.
 
-12. **Pool sharing semantics:** The presign pool is indexed by `TokenIdx`, not `TargetIdx`. Two targets pointing to the same token share one queue entry. This is enforced structurally — `tokens` is deduplicated at plan load.
+11. **Zero-copy parsing:** The live WS path deserializes directly into borrowed `KalstropFrame<'a>` structs and extracts fields without constructing a `Tick` or allocating any strings. The `fixture_id` is looked up as `&str` directly from the serde struct.
 
-13. **Exact score early NO (slice approach):** Since soccer scores only increase, predicted scorelines become impossible mid-game. On each goal, only the newly-impossible "slice" is fired — not all currently-impossible slots. Home goal (`x-y → x+1-y`): fire NO on slots where `home_pred == x AND away_pred >= y`. Away goal (`x-y → x-y+1`): fire NO on slots where `away_pred == y AND home_pred >= x`. At full time: fire YES on matching score, NO on remaining unresolved slots (`home_pred >= home AND away_pred >= away AND NOT exact match`). `any_other_score` fires at full time only. `SoccerGameState` tracks `prev_home`/`prev_away` for delta detection. No per-slot tracking needed — the presign pool prevents double-fire.
+12. **Submitter thread isolation:** The WS thread never owns or references the SDK client or HTTP client. Submitter ownership is established at startup; the SPSC ring is the only communication path. `ArcSwap<TargetRegistry>` is the shared registry pointer (updated atomically on patch, loaded per batch by submitter for log attribution).
+
+13. **Frame-preserving batch:** `process_decoded_frame_sync` builds exactly one `SubmitWork::Batch` per material WS frame. All intents from the same frame ride together in one ring push. The submitter processes batches inline (strict serialized queue) via 3-tier dispatch: single order → `POST /order`, 2–15 orders → one `POST /orders` batch, >15 → chunked concurrent `join_all`.
+
+14. **Monotonic clock:** Engine timestamps use `worker_clock_origin: Instant` set at WS-worker startup, sourced via `Instant::elapsed().as_nanos()`. Wall-clock (`now_unix_ns`) is used only for log timestamps and L2 auth headers — never for engine math.
+
+15. **Pool sharing semantics:** The presign pool is indexed by `TokenIdx`, not `TargetIdx`. Two targets pointing to the same token share one queue entry. This is enforced structurally — `tokens` is deduplicated at plan load.
+
+16. **Exact score early NO (slice approach):** Since soccer scores only increase, predicted scorelines become impossible mid-game. On each goal, only the newly-impossible "slice" is fired — not all currently-impossible slots. Home goal (`x-y → x+1-y`): fire NO on slots where `home_pred == x AND away_pred >= y`. Away goal (`x-y → x-y+1`): fire NO on slots where `away_pred == y AND home_pred >= x`. At full time: fire YES on matching score, NO on remaining unresolved slots (`home_pred >= home AND away_pred >= away AND NOT exact match`). `any_other_score` fires at full time only. `SoccerGameState` tracks `prev_home`/`prev_away` for delta detection. No per-slot tracking needed — the presign pool prevents double-fire.
 
 ## CLI Commands
 
@@ -545,6 +561,16 @@ The `GuardianManager` (in `manager.py`) is created by the hotpath orchestrator a
 
 Game-ID normalization (`_game_id_map`) maps alternate provider game IDs (e.g., V2 fixture IDs) to the canonical game ID (used in strategy keys), fixing the V2 fixture-ID ↔ event-ID mismatch that caused orders to be orphaned from score data.
 
+### Guardian V2 Compatibility (patch_plan)
+
+Two ID spaces coexist for V2 games: the **prematch event ID** (PM event identifier, e.g., `7737375` — used as the strategy key prefix in Rust log order events) and the **V2 fixture ID** (BetGenius live ID, e.g., `13941517` — used in Rust log tick events). `_game_id_map` must map both to the same canonical ID so ticks and orders land in the same `GameState`. Without this, `triggered_by` is always `None` and overturn alerts are never armed.
+
+The orchestrator must call `guardian.add_game_id_alias(prematch_event_id, fixture_id)` for EVERY V2-resolved game — both the startup game (first resolution) and subsequent patch games. The patch path (`commands_hotpath_runtime.py` ~line 595) calls `update_plan` + `add_game_id_alias`. The startup path (~line 563) must also call `add_game_id_alias` after `guardian.start()`.
+
+`update_plan(game_plan)` updates `_token_to_condition`, `_game_id_map`, and `_token_to_sk`, and triggers a market WS reconnect for new tokens. Polymarket's market channel ignores mid-session subscription updates — only the initial subscription at connection time takes effect. `PolymarketMarketWS.request_reconnect()` forces a clean disconnect so the `run()` reconnect loop re-subscribes with the full token set.
+
+`OverturnAlert.execution_in_progress` guards against duplicate sell/cancel from the 1s `check_confirmations` timer re-entering `_check_and_trigger` while async execution is in-flight. Cleared in `_on_execution_done` to allow retry on failure.
+
 ### Overturn Detection (Dual-Signal + VAR)
 
 Two mandatory signals must BOTH confirm before acting:
@@ -552,7 +578,7 @@ Two mandatory signals must BOTH confirm before acting:
 1. **Score reversal** (from hotpath log ticks): score decreased and held for >10s. Disarms automatically if score restores within the window (wobble).
 2. **Market activity resumption** (from Polymarket market channel WS): best bid on affected tokens drops below threshold (default $0.80).
 
-**VAR detection** (from V2 `court.matchActions[]`): The Rust V2 extractor extracts `type`/`subType` from the first match action. `type: "Var", subType: "Goal"` = review started. `type: "VarEnded", subType: "GoalNotAwarded"` = goal overturned (definitive signal). Logged as `var_action` events in the guardian log and passed to the detector via `on_var_action()`.
+**VAR detection** (from V2 `court.matchActions[]`): The Rust V2 extractor extracts `type`/`subType` from the first match action. `type: "Var", subType: "Goal"` = review started. `type: "VarEnded", subType: "NoGoal"` or `subType: "NoPenalty"` = goal/penalty overturned (instant Signal 1 confirmation, skips 10s hold). `type: "VarEnded", subType: "GoalAwarded"` or `"PenaltyAwarded"` = VAR confirmed the goal — disarms any armed alert. Logged as `var_action` events in the guardian log and passed to the detector via `on_var_action()`. Only top-tier V2 leagues emit VAR match actions; lower-tier leagues fall back to the 10s timer.
 
 When both signals confirm: cancel all resting GTC orders triggered by the overturned goal, sell filled positions at current best bid.
 

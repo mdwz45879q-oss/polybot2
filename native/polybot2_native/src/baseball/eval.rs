@@ -7,6 +7,22 @@ fn push_if_some(slot: Option<TargetIdx>, out: &mut smallvec::SmallVec<[Intent; 3
     }
 }
 
+fn period_inning_number(period_detail: &str) -> Option<i64> {
+    let bytes = period_detail.as_bytes();
+    if bytes.len() < 8 {
+        return None;
+    }
+    let mut n: i64 = 0;
+    for &b in &bytes[7..] {
+        if b.is_ascii_digit() {
+            n = n * 10 + (b - b'0') as i64;
+        } else {
+            break;
+        }
+    }
+    if n > 0 { Some(n) } else { None }
+}
+
 #[cfg(test)]
 pub(crate) fn line_key(value: f64) -> String {
     let text = format!("{:.6}", value);
@@ -156,6 +172,7 @@ impl NativeMlbEngine {
         &mut self,
         gidx: GameIdx,
         state: &GameState,
+        period_detail: &str,
         out: &mut smallvec::SmallVec<[Intent; 32]>,
     ) {
         let gi = gidx.0 as usize;
@@ -169,6 +186,21 @@ impl NativeMlbEngine {
         if inning < 9 || state.inning_half != "bottom" {
             return;
         }
+
+        // BoltOdds guard: reject frames where the period string doesn't
+        // confirm we're genuinely in the bottom of this inning. Limbo
+        // frames (state.inning advanced but period still showing the
+        // previous half) masquerade as bottom-9+ and fire walkoff.
+        if state.outs.is_some() {
+            if !period_detail.starts_with("AT_BOT_") {
+                return;
+            }
+            if let Some(period_inn) = period_inning_number(period_detail) {
+                if period_inn != inning {
+                    return;
+                }
+            }
+        }
         let home = state.home.unwrap_or(0);
         let away = state.away.unwrap_or(0);
         if home <= away {
@@ -179,6 +211,15 @@ impl NativeMlbEngine {
 
         // Moneyline: home wins.
         push_if_some(self.game_targets[gi].moneyline_home, out);
+
+        if self.has_extra_innings[gi]
+            && !self.extra_innings_resolved[gi]
+            && state.inning_number.is_some_and(|i| i <= 9)
+            && !period_detail.contains("_EXTRA_")
+        {
+            push_if_some(self.game_targets[gi].extra_innings_no, out);
+            self.extra_innings_resolved[gi] = true;
+        }
 
         // Partial spreads: fire the sides that are mathematically locked.
         // On a walkoff, margin_home is ≥1 and can only stay same or grow
@@ -300,6 +341,14 @@ impl NativeMlbEngine {
         }
 
         self.final_resolved_games[gi] = true;
+
+        if self.has_extra_innings[gi]
+            && !self.extra_innings_resolved[gi]
+            && state.inning_number.is_some_and(|i| i <= 9)
+        {
+            push_if_some(self.game_targets[gi].extra_innings_no, out);
+            self.extra_innings_resolved[gi] = true;
+        }
     }
 
     // ---------------------------------------------------------------
@@ -470,6 +519,282 @@ impl NativeMlbEngine {
         }
 
         self.final_resolved_games[gi] = true;
+
+        if self.has_extra_innings[gi]
+            && !self.extra_innings_resolved[gi]
+            && state.inning_number.is_some_and(|i| i <= 9)
+        {
+            push_if_some(self.game_targets[gi].extra_innings_no, out);
+            self.extra_innings_resolved[gi] = true;
+        }
+    }
+
+    pub(crate) fn evaluate_extra_innings_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if self.extra_innings_resolved[gi] {
+            return;
+        }
+        if !self.has_extra_innings[gi] {
+            return;
+        }
+
+        let inning = state.inning_number.unwrap_or(0);
+        if inning < 9 {
+            return;
+        }
+
+        let home = state.home.unwrap_or(0);
+        let away = state.away.unwrap_or(0);
+
+        if inning == 9
+            && state.inning_half == "bottom"
+            && state.outs == Some(3)
+            && home == away
+        {
+            push_if_some(self.game_targets[gi].extra_innings_yes, out);
+            self.extra_innings_resolved[gi] = true;
+            return;
+        }
+
+        if inning >= 10 {
+            push_if_some(self.game_targets[gi].extra_innings_yes, out);
+            self.extra_innings_resolved[gi] = true;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // F5 (first 5 innings) evaluators
+    // ---------------------------------------------------------------
+
+    pub(crate) fn evaluate_f5_totals_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if !self.has_f5[gi] || self.f5_resolved[gi] {
+            return;
+        }
+
+        let inning = state.inning_number.unwrap_or(0);
+
+        if !self.f5_first_five_observed[gi] {
+            if inning >= 1 && inning <= 5 {
+                self.f5_first_five_observed[gi] = true;
+            } else if inning > 5 {
+                self.f5_resolved[gi] = true;
+                return;
+            } else {
+                return;
+            }
+        }
+
+        if inning > 5 {
+            return;
+        }
+
+        let Some(total_now) = state.total else {
+            return;
+        };
+        let Some(prev_total) = state.prev_total else {
+            return;
+        };
+        if total_now <= prev_total {
+            return;
+        }
+
+        let prev = prev_total as u16;
+        let now = total_now as u16;
+        let targets = &self.game_targets[gi];
+        for ol in &targets.f5_over_lines {
+            if ol.half_int >= now {
+                break;
+            }
+            if ol.half_int >= prev {
+                out.push(Intent {
+                    target_idx: ol.target_idx,
+                });
+            }
+        }
+    }
+
+    pub(crate) fn evaluate_f5_mid5_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        period_detail: &str,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if self.f5_resolved[gi] || self.f5_top5_fired[gi] {
+            return;
+        }
+        if !self.f5_first_five_observed[gi] || !self.has_f5[gi] {
+            return;
+        }
+        if state.home.is_none() || state.away.is_none() {
+            return;
+        }
+
+        let inning = state.inning_number.unwrap_or(0);
+        let top5_complete = if state.outs.is_some() {
+            // BoltOdds: require outs-based primary OR confirming period.
+            // The bare (inning==5 && half=="bottom") is unsafe — BoltOdds
+            // advances state.inning before the period string, so AT_END_4TH
+            // frames with inning=5 and top=false match it prematurely.
+            (state.outs == Some(3) && inning == 5 && state.inning_half == "top")
+                || period_detail == "AT_MID_5TH_INNING"
+                || period_detail == "AT_BOT_5TH_INNING"
+        } else {
+            // V1: half=="bottom" is safe (parse_period maps breaks to "break").
+            inning == 5 && state.inning_half == "bottom"
+        };
+        if !top5_complete {
+            return;
+        }
+
+        self.f5_top5_fired[gi] = true;
+        let home = state.home.unwrap_or(0);
+        let away = state.away.unwrap_or(0);
+        let margin_home = home - away;
+        let targets = &self.game_targets[gi];
+
+        if home > away {
+            push_if_some(targets.f5_winner_home, out);
+            push_if_some(targets.f5_winner_away_no, out);
+            push_if_some(targets.f5_winner_draw_no, out);
+        }
+
+        for slot in &targets.f5_spreads {
+            if slot.side == SpreadSide::Home {
+                if (margin_home as f64) + slot.line > 0.0 {
+                    push_if_some(slot.covers_idx, out);
+                }
+            } else {
+                let away_margin = -margin_home;
+                if (away_margin as f64) + slot.line <= 0.0 {
+                    push_if_some(slot.not_covers_idx, out);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn evaluate_f5_completion_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        period_detail: &str,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if self.f5_resolved[gi] {
+            return;
+        }
+        if !self.f5_first_five_observed[gi] || !self.has_f5[gi] {
+            return;
+        }
+        if state.home.is_none() || state.away.is_none() {
+            return;
+        }
+
+        let inning = state.inning_number.unwrap_or(0);
+        let f5_complete = (state.outs == Some(3)
+            && inning == 5
+            && state.inning_half == "bottom")
+            || inning >= 6
+            || period_detail == "AT_END_5TH_INNING";
+        if !f5_complete {
+            return;
+        }
+
+        let home = state.home.unwrap_or(0);
+        let away = state.away.unwrap_or(0);
+        let targets = &self.game_targets[gi];
+
+        if home > away {
+            push_if_some(targets.f5_winner_home, out);
+            push_if_some(targets.f5_winner_away_no, out);
+            push_if_some(targets.f5_winner_draw_no, out);
+        } else if away > home {
+            push_if_some(targets.f5_winner_away, out);
+            push_if_some(targets.f5_winner_home_no, out);
+            push_if_some(targets.f5_winner_draw_no, out);
+        } else {
+            push_if_some(targets.f5_winner_draw, out);
+            push_if_some(targets.f5_winner_home_no, out);
+            push_if_some(targets.f5_winner_away_no, out);
+        }
+
+        let margin_home = home - away;
+        for slot in &targets.f5_spreads {
+            let margin = if slot.side == SpreadSide::Home {
+                margin_home
+            } else {
+                -margin_home
+            };
+            if (margin as f64) + slot.line > 0.0 {
+                push_if_some(slot.covers_idx, out);
+            } else {
+                push_if_some(slot.not_covers_idx, out);
+            }
+        }
+
+        let total = (home + away) as u16;
+
+        for ol in &targets.f5_over_lines {
+            if ol.half_int >= total {
+                break;
+            }
+            out.push(Intent {
+                target_idx: ol.target_idx,
+            });
+        }
+
+        if !self.f5_total_under_emitted[gi] {
+            for ol in &targets.f5_under_lines {
+                if ol.half_int >= total {
+                    out.push(Intent {
+                        target_idx: ol.target_idx,
+                    });
+                }
+            }
+            self.f5_total_under_emitted[gi] = true;
+        }
+
+        self.f5_resolved[gi] = true;
+    }
+
+    pub(crate) fn evaluate_nrfi_period_into(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+        period_detail: &str,
+        out: &mut smallvec::SmallVec<[Intent; 32]>,
+    ) {
+        let gi = gidx.0 as usize;
+        if self.nrfi_resolved_games[gi] {
+            return;
+        }
+        if !self.has_nrfi[gi] {
+            return;
+        }
+        if !self.nrfi_first_inning_observed[gi] {
+            return;
+        }
+
+        if period_detail == "AT_END_1ST_INNING" {
+            let total = state.total.unwrap_or(0);
+            if total == 0 {
+                push_if_some(self.game_targets[gi].nrfi_no, out);
+                self.nrfi_resolved_games[gi] = true;
+            }
+        }
     }
 }
 
@@ -494,7 +819,7 @@ impl NativeMlbEngine {
 
     pub(crate) fn evaluate_walkoff(&mut self, gidx: GameIdx, state: &GameState) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
-        self.evaluate_walkoff_into(gidx, state, &mut out);
+        self.evaluate_walkoff_into(gidx, state, "", &mut out);
         out.into_vec()
     }
 
@@ -521,6 +846,46 @@ impl NativeMlbEngine {
     ) -> Vec<Intent> {
         let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
         self.evaluate_game_end_from_outs_into(gidx, state, &mut out);
+        out.into_vec()
+    }
+
+    pub(crate) fn evaluate_extra_innings(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        self.evaluate_extra_innings_into(gidx, state, &mut out);
+        out.into_vec()
+    }
+
+    pub(crate) fn evaluate_f5_totals(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        self.evaluate_f5_totals_into(gidx, state, &mut out);
+        out.into_vec()
+    }
+
+    pub(crate) fn evaluate_f5_mid5(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        self.evaluate_f5_mid5_into(gidx, state, "", &mut out);
+        out.into_vec()
+    }
+
+    pub(crate) fn evaluate_f5_completion(
+        &mut self,
+        gidx: GameIdx,
+        state: &GameState,
+    ) -> Vec<Intent> {
+        let mut out = smallvec::SmallVec::<[Intent; 32]>::new();
+        self.evaluate_f5_completion_into(gidx, state, "", &mut out);
         out.into_vec()
     }
 }

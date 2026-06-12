@@ -19,6 +19,19 @@ pub(crate) struct GameTargets {
     pub(crate) moneyline_home: Option<TargetIdx>,
     pub(crate) moneyline_away: Option<TargetIdx>,
     pub(crate) spreads: Vec<SpreadSlot>,
+    // F5 (first 5 innings)
+    pub(crate) f5_over_lines: Vec<OverLine>,
+    pub(crate) f5_under_lines: Vec<OverLine>,
+    pub(crate) f5_winner_home: Option<TargetIdx>,
+    pub(crate) f5_winner_home_no: Option<TargetIdx>,
+    pub(crate) f5_winner_away: Option<TargetIdx>,
+    pub(crate) f5_winner_away_no: Option<TargetIdx>,
+    pub(crate) f5_winner_draw: Option<TargetIdx>,
+    pub(crate) f5_winner_draw_no: Option<TargetIdx>,
+    pub(crate) f5_spreads: Vec<SpreadSlot>,
+    // Extra innings
+    pub(crate) extra_innings_yes: Option<TargetIdx>,
+    pub(crate) extra_innings_no: Option<TargetIdx>,
 }
 
 #[derive(Clone)]
@@ -80,7 +93,8 @@ pub(crate) struct GameState {
 
 /// BoltOdds-specific dedup row. Integer-based: ball-count-only and
 /// strike-count-only changes are filtered out (neither field is in struct).
-/// Only outs, inning, half, and score changes pass through.
+/// Only outs, inning, half, score, match-completion, and break-status
+/// changes pass through.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BoltOddsBaseballRow {
     pub(crate) outs: u8,
@@ -88,6 +102,8 @@ pub(crate) struct BoltOddsBaseballRow {
     pub(crate) top_of_inning: bool,
     pub(crate) home_score: i64,
     pub(crate) away_score: i64,
+    pub(crate) match_completed: bool,
+    pub(crate) is_break: bool,
 }
 
 #[cfg(test)]
@@ -125,6 +141,8 @@ pub(crate) struct NativeMlbEngine {
     pub(crate) has_totals: Vec<bool>,
     pub(crate) has_nrfi: Vec<bool>,
     pub(crate) has_final: Vec<bool>,
+    pub(crate) has_f5: Vec<bool>,
+    pub(crate) has_extra_innings: Vec<bool>,
 
     pub(crate) rows: Vec<Option<StateRow>>,
     pub(crate) bo_rows: Vec<Option<BoltOddsBaseballRow>>,
@@ -134,4 +152,9 @@ pub(crate) struct NativeMlbEngine {
     pub(crate) nrfi_resolved_games: Vec<bool>,
     pub(crate) nrfi_first_inning_observed: Vec<bool>,
     pub(crate) final_resolved_games: Vec<bool>,
+    pub(crate) f5_first_five_observed: Vec<bool>,
+    pub(crate) f5_top5_fired: Vec<bool>,
+    pub(crate) f5_resolved: Vec<bool>,
+    pub(crate) f5_total_under_emitted: Vec<bool>,
+    pub(crate) extra_innings_resolved: Vec<bool>,
 }

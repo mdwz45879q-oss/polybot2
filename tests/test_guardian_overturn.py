@@ -448,3 +448,75 @@ def test_game_id_alias_unifies_ticks_and_orders():
     order2 = tracker.state.games["13941517"].orders[0]
     assert order2.triggered_by is not None
     assert order2.triggered_by.home == 2
+
+
+# ── G-01: execution_in_progress guard ──────────────────────────────
+
+
+def test_g01_in_progress_guard_prevents_duplicate_execution():
+    """While async execution is in-flight, check_confirmations does not retrigger."""
+    trigger_count = 0
+
+    def sync_callback(alert):
+        nonlocal trigger_count
+        trigger_count += 1
+
+    detector = OverturnDetector(
+        confirmation_window_s=0.0,
+        on_overturn_triggered=sync_callback,
+    )
+    game = _make_game()
+    alert = _arm_simple_alert(detector, game)
+
+    # Confirm Signal 2
+    detector._token_to_game["tok_abc"] = game.game_id
+    detector.on_best_bid_ask({"asset_id": "tok_abc", "best_bid": "0.10"})
+
+    # First trigger
+    detector.check_confirmations()
+    assert trigger_count == 1
+    assert alert.acted  # sync callback sets acted immediately
+
+    # Simulate: reset acted, set execution_in_progress (as if async execution started)
+    alert.acted = False
+    alert.execution_in_progress = True
+
+    # Second check while execution is in-flight — should NOT retrigger
+    detector.check_confirmations()
+    assert trigger_count == 1  # still 1, blocked by execution_in_progress
+
+    # Execution completes
+    alert.execution_in_progress = False
+
+    # Now retry fires
+    detector.check_confirmations()
+    assert trigger_count == 2
+
+
+def test_g01_in_progress_cleared_on_failure_allows_retry():
+    """_on_execution_done clears execution_in_progress on failure, enabling retry."""
+    detector = OverturnDetector(confirmation_window_s=0.0)
+    game = _make_game()
+    alert = _arm_simple_alert(detector, game)
+    alert.signal1_confirmed = True
+    alert.signal2_confirmed = True
+
+    # Simulate: async execution started, then task failed
+    alert.execution_in_progress = True
+
+    # Create a mock failed task
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        async def _fail():
+            raise RuntimeError("CLOB down")
+        task = loop.create_task(_fail())
+        loop.run_until_complete(asyncio.sleep(0))  # let it fail
+    finally:
+        loop.close()
+
+    # Call _on_execution_done with the failed task
+    detector._on_execution_done(task, alert)
+
+    assert not alert.execution_in_progress  # cleared
+    assert not alert.acted  # still False — retry allowed

@@ -1,0 +1,69 @@
+{
+  "start_time": "2026-06-12T17:29:12.996643+00:00",
+  "duration": 43200,
+  "ps_token_prefix": "WnV2Oyz0...",
+  "v1_credentials": "present",
+  "skip_v1": false,
+  "games": [
+    {
+      "name": "4ikibamboni_team_bald",
+      "pandascore_match_id": "1535460",
+      "v1_fixture_id": "",
+      "home": "4ikibamboni",
+      "away": "Team Bald",
+      "sport": "Dota 2",
+      "league": "The International",
+      "start_ts_utc": 1781281800,
+      "live_supported": false,
+      "number_of_games": 1
+    },
+    {
+      "name": "inner_circle_x_insanity_modus",
+      "pandascore_match_id": "1535461",
+      "v1_fixture_id": "",
+      "home": "Inner Circle x Insanity",
+      "away": "MODUS",
+      "sport": "Dota 2",
+      "league": "The International",
+      "start_ts_utc": 1781282100,
+      "live_supported": false,
+      "number_of_games": 1
+    },
+    {
+      "name": "vitality_9z",
+      "pandascore_match_id": "1513135",
+      "v1_fixture_id": "92735c04-cec8-4515-8f82-e5dabe91a515",
+      "home": "Vitality",
+      "away": "9z",
+      "sport": "Counter-Strike",
+      "league": "IEM",
+      "start_ts_utc": 1781282700,
+      "live_supported": true,
+      "number_of_games": 3
+    },
+    {
+      "name": "ursa_leo_team",
+      "pandascore_match_id": "1519578",
+      "v1_fixture_id": "",
+      "home": "Ursa",
+      "away": "Leo Team",
+      "sport": "Counter-Strike",
+      "league": "CCT Europe",
+      "start_ts_utc": 1781284500,
+      "live_supported": false,
+      "number_of_games": 3
+    },
+    {
+      "name": "aurora_gaming_spirit",
+      "pandascore_match_id": "1513134",
+      "v1_fixture_id": "00b8037c-4728-4823-8e04-90ff2f9c6f64",
+      "home": "Aurora Gaming",
+      "away": "Spirit",
+      "sport": "Counter-Strike",
+      "league": "IEM",
+      "start_ts_utc": 1781285100,
+      "live_supported": true,
+      "number_of_games": 3
+    }
+  ]
+}

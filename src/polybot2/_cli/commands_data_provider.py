@@ -82,10 +82,11 @@ def run_provider_sync(args: Any, *, logger: logging.Logger) -> int:
             return 1
         logger.info("syncing all configured providers: %s", ", ".join(providers))
 
+    full_catalog = getattr(args, "full_catalog", False)
     failed = False
     with open_database(runtime) as db:
         for provider in providers:
-            res = sync_provider_games(db=db, provider=provider)
+            res = sync_provider_games(db=db, provider=provider, full_catalog=full_catalog)
             if res.status != "ok":
                 logger.error("provider sync failed: provider=%s status=%s reason=%s", res.provider, res.status, res.reason)
                 failed = True

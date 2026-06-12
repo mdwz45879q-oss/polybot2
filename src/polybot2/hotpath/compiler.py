@@ -186,6 +186,33 @@ def _parse_outcome_semantic(
     if sports_type == "nrfi":
         return "yes" if idx == 0 else "no"
 
+    # ── F5 winner: three-way slug (same pattern as halftime result) ──
+    if sports_type == "baseball_team_first_five_winner":
+        side = _three_way_side_from_slug(slug_norm, home_code, away_code)
+        if side != "unknown":
+            return f"{side}_yes" if idx == 0 else f"{side}_no"
+        return "unknown"
+
+    # ── F5 total: over/under (same pattern as regular totals) ────────
+    if sports_type == "baseball_team_first_five_total":
+        label_lower = label.strip().lower()
+        if label_lower.startswith("over"):
+            return "over"
+        if label_lower.startswith("under"):
+            return "under"
+        return "over" if idx == 0 else "under"
+
+    # ── F5 spread: slug determines side (same pattern as spreads) ────
+    if sports_type == "baseball_team_first_five_spread":
+        side = _spread_side_from_slug(slug_norm)
+        if side != "unknown":
+            return f"{side}_covers" if idx == 0 else f"{side}_not_covers"
+        return "unknown"
+
+    # ── Extra innings: index 0 = yes, 1 = no ─────────────────────────
+    if sports_type == "baseball_game_extra_innings":
+        return "yes" if idx == 0 else "no"
+
     # ── Exact score: slug determines score, index determines yes/no ───
     if sports_type == "soccer_exact_score":
         score = _parse_exact_score_from_slug(slug_norm)
@@ -804,6 +831,22 @@ def compile_hotpath_plan(
         } and line_val is not None:
             line_key = _line_key(line_val)
             strategy_key = f"{gid}:MAP_HANDICAP:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "baseball_team_first_five_winner" and outcome_semantic in {
+            "home_yes", "home_no", "away_yes", "away_no", "draw_yes", "draw_no",
+        }:
+            strategy_key = f"{gid}:F5_WINNER:{outcome_semantic.upper()}"
+        elif sports_market_type == "baseball_team_first_five_total" and outcome_semantic in {
+            "over", "under",
+        } and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:F5_TOTAL:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "baseball_team_first_five_spread" and outcome_semantic in {
+            "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+        } and line_val is not None:
+            line_key = _line_key(line_val)
+            strategy_key = f"{gid}:F5_SPREAD:{outcome_semantic.upper()}:{line_key}"
+        elif sports_market_type == "baseball_game_extra_innings" and outcome_semantic in {"yes", "no"}:
+            strategy_key = f"{gid}:EXTRA_INNINGS:{outcome_semantic.upper()}"
         else:
             strategy_key = f"{gid}:{sports_market_type.upper()}:{condition_id}:{outcome_index}"
 
@@ -833,6 +876,12 @@ def compile_hotpath_plan(
             or (sports_market_type == "map_handicap" and outcome_semantic in {
                 "home_covers", "home_not_covers", "away_covers", "away_not_covers",
             })
+            or (sports_market_type == "baseball_team_first_five_winner" and outcome_semantic.endswith(("_yes", "_no")))
+            or (sports_market_type == "baseball_team_first_five_total" and outcome_semantic in {"over", "under"})
+            or (sports_market_type == "baseball_team_first_five_spread" and outcome_semantic in {
+                "home_covers", "home_not_covers", "away_covers", "away_not_covers",
+            })
+            or (sports_market_type == "baseball_game_extra_innings" and outcome_semantic in {"yes", "no"})
         ):
             # Some live snapshots can contain duplicated logical markets (same game+family+side+line).
             # Keep the first deterministic candidate and skip later duplicates instead of hard-failing compile.
@@ -886,7 +935,7 @@ def compile_hotpath_plan(
     try:
         _alt_rows = db.execute(
             """
-            SELECT
+            SELECT DISTINCT
                 primary_eb.provider_game_id AS primary_game_id,
                 alt_pg.provider             AS alt_provider,
                 alt_pg.provider_game_id     AS alt_game_id

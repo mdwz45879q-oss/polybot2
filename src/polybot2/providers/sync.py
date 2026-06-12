@@ -97,6 +97,7 @@ def sync_provider_games(
     *,
     db: Database,
     provider: str,
+    full_catalog: bool = False,
 ) -> ProviderSyncResult:
     p = str(provider or "").strip().lower()
     now_ts = int(datetime.now(tz=_UTC).timestamp())
@@ -112,7 +113,9 @@ def sync_provider_games(
         api_token = str(os.getenv("PANDASCORE_API_TOKEN") or "").strip()
         if not api_token:
             return ProviderSyncResult(provider=p, n_rows=0, status="error", reason="missing_PANDASCORE_API_TOKEN")
-        client = PandaScoreProvider(config=PandaScoreProviderConfig(api_token=api_token))
+        client = PandaScoreProvider(config=PandaScoreProviderConfig(
+            api_token=api_token, full_catalog=full_catalog,
+        ))
     elif p == "boltodds":
         api_key = str(os.getenv("BOLTODDS_API_KEY") or "").strip()
         if not api_key:

@@ -13,6 +13,10 @@ CANONICAL_MARKET_TYPES = {
     "tennis_first_set_winner", "tennis_set_totals",
     "tennis_set_handicap",
     "child_moneyline", "map_handicap",
+    "baseball_team_first_five_winner",
+    "baseball_team_first_five_total",
+    "baseball_team_first_five_spread",
+    "baseball_game_extra_innings",
     "other",
 }
 
