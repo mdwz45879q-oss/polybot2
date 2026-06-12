@@ -52,7 +52,7 @@ LEAGUES = {
     "fifwc": {
         "polymarket_league_code": "fifwc",
         "sport_family": "soccer",
-        "provider": ["kalstrop_v2", "kalstrop_v1", "boltodds"],
+        "provider": ["kalstrop_v2", "kalstrop_v1"],
     },
     "rgm": {
         "polymarket_league_code": "atp",

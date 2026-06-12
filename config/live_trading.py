@@ -121,7 +121,7 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.95,
         "market_overrides": {
-	    "total_corners": {"amount_usdc": 500.0, "limit_price": 0.99,
+	    "total_corners": {"size_shares": 500.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 500.0, "secondary_limit_price": 0.99,},
         "soccer_halftime_result": {"amount_usdc": 250.0, "size_shares": 250.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 500.0, "secondary_limit_price": 0.99,},
