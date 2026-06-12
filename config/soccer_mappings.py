@@ -443,290 +443,54 @@ TEAM_MAP_BUNDESLIGA = {
 # FIFA WORLD CUP
 # =============================================================================
 TEAM_MAP_WC = {
-    "algeria": {
-        "polymarket_code": "alg",
-        "provider_aliases": {
-            "kalstrop": ["algeria",],
-        },
-    },
-    "argentina": {
-        "polymarket_code": "arg",
-        "provider_aliases": {
-            "kalstrop": ["argentina",],
-        },
-    },
-    "australia": {
-        "polymarket_code": "aus",
-        "provider_aliases": {
-            "kalstrop": ["australia",],
-        },
-    },
-    "austria": {
-        "polymarket_code": "aut",
-        "provider_aliases": {
-            "kalstrop": ["austria",],
-        },
-    },
-    "belgium": {
-        "polymarket_code": "bel",
-        "provider_aliases": {
-            "kalstrop": ["belgium",],
-        },
-    },
-    "bosnia-herzegovina": {
-        "polymarket_code": "bih",
-        "provider_aliases": {
-            "kalstrop": ["bosnia-herzegovina",],
-        },
-    },
-    "brazil": {
-        "polymarket_code": "bra",
-        "provider_aliases": {
-            "kalstrop": ["brazil",],
-        },
-    },
-    "cabo verde": {
-        "polymarket_code": "cvi",
-        "provider_aliases": {
-            "kalstrop": ["cabo verde",],
-        },
-    },
-    "canada": {
-        "polymarket_code": "can",
-        "provider_aliases": {
-            "kalstrop": ["canada",],
-        },
-    },
-    "colombia": {
-        "polymarket_code": "col",
-        "provider_aliases": {
-            "kalstrop": ["colombia",],
-        },
-    },
-    "czechia": {
-        "polymarket_code": "cze",
-        "provider_aliases": {
-            "kalstrop_v1": ["czechia",],
-            "kalstrop_v2": ["Czech Republic"],
-        },
-    },
-    "côte d'ivoire": {
-        "polymarket_code": "civ",
-        "provider_aliases": {
-            "kalstrop": ["côte d'ivoire",],
-        },
-    },
-    "curaçao": {
-        "polymarket_code": "kor",
-        "provider_aliases": {
-            "kalstrop": ["curaçao",],
-        },
-    },
-    "dr congo": {
-        "polymarket_code": "cdr",
-        "provider_aliases": {
-            "kalstrop": ["dr congo",],
-        },
-    },
-    "ecuador": {
-        "polymarket_code": "ecu",
-        "provider_aliases": {
-            "kalstrop": ["ecuador",],
-        },
-    },
-    "egypt": {
-        "polymarket_code": "egy",
-        "provider_aliases": {
-            "kalstrop": ["egypt",],
-        },
-    },
-    "england": {
-        "polymarket_code": "eng",
-        "provider_aliases": {
-            "kalstrop": ["england",],
-        },
-    },
-    "france": {
-        "polymarket_code": "fra",
-        "provider_aliases": {
-            "kalstrop": ["france",],
-        },
-    },
-    "germany": {
-        "polymarket_code": "ger",
-        "provider_aliases": {
-            "kalstrop": ["germany",],
-        },
-    },
-    "ghana": {
-        "polymarket_code": "gha",
-        "provider_aliases": {
-            "kalstrop": ["ghana",],
-        },
-    },
-    "haiti": {
-        "polymarket_code": "hai",
-        "provider_aliases": {
-            "kalstrop": ["haiti",],
-        },
-    },
-    "iran": {
-        "polymarket_code": "irn",
-        "provider_aliases": {
-            "kalstrop": ["iran",],
-        },
-    },
-    "iraq": {
-        "polymarket_code": "irq",
-        "provider_aliases": {
-            "kalstrop": ["iraq",],
-        },
-    },
-    "japan": {
-        "polymarket_code": "jpn",
-        "provider_aliases": {
-            "kalstrop": ["japan",],
-        },
-    },
-    "jordan": {
-        "polymarket_code": "jor",
-        "provider_aliases": {
-            "kalstrop": ["jordan",],
-        },
-    },
-    "korea republic": {
-        "polymarket_code": "kr",
-        "provider_aliases": {
-            "kalstrop_v1": ["korea republic",],
-            "kalstrop_v2": ["south korea"],
-        },
-    },
-    "mexico": {
-        "polymarket_code": "mex",
-        "provider_aliases": {
-            "kalstrop": ["mexico",],
-        },
-    },
-    "morocco": {
-        "polymarket_code": "mar",
-        "provider_aliases": {
-            "kalstrop": ["morocco",],
-        },
-    },
-    "netherlands": {
-        "polymarket_code": "nld",
-        "provider_aliases": {
-            "kalstrop": ["netherlands",],
-        },
-    },
-    "new zealand": {
-        "polymarket_code": "nzl",
-        "provider_aliases": {
-            "kalstrop": ["new zealand",],
-        },
-    },
-    "norway": {
-        "polymarket_code": "nor",
-        "provider_aliases": {
-            "kalstrop": ["norway",],
-        },
-    },
-    "panama": {
-        "polymarket_code": "pan",
-        "provider_aliases": {
-            "kalstrop": ["panama",],
-        },
-    },
-    "paraguay": {
-        "polymarket_code": "par",
-        "provider_aliases": {
-            "kalstrop": ["paraguay",],
-        },
-    },
-    "portugal": {
-        "polymarket_code": "prt",
-        "provider_aliases": {
-            "kalstrop": ["portugal",],
-        },
-    },
-    "qatar": {
-        "polymarket_code": "qat",
-        "provider_aliases": {
-            "kalstrop": ["qatar",],
-        },
-    },
-    "saudi arabia": {
-        "polymarket_code": "ksa",
-        "provider_aliases": {
-            "kalstrop": ["saudi arabia",],
-        },
-    },
-    "scotland": {
-        "polymarket_code": "sco",
-        "provider_aliases": {
-            "kalstrop": ["scotland",],
-        },
-    },
-    "senegal": {
-        "polymarket_code": "sen",
-        "provider_aliases": {
-            "kalstrop": ["senegal",],
-        },
-    },
-    "south africa": {
-        "polymarket_code": "rsa",
-        "provider_aliases": {
-            "kalstrop": ["south africa",],
-        },
-    },
-    "spain": {
-        "polymarket_code": "esp",
-        "provider_aliases": {
-            "kalstrop": ["spain",],
-        },
-    },
-    "sweden": {
-        "polymarket_code": "swe",
-        "provider_aliases": {
-            "kalstrop": ["sweden",],
-        },
-    },
-    "switzerland": {
-        "polymarket_code": "che",
-        "provider_aliases": {
-            "kalstrop": ["switzerland",],
-        },
-    },
-    "tunisia": {
-        "polymarket_code": "tun",
-        "provider_aliases": {
-            "kalstrop": ["tunisia",],
-        },
-    },
-    "türkiye": {
-        "polymarket_code": "tur",
-        "provider_aliases": {
-            "kalstrop": ["türkiye",],
-        },
-    },
-    "united states": {
-        "polymarket_code": "usa",
-        "provider_aliases": {
-            "kalstrop": ["united states",],
-        },
-    },
-    "uruguay": {
-        "polymarket_code": "ury",
-        "provider_aliases": {
-            "kalstrop": ["uruguay",],
-        },
-    },
-    "uzbekistan": {
-        "polymarket_code": "uzb",
-        "provider_aliases": {
-            "kalstrop": ["uzbekistan",],
-        },
-    },
+    "algeria": {"polymarket_code": "alg", "provider_aliases": {"kalstrop_v1": ["algeria"], "kalstrop_v2": ["algeria"], "boltodds": ["algeria"]}},
+    "argentina": {"polymarket_code": "arg", "provider_aliases": {"kalstrop_v1": ["argentina"], "kalstrop_v2": ["argentina"], "boltodds": ["argentina"]}},
+    "australia": {"polymarket_code": "aus", "provider_aliases": {"kalstrop_v1": ["australia"], "kalstrop_v2": ["australia"], "boltodds": ["australia"]}},
+    "austria": {"polymarket_code": "aut", "provider_aliases": {"kalstrop_v1": ["austria"], "kalstrop_v2": ["austria"], "boltodds": ["austria"]}},
+    "belgium": {"polymarket_code": "bel", "provider_aliases": {"kalstrop_v1": ["belgium"], "kalstrop_v2": ["belgium"], "boltodds": ["belgium"]}},
+    "bosnia-herzegovina": {"polymarket_code": "bih", "pm_aliases": ["bosnia and herzegovina"], "provider_aliases": {"kalstrop_v1": ["bosnia and herzegovina"], "kalstrop_v2": ["bosnia"], "boltodds": ["bosnia"]}},
+    "brazil": {"polymarket_code": "bra", "provider_aliases": {"kalstrop_v1": ["brazil"], "kalstrop_v2": ["brazil"], "boltodds": ["brazil"]}},
+    "cabo verde": {"polymarket_code": "cvi", "provider_aliases": {"kalstrop_v1": ["cape verde"], "kalstrop_v2": ["cape verde"], "boltodds": ["cape verde"]}},
+    "canada": {"polymarket_code": "can", "provider_aliases": {"kalstrop_v1": ["canada"], "kalstrop_v2": ["canada"], "boltodds": ["canada"]}},
+    "colombia": {"polymarket_code": "col", "provider_aliases": {"kalstrop_v1": ["colombia"], "kalstrop_v2": ["colombia"], "boltodds": ["colombia"]}},
+    "croatia": {"polymarket_code": "hrv", "provider_aliases": {"kalstrop_v1": ["croatia"], "kalstrop_v2": ["croatia"], "boltodds": ["croatia"]}},
+    "côte d'ivoire": {"polymarket_code": "civ", "provider_aliases": {"kalstrop_v1": ["ivory coast"], "kalstrop_v2": ["ivory coast"], "boltodds": ["ivory coast"]}},
+    "curaçao": {"polymarket_code": "cur", "provider_aliases": {"kalstrop_v1": ["curacao"], "kalstrop_v2": ["curacao"], "boltodds": ["curacao"]}},
+    "czechia": {"polymarket_code": "cze", "provider_aliases": {"kalstrop_v1": ["czechia"], "kalstrop_v2": ["czech republic"], "boltodds": ["czech republic"]}},
+    "dr congo": {"polymarket_code": "cdr", "provider_aliases": {"kalstrop_v1": ["congo dr"], "kalstrop_v2": ["congo dr"], "boltodds": ["dr congo"]}},
+    "ecuador": {"polymarket_code": "ecu", "provider_aliases": {"kalstrop_v1": ["ecuador"], "kalstrop_v2": ["ecuador"], "boltodds": ["ecuador"]}},
+    "egypt": {"polymarket_code": "egy", "provider_aliases": {"kalstrop_v1": ["egypt"], "kalstrop_v2": ["egypt"], "boltodds": ["egypt"]}},
+    "england": {"polymarket_code": "eng", "provider_aliases": {"kalstrop_v1": ["england"], "kalstrop_v2": ["england"], "boltodds": ["england"]}},
+    "france": {"polymarket_code": "fra", "provider_aliases": {"kalstrop_v1": ["france"], "kalstrop_v2": ["france"], "boltodds": ["france"]}},
+    "germany": {"polymarket_code": "ger", "provider_aliases": {"kalstrop_v1": ["germany"], "kalstrop_v2": ["germany"], "boltodds": ["germany"]}},
+    "ghana": {"polymarket_code": "gha", "provider_aliases": {"kalstrop_v1": ["ghana"], "kalstrop_v2": ["ghana"], "boltodds": ["ghana"]}},
+    "haiti": {"polymarket_code": "hai", "provider_aliases": {"kalstrop_v1": ["haiti"], "kalstrop_v2": ["haiti"], "boltodds": ["haiti"]}},
+    "iran": {"polymarket_code": "irn", "pm_aliases": ["ir iran"], "provider_aliases": {"kalstrop_v1": ["ir iran"], "kalstrop_v2": ["iran"], "boltodds": ["iran"]}},
+    "iraq": {"polymarket_code": "irq", "provider_aliases": {"kalstrop_v1": ["iraq"], "kalstrop_v2": ["iraq"], "boltodds": ["iraq"]}},
+    "japan": {"polymarket_code": "jpn", "provider_aliases": {"kalstrop_v1": ["japan"], "kalstrop_v2": ["japan"], "boltodds": ["japan"]}},
+    "jordan": {"polymarket_code": "jor", "provider_aliases": {"kalstrop_v1": ["jordan"], "kalstrop_v2": ["jordan"], "boltodds": ["jordan"]}},
+    "korea republic": {"polymarket_code": "kr", "provider_aliases": {"kalstrop_v1": ["korea republic"], "kalstrop_v2": ["south korea"], "boltodds": ["south korea"]}},
+    "mexico": {"polymarket_code": "mex", "provider_aliases": {"kalstrop_v1": ["mexico"], "kalstrop_v2": ["mexico"], "boltodds": ["mexico"]}},
+    "morocco": {"polymarket_code": "mar", "provider_aliases": {"kalstrop_v1": ["morocco"], "kalstrop_v2": ["morocco"], "boltodds": ["morocco"]}},
+    "netherlands": {"polymarket_code": "nld", "provider_aliases": {"kalstrop_v1": ["netherlands"], "kalstrop_v2": ["netherlands"], "boltodds": ["netherlands"]}},
+    "new zealand": {"polymarket_code": "nzl", "provider_aliases": {"kalstrop_v1": ["new zealand"], "kalstrop_v2": ["new zealand"], "boltodds": ["new zealand"]}},
+    "norway": {"polymarket_code": "nor", "provider_aliases": {"kalstrop_v1": ["norway"], "kalstrop_v2": ["norway"], "boltodds": ["norway"]}},
+    "panama": {"polymarket_code": "pan", "provider_aliases": {"kalstrop_v1": ["panama"], "kalstrop_v2": ["panama"], "boltodds": ["panama"]}},
+    "paraguay": {"polymarket_code": "par", "provider_aliases": {"kalstrop_v1": ["paraguay"], "kalstrop_v2": ["paraguay"], "boltodds": ["paraguay"]}},
+    "portugal": {"polymarket_code": "prt", "provider_aliases": {"kalstrop_v1": ["portugal"], "kalstrop_v2": ["portugal"], "boltodds": ["portugal"]}},
+    "qatar": {"polymarket_code": "qat", "provider_aliases": {"kalstrop_v1": ["qatar"], "kalstrop_v2": ["qatar"], "boltodds": ["qatar"]}},
+    "saudi arabia": {"polymarket_code": "ksa", "provider_aliases": {"kalstrop_v1": ["saudi arabia"], "kalstrop_v2": ["saudi arabia"], "boltodds": ["saudi arabia"]}},
+    "scotland": {"polymarket_code": "sco", "provider_aliases": {"kalstrop_v1": ["scotland"], "kalstrop_v2": ["scotland"], "boltodds": ["scotland"]}},
+    "senegal": {"polymarket_code": "sen", "provider_aliases": {"kalstrop_v1": ["senegal"], "kalstrop_v2": ["senegal"], "boltodds": ["senegal"]}},
+    "south africa": {"polymarket_code": "rsa", "provider_aliases": {"kalstrop_v1": ["south africa"], "kalstrop_v2": ["south africa"], "boltodds": ["south africa"]}},
+    "spain": {"polymarket_code": "esp", "provider_aliases": {"kalstrop_v1": ["spain"], "kalstrop_v2": ["spain"], "boltodds": ["spain"]}},
+    "sweden": {"polymarket_code": "swe", "provider_aliases": {"kalstrop_v1": ["sweden"], "kalstrop_v2": ["sweden"], "boltodds": ["sweden"]}},
+    "switzerland": {"polymarket_code": "che", "provider_aliases": {"kalstrop_v1": ["switzerland"], "kalstrop_v2": ["switzerland"], "boltodds": ["switzerland"]}},
+    "tunisia": {"polymarket_code": "tun", "provider_aliases": {"kalstrop_v1": ["tunisia"], "kalstrop_v2": ["tunisia"], "boltodds": ["tunisia"]}},
+    "türkiye": {"polymarket_code": "tur", "provider_aliases": {"kalstrop_v1": ["turkiye"], "kalstrop_v2": ["turkey"], "boltodds": ["turkey"]}},
+    "united states": {"polymarket_code": "usa", "provider_aliases": {"kalstrop_v1": ["usa"], "kalstrop_v2": ["usa"], "boltodds": ["usa"]}},
+    "uruguay": {"polymarket_code": "ury", "provider_aliases": {"kalstrop_v1": ["uruguay"], "kalstrop_v2": ["uruguay"], "boltodds": ["uruguay"]}},
+    "uzbekistan": {"polymarket_code": "uzb", "provider_aliases": {"kalstrop_v1": ["uzbekistan"], "kalstrop_v2": ["uzbekistan"], "boltodds": ["uzbekistan"]}},
 }
 
 # =============================================================================
