@@ -2221,6 +2221,11 @@ PLAYER_MAP_LIBEMA_M = {
         "provider_aliases": {"kalstrop_v1": ["Damm Jr, Martin"]},
         "pm_aliases": ["Martin Damm Jr"],
     },
+    "de minaur, alex": {
+        "polymarket_code": "minaur",
+        "provider_aliases": {"kalstrop_v1": ["de Minaur, Alex"]},
+        "pm_aliases": ["Alex de Minaur"],
+    },
     # Gabriel Diallo
     "diallo, gabriel": {
         "polymarket_code": "diallo",
@@ -2693,6 +2698,11 @@ PLAYER_MAP_MODENA = {
         "provider_aliases": {"kalstrop_v1": ["Salkova, Dominika"]},
         "pm_aliases": ["Dominika Salkova"],
     },
+    "samson, laura": {
+        "polymarket_code": "samson",
+        "provider_aliases": {"kalstrop_v1": ["Samson, Laura"]},
+        "pm_aliases": ["Laura Samson"],
+    },
     "semenistaja, darja": {
         "polymarket_code": "semenis",
         "provider_aliases": {"kalstrop_v1": ["Semenistaja, Darja"]},
@@ -2860,6 +2870,11 @@ PLAYER_MAP_BRATISLAVA = {
         "polymarket_code": "silv",
         "provider_aliases": {"kalstrop_v1": ["Reis Da Silva, Joao Lucas"]},
         "pm_aliases": ["Joao Lucas Da Silva"],
+    },
+    "sachko, vitaliy": {
+        "polymarket_code": "sachko",
+        "provider_aliases": {"kalstrop_v1": ["Sachko, Vitaliy"]},
+        "pm_aliases": ["Vitaliy Sachko"],
     },
     "santillan, akira": {
         "polymarket_code": "santill",
@@ -3439,6 +3454,11 @@ PLAYER_MAP_CATTOLICA = {
         "polymarket_code": "bondiol",
         "provider_aliases": {"kalstrop_v1": ["Bondioli, Federico"]},
         "pm_aliases": ["Federico Bondioli"],
+    },
+    "brancaccio, raul": {
+        "polymarket_code": "brancac",
+        "provider_aliases": {"kalstrop_v1": ["Brancaccio, Raul"]},
+        "pm_aliases": ["Raul Brancaccio"],
     },
     "bueno, gonzalo": {
         "polymarket_code": "bueno",
