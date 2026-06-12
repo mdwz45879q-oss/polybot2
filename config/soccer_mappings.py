@@ -506,7 +506,8 @@ TEAM_MAP_WC = {
     "czechia": {
         "polymarket_code": "cze",
         "provider_aliases": {
-            "kalstrop": ["czechia",],
+            "kalstrop_v1": ["czechia",],
+            "kalstrop_v2": ["Czech Republic"],
         },
     },
     "côte d'ivoire": {
