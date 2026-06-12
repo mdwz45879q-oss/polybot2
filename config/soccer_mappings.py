@@ -597,7 +597,8 @@ TEAM_MAP_WC = {
     "korea republic": {
         "polymarket_code": "kr",
         "provider_aliases": {
-            "kalstrop": ["korea republic",],
+            "kalstrop_v1": ["korea republic",],
+            "kalstrop_v2": ["south korea"],
         },
     },
     "mexico": {
