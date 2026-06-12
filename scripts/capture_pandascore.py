@@ -236,14 +236,25 @@ def discover_games_from_db(db_path: str, horizon_hours: int = 6) -> list[dict]:
     ).fetchall()
     conn.close()
 
-    # Build V1 lookup by normalized team pair + date
-    v1_by_teams: dict[str, str] = {}
+    # Build V1 lookup: list of (norm_home, norm_away, game_id)
+    v1_entries: list[tuple[str, str, str]] = []
     for r in v1_rows:
-        key = f"{_norm(r['home_raw'])}|{_norm(r['away_raw'])}"
-        v1_by_teams[key] = r["provider_game_id"]
-        # Also try reversed
-        rev_key = f"{_norm(r['away_raw'])}|{_norm(r['home_raw'])}"
-        v1_by_teams[rev_key] = r["provider_game_id"]
+        v1_entries.append((_norm(r["home_raw"]), _norm(r["away_raw"]), r["provider_game_id"]))
+
+    def _find_v1_id(ps_home: str, ps_away: str) -> str:
+        """Match PS team names to V1 fixture ID (exact then substring)."""
+        h, a = _norm(ps_home), _norm(ps_away)
+        # Exact match (either order)
+        for v1_h, v1_a, v1_id in v1_entries:
+            if (v1_h == h and v1_a == a) or (v1_h == a and v1_a == h):
+                return v1_id
+        # Substring match (either order) — catches "Vitality" vs "Team Vitality"
+        for v1_h, v1_a, v1_id in v1_entries:
+            if ((h in v1_h or v1_h in h) and (a in v1_a or v1_a in a)):
+                return v1_id
+            if ((h in v1_a or v1_a in h) and (a in v1_h or v1_h in a)):
+                return v1_id
+        return ""
 
     games = []
     for r in ps_rows:
@@ -259,9 +270,8 @@ def discover_games_from_db(db_path: str, horizon_hours: int = 6) -> list[dict]:
         safe_name = f"{_norm(home).replace(' ', '_')}_{_norm(away).replace(' ', '_')}"
         safe_name = "".join(c for c in safe_name if c.isalnum() or c in "_-")[:60]
 
-        # Try to find V1 fixture ID
-        team_key = f"{_norm(home)}|{_norm(away)}"
-        v1_id = v1_by_teams.get(team_key, "")
+        # Try to find V1 fixture ID (exact then substring matching)
+        v1_id = _find_v1_id(home, away)
 
         games.append({
             "name": safe_name,
