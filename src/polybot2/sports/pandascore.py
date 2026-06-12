@@ -38,6 +38,7 @@ class PandaScoreProviderConfig(SportsProviderConfig):
         api_token: str,
         http_base: str = "https://api.pandascore.co",
         request_timeout_seconds: float = 20.0,
+        full_catalog: bool = False,
     ):
         super().__init__(
             provider_name="pandascore",
@@ -45,6 +46,7 @@ class PandaScoreProviderConfig(SportsProviderConfig):
         )
         self.api_token = str(api_token or "").strip()
         self.http_base = str(http_base or "").rstrip("/")
+        self.full_catalog = bool(full_catalog)
         if not self.api_token:
             raise ValueError("api_token must be non-empty")
 
@@ -129,6 +131,11 @@ class PandaScoreProvider(SportsDataProviderBase):
                 "away": away_team.get("acronym", ""),
             },
         }
+        # Low-latency endpoint (injected by _load_low_latency_catalog)
+        if m.get("_ll_endpoint_url"):
+            extra["ll_endpoint_url"] = m["_ll_endpoint_url"]
+        if m.get("_ll_opens_at"):
+            extra["ll_opens_at"] = m["_ll_opens_at"]
 
         return ProviderGameRecord(
             provider="pandascore",
@@ -147,8 +154,35 @@ class PandaScoreProvider(SportsDataProviderBase):
             extra_json=json.dumps(extra, separators=(",", ":")),
         )
 
-    def load_game_catalog(self) -> list[ProviderGameRecord]:
-        """Load upcoming + running matches for all supported esports."""
+    def _load_low_latency_catalog(self) -> list[ProviderGameRecord]:
+        """Load matches from /low_latency_feeds — only games with LL WebSocket support."""
+        records: list[ProviderGameRecord] = []
+        seen_ids: set[str] = set()
+
+        try:
+            data = self._api_get("/low_latency_feeds")
+        except Exception as exc:
+            log.warning("PandaScore /low_latency_feeds failed: %s", exc)
+            return records
+
+        if not isinstance(data, list):
+            return records
+
+        for entry in data:
+            m = entry.get("match", {})
+            endpoint = entry.get("endpoint", {})
+            # Inject the LL endpoint URL into the match for extra_json
+            m["_ll_endpoint_url"] = endpoint.get("url", "")
+            m["_ll_opens_at"] = endpoint.get("opens_at", "")
+            rec = self._match_to_record(m)
+            if rec and rec.provider_game_id not in seen_ids:
+                seen_ids.add(rec.provider_game_id)
+                records.append(rec)
+
+        return records
+
+    def _load_full_catalog(self) -> list[ProviderGameRecord]:
+        """Load upcoming + running matches for all supported esports (general catalog)."""
         records: list[ProviderGameRecord] = []
         seen_ids: set[str] = set()
 
@@ -167,15 +201,27 @@ class PandaScoreProvider(SportsDataProviderBase):
                         seen_ids.add(rec.provider_game_id)
                         records.append(rec)
 
+        return records
+
+    def load_game_catalog(self) -> list[ProviderGameRecord]:
+        """Load matches. Default: low-latency only. With full_catalog: all esports."""
+        if self._cfg.full_catalog:
+            records = self._load_full_catalog()
+            source = "full catalog"
+        else:
+            records = self._load_low_latency_catalog()
+            source = "low_latency_feeds"
+
         with self._lock:
             self._catalog = records
             self._by_id = {r.provider_game_id: r for r in records}
 
-        log.info(
-            "PandaScore catalog: %d matches (%s)",
-            len(records),
-            ", ".join(f"{s}={sum(1 for r in records if r.sport_raw == n)}" for s, n in _VIDEOGAME_PATHS.items()),
-        )
+        by_sport: dict[str, int] = {}
+        for r in records:
+            by_sport[r.sport_raw] = by_sport.get(r.sport_raw, 0) + 1
+        sport_summary = ", ".join(f"{k}={v}" for k, v in sorted(by_sport.items()))
+
+        log.info("PandaScore catalog (%s): %d matches (%s)", source, len(records), sport_summary)
         return records
 
     def _get_provider_record(self, provider_game_id: str) -> ProviderGameRecord | None:
