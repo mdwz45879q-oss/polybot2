@@ -217,7 +217,6 @@ async def _resolve_and_capture(
     out_dir: Path,
     stop: asyncio.Event,
     resolve_interval: int,
-    sport_slug: str = "football",
 ):
     """Poll for V2 fixture resolution. Spawn capture tasks as games resolve."""
     if not CLIENT_ID or not SECRET_RAW:
@@ -260,7 +259,8 @@ async def _resolve_and_capture(
         newly_resolved: list[dict] = []
 
         for (cat, tourn), games in by_tournament.items():
-            fixtures = _fetch_tournament_fixtures(cat, tourn, headers, sport_slug=sport_slug)
+            game_sport = games[0].get("sport_slug", "football")
+            fixtures = _fetch_tournament_fixtures(cat, tourn, headers, sport_slug=game_sport)
             if not fixtures:
                 continue
 
@@ -283,7 +283,7 @@ async def _resolve_and_capture(
                 if live_eid != game["event_id"]:
                     print(f"  [{game['name']}] event_id rotated: {game['event_id']} → {live_eid}")
 
-                provider = _resolve_fixture_id(live_eid, headers, sport_slug=sport_slug)
+                provider = _resolve_fixture_id(live_eid, headers, sport_slug=game_sport)
                 if not provider or not provider.get("fixture_id"):
                     continue
 
@@ -399,6 +399,8 @@ def main():
             name = make_name(g["home_raw"], g["away_raw"])
             kickoff = ts_to_et(g["start_ts_utc"])
             print(f"  [{i}] {name} ({kickoff} ET) — event_id={g['provider_game_id']}")
+            sport_family = league_cfg.get("sport_family", "soccer")
+            v2_sport = "football" if sport_family == "soccer" else sport_family
             all_v2_games.append({
                 "name": name,
                 "event_id": g["provider_game_id"],
@@ -408,6 +410,7 @@ def main():
                 "away_raw": g["away_raw"],
                 "start_ts_utc": g["start_ts_utc"],
                 "league": league,
+                "sport_slug": v2_sport,
             })
 
     conn.close()
