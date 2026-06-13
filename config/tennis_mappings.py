@@ -3970,3 +3970,438 @@ PLAYER_MAP_TUCUMAN = {
         "pm_aliases": ["Maximo Zeitune"],
     },
 }
+
+# =============================================================================
+# ATP HALLE (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_HALLE_M = {
+    "basilashvili, nikoloz": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Basilashvili, Nikoloz"]},
+        "pm_aliases": ["Nikoloz Basilashvili"],
+    },
+    "bellucci, mattia": {
+        "polymarket_code": "bellucc",
+        "provider_aliases": {"kalstrop_v1": ["Bellucci, Mattia"]},
+        "pm_aliases": ["Mattia Bellucci"],
+    },
+    "collignon, raphael": {
+        "polymarket_code": "collign",
+        "provider_aliases": {"kalstrop_v1": ["Collignon, Raphael"]},
+        "pm_aliases": ["Raphael Collignon"],
+    },
+    "dougaz, aziz": {
+        "polymarket_code": "dougaz",
+        "provider_aliases": {"kalstrop_v1": ["Dougaz, Aziz"]},
+        "pm_aliases": ["Aziz Dougaz"],
+    },
+    "huesler, marc-andrea": {
+        "polymarket_code": "huesler",
+        "provider_aliases": {"kalstrop_v1": ["Huesler, Marc-Andrea"]},
+        "pm_aliases": ["Marc-Andrea Huesler"],
+    },
+    "kukushkin, mikhail": {
+        "polymarket_code": "kukushk",
+        "provider_aliases": {"kalstrop_v1": ["Kukushkin, Mikhail"]},
+        "pm_aliases": ["Mikhail Kukushkin"],
+    },
+    "landaluce, martin": {
+        "polymarket_code": "landalu",
+        "provider_aliases": {"kalstrop_v1": ["Landaluce, Martin"]},
+        "pm_aliases": ["Martin Landaluce"],
+    },
+    "sonego, lorenzo": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Sonego, Lorenzo"]},
+        "pm_aliases": ["Lorenzo Sonego"],
+    },
+}
+
+# =============================================================================
+# ATP QUEEN'S CLUB / LONDON (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_QUEEN_M = {
+    "evans, daniel": {
+        "polymarket_code": "evans",
+        "provider_aliases": {"kalstrop_v1": ["Evans, Daniel"]},
+        "pm_aliases": ["Daniel Evans"],
+    },
+    "giron, marcos": {
+        "polymarket_code": "giron",
+        "provider_aliases": {"kalstrop_v1": ["Giron, Marcos"]},
+        "pm_aliases": ["Marcos Giron"],
+    },
+    "hijikata, rinky": {
+        "polymarket_code": "hijikat",
+        "provider_aliases": {"kalstrop_v1": ["Hijikata, Rinky"]},
+        "pm_aliases": ["Rinky Hijikata"],
+    },
+    "kovacevic, aleksandar": {
+        "polymarket_code": "kovacev",
+        "provider_aliases": {"kalstrop_v1": ["Kovacevic, Aleksandar"]},
+        "pm_aliases": ["Aleksandar Kovacevic"],
+    },
+    "mmoh, michael": {
+        "polymarket_code": "mmoh",
+        "provider_aliases": {"kalstrop_v1": ["Mmoh, Michael"]},
+        "pm_aliases": ["Michael Mmoh"],
+    },
+    "monday, johannus": {
+        "polymarket_code": "monday",
+        "provider_aliases": {"kalstrop_v1": ["Monday, Johannus"]},
+        "pm_aliases": ["Johannus Monday"],
+    },
+    "mpetshi perricard, giovanni": {
+        "polymarket_code": "perrica",
+        "provider_aliases": {"kalstrop_v1": ["Mpetshi Perricard, Giovanni"]},
+        "pm_aliases": ["Giovanni Mpetshi Perricard"],
+    },
+    "prizmic, dino": {
+        "polymarket_code": "prizmic",
+        "provider_aliases": {"kalstrop_v1": ["Prizmic, Dino"]},
+        "pm_aliases": ["Dino Prizmic"],
+    },
+    "walton, adam": {
+        "polymarket_code": "walton",
+        "provider_aliases": {"kalstrop_v1": ["Walton, Adam"]},
+        "pm_aliases": ["Adam Walton"],
+    },
+    "wendelken, harry": {
+        "polymarket_code": "wendelk",
+        "provider_aliases": {"kalstrop_v1": ["Wendelken, Harry"]},
+        "pm_aliases": ["Harry Wendelken"],
+    },
+}
+
+# =============================================================================
+# WTA BERLIN (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_BERLIN_W = {
+    "brockmann, tessa johanna": {
+        "polymarket_code": "brockma",
+        "provider_aliases": {"kalstrop_v1": ["Brockmann, Tessa Johanna"]},
+        "pm_aliases": ["Tessa Brockmann"],
+    },
+    "galfi, dalma": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Galfi, Dalma"]},
+        "pm_aliases": ["Dalma Galfi"],
+    },
+    "ito, aoi": {
+        "polymarket_code": "ito",
+        "provider_aliases": {"kalstrop_v1": ["Ito, Aoi"]},
+        "pm_aliases": ["Aoi Ito"],
+    },
+    "kalinina, anhelina": {
+        "polymarket_code": "kalinin",
+        "provider_aliases": {"kalstrop_v1": ["Kalinina, Anhelina"]},
+        "pm_aliases": ["Anhelina Kalinina"],
+    },
+    "kraus, sinja": {
+        "polymarket_code": "kraus",
+        "provider_aliases": {"kalstrop_v1": ["Kraus, Sinja"]},
+        "pm_aliases": ["Sinja Kraus"],
+    },
+    "kudermetova, polina": {
+        "polymarket_code": "kuderme",
+        "provider_aliases": {"kalstrop_v1": ["Kudermetova, Polina"]},
+        "pm_aliases": ["Polina Kudermetova"],
+    },
+    "lamens, suzan": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Lamens, Suzan"]},
+        "pm_aliases": ["Suzan Lamens"],
+    },
+    "marcinko, petra": {
+        "polymarket_code": "marcink",
+        "provider_aliases": {"kalstrop_v1": ["Marcinko, Petra"]},
+        "pm_aliases": ["Petra Marcinko"],
+    },
+    "parks, alycia": {
+        "polymarket_code": "parks",
+        "provider_aliases": {"kalstrop_v1": ["Parks, Alycia"]},
+        "pm_aliases": ["Alycia Parks"],
+    },
+    "parry, diane": {
+        "polymarket_code": "parry",
+        "provider_aliases": {"kalstrop_v1": ["Parry, Diane"]},
+        "pm_aliases": ["Diane Parry"],
+    },
+    "seidel, ella": {
+        "polymarket_code": "seidel",
+        "provider_aliases": {"kalstrop_v1": ["Seidel, Ella"]},
+        "pm_aliases": ["Ella Seidel"],
+    },
+    "siniakova, katerina": {
+        "polymarket_code": "siniako",
+        "provider_aliases": {"kalstrop_v1": ["Siniakova, Katerina"]},
+        "pm_aliases": ["Katerina Siniakova"],
+    },
+    "sun, lulu": {
+        "polymarket_code": "sun",
+        "provider_aliases": {"kalstrop_v1": ["Sun, Lulu"]},
+        "pm_aliases": ["Lulu Sun"],
+    },
+    "timofeeva, maria": {
+        "polymarket_code": "timofee",
+        "provider_aliases": {"kalstrop_v1": ["Timofeeva, Maria"]},
+        "pm_aliases": ["Maria Timofeeva"],
+    },
+    "yuan, yue": {
+        "polymarket_code": "yuan",
+        "provider_aliases": {"kalstrop_v1": ["Yuan, Yue"]},
+        "pm_aliases": ["Yue Yuan"],
+    },
+    "zarazua, renata": {
+        "polymarket_code": "zarazua",
+        "provider_aliases": {"kalstrop_v1": ["Zarazua, Renata"]},
+        "pm_aliases": ["Renata Zarazua"],
+    },
+}
+
+# =============================================================================
+# WTA NOTTINGHAM (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_NOTTINGHAM_W = {
+    "arango, emiliana": {
+        "polymarket_code": "arango",
+        "provider_aliases": {"kalstrop_v1": ["Arango, Emiliana"]},
+        "pm_aliases": ["Emiliana Arango"],
+    },
+    "bondar, anna": {
+        "polymarket_code": "bondar",
+        "provider_aliases": {"kalstrop_v1": ["Bondar, Anna"]},
+        "pm_aliases": ["Anna Bondar"],
+    },
+    "dudeney, alicia": {
+        "polymarket_code": "dudeney",
+        "provider_aliases": {"kalstrop_v1": ["Dudeney, Alicia"]},
+        "pm_aliases": ["Alicia Dudeney"],
+    },
+    "erjavec, veronika": {
+        "polymarket_code": "erjavec",
+        "provider_aliases": {"kalstrop_v1": ["Erjavec, Veronika"]},
+        "pm_aliases": ["Veronika Erjavec"],
+    },
+    "golubic, viktorija": {
+        "polymarket_code": "golubic",
+        "provider_aliases": {"kalstrop_v1": ["Golubic, Viktorija"]},
+        "pm_aliases": ["Viktorija Golubic"],
+    },
+    "juvan, kaja": {
+        "polymarket_code": "juvan",
+        "provider_aliases": {"kalstrop_v1": ["Juvan, Kaja"]},
+        "pm_aliases": ["Kaja Juvan"],
+    },
+    "mcnally, caty": {
+        "polymarket_code": "mcnally",
+        "provider_aliases": {"kalstrop_v1": ["McNally, Caty"]},
+        "pm_aliases": ["Caty McNally"],
+    },
+    "preston, taylah": {
+        "polymarket_code": "preston",
+        "provider_aliases": {"kalstrop_v1": ["Preston, Taylah"]},
+        "pm_aliases": ["Taylah Preston"],
+    },
+    "putintseva, yulia": {
+        "polymarket_code": "putints",
+        "provider_aliases": {"kalstrop_v1": ["Putintseva, Yulia"]},
+        "pm_aliases": ["Yulia Putintseva"],
+    },
+    "rakhimova, kamilla": {
+        "polymarket_code": "rakhimo",
+        "provider_aliases": {"kalstrop_v1": ["Rakhimova, Kamilla"]},
+        "pm_aliases": ["Kamilla Rakhimova"],
+    },
+    "ruzic, antonia": {
+        "polymarket_code": "ruzic",
+        "provider_aliases": {"kalstrop_v1": ["Ruzic, Antonia"]},
+        "pm_aliases": ["Antonia Ruzic"],
+    },
+    "sakatsume, himeno": {
+        "polymarket_code": "sakatsu",
+        "provider_aliases": {"kalstrop_v1": ["Sakatsume, Himeno"]},
+        "pm_aliases": ["Himeno Sakatsume"],
+    },
+    "selekhmeteva, oksana": {
+        "polymarket_code": "selekhm",
+        "provider_aliases": {"kalstrop_v1": ["Selekhmeteva, Oksana"]},
+        "pm_aliases": ["Oksana Selekhmeteva"],
+    },
+    "sonmez, zeynep": {
+        "polymarket_code": "sonmez",
+        "provider_aliases": {"kalstrop_v1": ["Sonmez, Zeynep"]},
+        "pm_aliases": ["Zeynep Sonmez"],
+    },
+    "stojsavljevic, mika": {
+        "polymarket_code": "stojsav",
+        "provider_aliases": {"kalstrop_v1": ["Stojsavljevic, Mika"]},
+        "pm_aliases": ["Mika Stojsavljevic"],
+    },
+    "tararudee, lanlana": {
+        "polymarket_code": "tararud",
+        "provider_aliases": {"kalstrop_v1": ["Tararudee, Lanlana"]},
+        "pm_aliases": ["Lanlana Tararudee"],
+    },
+    "udvardy, panna": {
+        "polymarket_code": "udvardy",
+        "provider_aliases": {"kalstrop_v1": ["Udvardy, Panna"]},
+        "pm_aliases": ["Panna Udvardy"],
+    },
+    "volynets, katie": {
+        "polymarket_code": "volynet",
+        "provider_aliases": {"kalstrop_v1": ["Volynets, Katie"]},
+        "pm_aliases": ["Katie Volynets"],
+    },
+}
+
+# =============================================================================
+# ATP CHALLENGER NOTTINGHAM 2 (Best of 3 sets)
+# =============================================================================
+
+PLAYER_MAP_NOTTINGHAM_M = {
+    "barrios vera, marcelo tomas": {
+        "polymarket_code": "barrios",
+        "provider_aliases": {"kalstrop_v1": ["Barrios Vera, Marcelo Tomas"]},
+        "pm_aliases": ["Tomas Barrios"],
+    },
+    "basing, max": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Basing, Max"]},
+        "pm_aliases": ["Max Basing"],
+    },
+    "bonzi, benjamin": {
+        "polymarket_code": "bonzi",
+        "provider_aliases": {"kalstrop_v1": ["Bonzi, Benjamin"]},
+        "pm_aliases": ["Benjamin Bonzi"],
+    },
+    "bu, yunchaokete": {
+        "polymarket_code": "bu",
+        "provider_aliases": {"kalstrop_v1": ["Bu, Yunchaokete"]},
+        "pm_aliases": ["Yunchaokete Bu"],
+    },
+    "budkov kjaer, nicolai": {
+        "polymarket_code": "kjaer",
+        "provider_aliases": {"kalstrop_v1": ["Budkov Kjaer, Nicolai"]},
+        "pm_aliases": ["Nicolai Budkov Kjaer"],
+    },
+    "ceban, mark": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Ceban, Mark"]},
+        "pm_aliases": ["Mark Ceban"],
+    },
+    "clarke, jay": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Clarke, Jay"]},
+        "pm_aliases": ["Jay Clarke"],
+    },
+    "echargui, moez": {
+        "polymarket_code": "echargu",
+        "provider_aliases": {"kalstrop_v1": ["Echargui, Moez"]},
+        "pm_aliases": ["Moez Echargui"],
+    },
+    "faria, jaime": {
+        "polymarket_code": "faria",
+        "provider_aliases": {"kalstrop_v1": ["Faria, Jaime"]},
+        "pm_aliases": ["Jaime Faria"],
+    },
+    "gaston, hugo": {
+        "polymarket_code": "gaston",
+        "provider_aliases": {"kalstrop_v1": ["Gaston, Hugo"]},
+        "pm_aliases": ["Hugo Gaston"],
+    },
+    "gill, felix": {
+        "polymarket_code": "gill",
+        "provider_aliases": {"kalstrop_v1": ["Gill, Felix"]},
+        "pm_aliases": ["Felix Gill"],
+    },
+    "grenier, hugo": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Grenier, Hugo"]},
+        "pm_aliases": ["Hugo Grenier"],
+    },
+    "holmgren, august": {
+        "polymarket_code": "holmgre",
+        "provider_aliases": {"kalstrop_v1": ["Holmgren, August"]},
+        "pm_aliases": ["August Holmgren"],
+    },
+    "lawlor, rhys": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Lawlor, Rhys"]},
+        "pm_aliases": ["Rhys Lawlor"],
+    },
+    "masur, daniel": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Masur, Daniel"]},
+        "pm_aliases": ["Daniel Masur"],
+    },
+    "mccabe, james": {
+        "polymarket_code": "mccabe",
+        "provider_aliases": {"kalstrop_v1": ["McCabe, James"]},
+        "pm_aliases": ["James McCabe"],
+    },
+    "mcdonald, mackenzie": {
+        "polymarket_code": "mcdonal",
+        "provider_aliases": {"kalstrop_v1": ["McDonald, Mackenzie"]},
+        "pm_aliases": ["Mackenzie McDonald"],
+    },
+    "mochizuki, shintaro": {
+        "polymarket_code": "mochizu",
+        "provider_aliases": {"kalstrop_v1": ["Mochizuki, Shintaro"]},
+        "pm_aliases": ["Shintaro Mochizuki"],
+    },
+    "o'connell, christopher": {
+        "polymarket_code": "oconnel",
+        "provider_aliases": {"kalstrop_v1": ["O'Connell, Christopher"]},
+        "pm_aliases": ["Christopher O'Connell"],
+    },
+    "okonkwo, oliver": {
+        "polymarket_code": "okonkwo",
+        "provider_aliases": {"kalstrop_v1": ["Okonkwo, Oliver"]},
+        "pm_aliases": ["Oliver Okonkwo"],
+    },
+    "rocha, henrique": {
+        "polymarket_code": "rocha",
+        "provider_aliases": {"kalstrop_v1": ["Rocha, Henrique"]},
+        "pm_aliases": ["Henrique Rocha"],
+    },
+    "safiullin, roman": {
+        "polymarket_code": "safiull",
+        "provider_aliases": {"kalstrop_v1": ["Safiullin, Roman"]},
+        "pm_aliases": ["Roman Safiullin"],
+    },
+    "sakamoto, rei": {
+        "polymarket_code": "sakamot",
+        "provider_aliases": {"kalstrop_v1": ["Sakamoto, Rei"]},
+        "pm_aliases": ["Rei Sakamoto"],
+    },
+    "tarvet, oliver": {
+        "polymarket_code": "tarvet",
+        "provider_aliases": {"kalstrop_v1": ["Tarvet, Oliver"]},
+        "pm_aliases": ["Oliver Tarvet"],
+    },
+    "virtanen, otto": {
+        "polymarket_code": "virtane",
+        "provider_aliases": {"kalstrop_v1": ["Virtanen, Otto"]},
+        "pm_aliases": ["Otto Virtanen"],
+    },
+    "wu, yibing": {
+        "polymarket_code": "wu",
+        "provider_aliases": {"kalstrop_v1": ["Wu, Yibing"]},
+        "pm_aliases": ["Yibing Wu"],
+    },
+    "zhang, zhizhen": {
+        "polymarket_code": "zhang",
+        "provider_aliases": {"kalstrop_v1": ["Zhang, Zhizhen"]},
+        "pm_aliases": ["Zhizhen Zhang"],
+    },
+    "zheng, michael": {
+        "polymarket_code": "zheng",
+        "provider_aliases": {"kalstrop_v1": ["Zheng, Michael"]},
+        "pm_aliases": ["Michael Zheng"],
+    },
+}

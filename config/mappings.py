@@ -1,6 +1,6 @@
 from baseball_mappings import TEAM_MAP_MLB
 from soccer_mappings import TEAM_MAP_BUNDESLIGA, TEAM_MAP_EPL, TEAM_MAP_UCL, TEAM_MAP_LALIGA, TEAM_MAP_FIFA_FRIENDLY, TEAM_MAP_WC
-from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M, PLAYER_MAP_LYON, PLAYER_MAP_TUCUMAN
+from tennis_mappings import PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES, PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES, PLAYER_MAP_BIRMINGHAM_MEN, PLAYER_MAP_BIRMINGHAM_WOMEN, PLAYER_MAP_TYLER, PLAYER_MAP_CENTURION, PLAYER_MAP_PERUGIA, PLAYER_MAP_HEILBRONN, PLAYER_MAP_PROSTEJOV, PLAYER_MAP_FOGGIA, PLAYER_MAP_MAKARSKA, PLAYER_MAP_QUEEN, PLAYER_MAP_STUTTGART, PLAYER_MAP_LIBEMA_M, PLAYER_MAP_LIBEMA_W, PLAYER_MAP_MODENA, PLAYER_MAP_BRATISLAVA, PLAYER_MAP_ILKLEY_W, PLAYER_MAP_CATTOLICA, PLAYER_MAP_ILKLEY_M, PLAYER_MAP_LYON, PLAYER_MAP_TUCUMAN, PLAYER_MAP_HALLE_M, PLAYER_MAP_QUEEN_M, PLAYER_MAP_BERLIN_W, PLAYER_MAP_NOTTINGHAM_W, PLAYER_MAP_NOTTINGHAM_M
 from cs2_mappings import TEAM_MAP_CS2
 from lol_mappings import TEAM_MAP_LOL
 from dota2_mappings import TEAM_MAP_DOTA2
@@ -187,6 +187,36 @@ LEAGUES = {
         "provider": "kalstrop_v1",
         "sets_to_win": 2,
     },
+    "halle_m": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "queen_m": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "berlin_w": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "nott_w": {
+        "polymarket_league_code": "wta",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
+    "nott_m": {
+        "polymarket_league_code": "atp",
+        "sport_family": "tennis",
+        "provider": "kalstrop_v1",
+        "sets_to_win": 2,
+    },
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
@@ -238,6 +268,11 @@ PROVIDER_LEAGUE_ALIASES = {
         "atp challenger ilkley": "ilkley_m",
         "atp challenger lyon": "lyon",
         "atp challenger san miguel de tucuman": "tucuman",
+        "atp halle": "halle_m",
+        "atp london": "queen_m",
+        "berlin": "berlin_w",
+        "wta nottingham": "nott_w",
+        "atp challenger nottingham 2": "nott_m",
         "cs2": "cs2",
         "dota2": "dota2",
         "lol": "lol",
@@ -287,6 +322,11 @@ PROVIDER_LEAGUE_ALIASES = {
         "challenger ilkley - tennis": "ilkley_m",
         "challenger lyon - tennis": "lyon",
         "challenger san miguel de tucuman - tennis": "tucuman",
+        "atp halle - tennis": "halle_m",
+        "atp london - tennis": "queen_m",
+        "berlin - tennis": "berlin_w",
+        "wta nottingham - tennis": "nott_w",
+        "challenger nottingham - tennis": "nott_m",
         "cs2": "cs2",
         "dota": "dota2",
         "league of legends": "lol",
@@ -396,6 +436,11 @@ TEAM_MAP = {
     "ilkley_m": PLAYER_MAP_ILKLEY_M,
     "lyon": PLAYER_MAP_LYON,
     "tucuman": PLAYER_MAP_TUCUMAN,
+    "halle_m": PLAYER_MAP_HALLE_M,
+    "queen_m": PLAYER_MAP_QUEEN_M,
+    "berlin_w": PLAYER_MAP_BERLIN_W,
+    "nott_w": PLAYER_MAP_NOTTINGHAM_W,
+    "nott_m": PLAYER_MAP_NOTTINGHAM_M,
     "cs2": TEAM_MAP_CS2,
     "lol": TEAM_MAP_LOL,
     "dota2": TEAM_MAP_DOTA2,
