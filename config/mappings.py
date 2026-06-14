@@ -501,19 +501,13 @@ PM_LEAGUE_ORDERINGS = {
 LEAGUE_MATCH_RULES = {
     "default":{
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 30,
+        "kickoff_tolerance_minutes": 180,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
     "mlb": {
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 30,
-        "provider_order_reliable": False,
-        "pm_order_reliable": True,
-    },
-    "tennis": {
-        "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 180,
+        "kickoff_tolerance_minutes": 45,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
@@ -521,7 +515,7 @@ LEAGUE_MATCH_RULES = {
     # matches in a day), while V1 has per-match times. Need wider tolerance.
     "cs2": {
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 180,
+        "kickoff_tolerance_minutes": 360,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
