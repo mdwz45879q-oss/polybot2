@@ -511,27 +511,9 @@ LEAGUE_MATCH_RULES = {
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
-    "rgm": {
+    "tennis": {
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 120,
-        "provider_order_reliable": False,
-        "pm_order_reliable": True,
-    },
-    "rgw": {
-        "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 120,
-        "provider_order_reliable": False,
-        "pm_order_reliable": True,
-    },
-    "birmm": {
-        "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 120,
-        "provider_order_reliable": False,
-        "pm_order_reliable": True,
-    },
-    "birmw": {
-        "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 120,
+        "kickoff_tolerance_minutes": 180,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
@@ -539,7 +521,7 @@ LEAGUE_MATCH_RULES = {
     # matches in a day), while V1 has per-match times. Need wider tolerance.
     "cs2": {
         "date_tolerance_days": 0,
-        "kickoff_tolerance_minutes": 360,
+        "kickoff_tolerance_minutes": 180,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },
