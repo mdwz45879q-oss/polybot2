@@ -31,14 +31,17 @@ pub(crate) struct PandaScoreMatchInit {
     pub away_team_id: i64,
 }
 
+type PsWsStream = tokio_tungstenite::WebSocketStream<
+    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+>;
+
 struct PandaScoreConn {
     match_id: i64,
     match_state: PandaScoreMatchState,
-    ws: Option<tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >>,
+    ws: Option<PsWsStream>,
     reconnect_at: Option<Instant>,
     reconnect_count: u32,
+    pending_connect: Option<tokio::sync::oneshot::Receiver<Result<PsWsStream, String>>>,
 }
 
 impl PandaScoreConn {
@@ -64,19 +67,14 @@ impl PandaScoreConn {
 async fn try_connect(
     match_id: i64,
     token: &str,
-) -> Result<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    String,
-> {
+) -> Result<PsWsStream, String> {
     let url = format!("{}/{}/low_latency_feed?token={}", BASE_URL, match_id, token);
     let (mut ws, _) = connect_async_tls_with_config(url.as_str(), None, true, None)
         .await
         .map_err(|e| format!("pandascore_connect:{}", e))?;
 
     // Wait for hello frame
-    let hello = tokio::time::timeout(Duration::from_secs(10), ws.next())
+    let hello = tokio::time::timeout(Duration::from_secs(2), ws.next())
         .await
         .map_err(|_| "pandascore_hello_timeout".to_string())?;
 
@@ -89,13 +87,58 @@ async fn try_connect(
                     return Ok(ws);
                 }
             }
-            // Not a hello but still valid — might be a game state frame if we
-            // connected mid-match. Accept the connection.
             Ok(ws)
         }
         Some(Ok(_)) => Ok(ws),
         Some(Err(e)) => Err(format!("pandascore_hello_read:{}", e)),
         None => Err("pandascore_hello_stream_closed".to_string()),
+    }
+}
+
+/// Process a single WS message for a connection. Handles Text, Binary,
+/// Ping, and Close. Returns true if a data frame was processed.
+fn handle_ws_message(
+    msg: &Message,
+    conn: &mut PandaScoreConn,
+    engine: &mut SportEngine,
+    dispatch_handle: &mut DispatchHandle,
+    log: &Arc<Mutex<LogWriter>>,
+    clock_origin: &Instant,
+    pending_logs: &mut smallvec::SmallVec<[PandaScoreCs2PendingLog; 4]>,
+) {
+    let text = match msg {
+        Message::Text(t) => Some(t.as_ref()),
+        Message::Binary(b) => std::str::from_utf8(b.as_ref()).ok(),
+        Message::Ping(p) => {
+            let pong = p.clone();
+            if let Some(ws) = conn.ws.as_mut() {
+                let _ = futures_util::FutureExt::now_or_never(
+                    ws.send(Message::Pong(pong)),
+                );
+            }
+            None
+        }
+        Message::Close(_) => {
+            conn.mark_disconnected("close_received");
+            None
+        }
+        _ => None,
+    };
+
+    if let Some(text) = text {
+        let recv_ns = clock_origin.elapsed().as_nanos() as i64;
+        if let SportEngine::Cs2(ref mut e) = engine {
+            if let Some(tl) = process_pandascore_cs2_frame(
+                e,
+                &mut conn.match_state,
+                text,
+                recv_ns,
+                dispatch_handle,
+                log,
+            ) {
+                pending_logs.push(tl);
+            }
+        }
     }
 }
 
@@ -128,6 +171,7 @@ pub(crate) async fn run_pandascore_worker_async(
             ws: None,
             reconnect_at: Some(Instant::now()), // connect immediately
             reconnect_count: 0,
+            pending_connect: None,
         })
         .collect();
 
@@ -140,6 +184,7 @@ pub(crate) async fn run_pandascore_worker_async(
     }
 
     let mut running = true;
+    let mut pending_logs = smallvec::SmallVec::<[PandaScoreCs2PendingLog; 4]>::new();
 
     while running {
         // --- Check commands ---
@@ -149,10 +194,7 @@ pub(crate) async fn run_pandascore_worker_async(
                     running = false;
                     break;
                 }
-                Ok(LiveWorkerCommand::SetCandidateSubscriptions(_)) => {
-                    // PandaScore uses per-match URLs, not dynamic subscriptions.
-                    // Ignored.
-                }
+                Ok(LiveWorkerCommand::SetCandidateSubscriptions(_)) => {}
                 Err(flume::TryRecvError::Empty) => break,
                 Err(flume::TryRecvError::Disconnected) => {
                     running = false;
@@ -184,6 +226,7 @@ pub(crate) async fn run_pandascore_worker_async(
                         ws: None,
                         reconnect_at: Some(Instant::now()),
                         reconnect_count: 0,
+                        pending_connect: None,
                     });
                     if let Ok(mut g) = log.lock() {
                         g.log_ws_connect("pandascore_patch", &[mid.to_string()]);
@@ -197,55 +240,67 @@ pub(crate) async fn run_pandascore_worker_async(
             }
         }
 
-        // --- Attempt reconnections ---
-        let now = Instant::now();
+        // --- Collect completed reconnections (non-blocking) ---
         for conn in &mut connections {
-            if conn.is_connected() || conn.match_state.match_completed {
-                continue;
-            }
-            if let Some(at) = conn.reconnect_at {
-                if now < at {
-                    continue;
-                }
-            }
-            conn.reconnect_at = None;
-            match try_connect(conn.match_id, &cfg.api_token).await {
-                Ok(ws) => {
-                    conn.ws = Some(ws);
-                    conn.reconnect_count = 0;
-                    if let Ok(mut g) = log.lock() {
-                        g.log_ws_connect(
-                            "pandascore",
-                            &[conn.match_id.to_string()],
-                        );
+            let resolved = match conn.pending_connect.as_mut() {
+                Some(rx) => rx.try_recv().ok(),
+                None => None,
+            };
+            if let Some(result) = resolved {
+                conn.pending_connect = None;
+                match result {
+                    Ok(ws) => {
+                        conn.ws = Some(ws);
+                        conn.reconnect_count = 0;
+                        if let Ok(mut g) = log.lock() {
+                            g.log_ws_connect("pandascore", &[conn.match_id.to_string()]);
+                        }
+                        with_health(&health, |h| {
+                            h.running = true;
+                            h.last_error.clear();
+                        });
                     }
-                    with_health(&health, |h| {
-                        h.running = true;
-                        h.last_error.clear();
-                    });
-                }
-                Err(e) => {
-                    with_health(&health, |h| {
-                        h.reconnects += 1;
-                        h.last_error = e.clone();
-                    });
-                    conn.mark_disconnected(&e);
+                    Err(e) => {
+                        with_health(&health, |h| {
+                            h.reconnects += 1;
+                            h.last_error = e.clone();
+                        });
+                        conn.mark_disconnected(&e);
+                    }
                 }
             }
         }
 
+        // --- Spawn reconnections for due connections (non-blocking) ---
+        let now = Instant::now();
+        for conn in &mut connections {
+            if conn.is_connected()
+                || conn.match_state.match_completed
+                || conn.pending_connect.is_some()
+            {
+                continue;
+            }
+            if !conn.reconnect_at.map_or(false, |at| now >= at) {
+                continue;
+            }
+            conn.reconnect_at = None;
+            let mid = conn.match_id;
+            let token = cfg.api_token.clone();
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            conn.pending_connect = Some(rx);
+            tokio::spawn(async move {
+                let _ = tx.send(try_connect(mid, &token).await);
+            });
+        }
+
         // --- Check if all matches are done ---
         let all_done = connections.iter().all(|c| c.match_state.match_completed);
-        let any_connected = connections.iter().any(|c| c.is_connected());
         if all_done {
             with_health(&health, |h| h.running = false);
             break;
         }
 
         // --- Burst drain: poll all connections non-blocking ---
-        let mut pending_logs =
-            smallvec::SmallVec::<[PandaScoreCs2PendingLog; 4]>::new();
-
         loop {
             let mut any_ready = false;
 
@@ -256,44 +311,12 @@ pub(crate) async fn run_pandascore_worker_async(
                 };
 
                 match futures_util::FutureExt::now_or_never(ws.next()) {
-                    Some(Some(Ok(msg))) => {
+                    Some(Some(Ok(ref msg))) => {
                         any_ready = true;
-                        let text = match &msg {
-                            Message::Text(t) => Some(t.as_ref()),
-                            Message::Binary(b) => std::str::from_utf8(b.as_ref()).ok(),
-                            Message::Ping(p) => {
-                                let pong = p.clone();
-                                // Re-borrow ws for send
-                                if let Some(ws) = conn.ws.as_mut() {
-                                    let _ = futures_util::FutureExt::now_or_never(
-                                        ws.send(Message::Pong(pong)),
-                                    );
-                                }
-                                None
-                            }
-                            Message::Close(_) => {
-                                conn.mark_disconnected("close_received");
-                                None
-                            }
-                            _ => None,
-                        };
-
-                        if let Some(text) = text {
-                            let recv_ns =
-                                worker_clock_origin.elapsed().as_nanos() as i64;
-                            if let SportEngine::Cs2(ref mut e) = engine {
-                                if let Some(tl) = process_pandascore_cs2_frame(
-                                    e,
-                                    &mut conn.match_state,
-                                    text,
-                                    recv_ns,
-                                    &mut dispatch_handle,
-                                    &log,
-                                ) {
-                                    pending_logs.push(tl);
-                                }
-                            }
-                        }
+                        handle_ws_message(
+                            msg, conn, engine, &mut dispatch_handle,
+                            &log, &worker_clock_origin, &mut pending_logs,
+                        );
                     }
                     Some(Some(Err(e))) => {
                         any_ready = true;
@@ -365,12 +388,42 @@ pub(crate) async fn run_pandascore_worker_async(
             g.flush();
         }
 
-        // --- Blocking wait: sleep 100ms or wake on command ---
-        if any_connected || connections.iter().any(|c| c.reconnect_at.is_some()) {
+        // --- Blocking wait: frame-aware select! ---
+        // Poll the first connected WS stream so we wake IMMEDIATELY on
+        // frame arrival instead of sleeping through it. The subsequent
+        // burst drain catches frames from all other connections.
+        let first_connected = connections.iter().position(|c| c.ws.is_some());
+
+        if let Some(idx) = first_connected {
             let timeout = tokio::time::sleep(Duration::from_millis(100));
             tokio::pin!(timeout);
+
+            let ws_ref = connections[idx].ws.as_mut().unwrap();
+
             tokio::select! {
                 biased;
+                msg = ws_ref.next() => {
+                    match msg {
+                        Some(Ok(ref m)) => {
+                            handle_ws_message(
+                                m, &mut connections[idx], engine,
+                                &mut dispatch_handle, &log,
+                                &worker_clock_origin, &mut pending_logs,
+                            );
+                        }
+                        Some(Err(e)) => {
+                            let reason = format!("ws_read:{}", e);
+                            with_health(&health, |h| {
+                                h.reconnects += 1;
+                                h.last_error = reason.clone();
+                            });
+                            connections[idx].mark_disconnected(&reason);
+                        }
+                        None => {
+                            connections[idx].mark_disconnected("stream_closed");
+                        }
+                    }
+                }
                 cmd = command_rx.recv_async() => {
                     match cmd {
                         Ok(LiveWorkerCommand::Stop) => { running = false; }
@@ -380,8 +433,11 @@ pub(crate) async fn run_pandascore_worker_async(
                 }
                 _ = &mut timeout => {}
             }
+        } else if connections.iter().any(|c| c.reconnect_at.is_some()) {
+            // No connections active, but reconnects pending — short sleep
+            tokio_sleep(Duration::from_millis(100)).await;
         } else {
-            // Nothing connected, nothing pending reconnect — sleep longer
+            // Nothing connected, nothing pending — sleep longer
             tokio_sleep(Duration::from_millis(500)).await;
         }
     }

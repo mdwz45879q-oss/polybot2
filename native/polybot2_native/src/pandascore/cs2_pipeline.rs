@@ -25,6 +25,7 @@ pub(crate) struct PandaScoreMatchState {
     pub forfeit_pending: bool,
     pub prev_total_maps: Option<i64>,
     pub completed_game_ids: smallvec::SmallVec<[i64; 8]>,
+    pub gidx: Option<GameIdx>,
 }
 
 impl PandaScoreMatchState {
@@ -57,6 +58,7 @@ impl PandaScoreMatchState {
             forfeit_pending: false,
             prev_total_maps: None,
             completed_game_ids: smallvec::SmallVec::new(),
+            gidx: None,
         }
     }
 
@@ -235,21 +237,23 @@ pub(crate) fn process_pandascore_cs2_frame(
     dispatch_handle: &mut DispatchHandle,
     log: &Arc<Mutex<LogWriter>>,
 ) -> Option<PandaScoreCs2PendingLog> {
-    let frame: super::types::PandaScoreLLFrame = serde_json::from_str(frame_text).ok()?;
+    use super::fast_extract::{fast_extract_pandascore_cs2, serde_fallback_pandascore_cs2};
 
-    if frame.is_hello() || !frame.is_game_state() {
-        return None;
-    }
+    let ext = fast_extract_pandascore_cs2(frame_text.as_bytes())
+        .or_else(|| serde_fallback_pandascore_cs2(frame_text))?;
+    let home_score = ext.home_score;
+    let away_score = ext.away_score;
+    let game_id = ext.game_id;
+    let match_status_finished = ext.match_status_finished;
 
-    let home = frame.home_team.as_ref()?;
-    let away = frame.away_team.as_ref()?;
-    let home_score = home.score;
-    let away_score = away.score;
-    let game_id = frame.game_id.unwrap_or(0);
-    let match_status = frame.match_status.as_deref().unwrap_or("");
-
-    let match_id_str = match_state.match_id.to_string();
-    let gidx = *engine.game_id_to_idx.get(&match_id_str)?;
+    let gidx = match match_state.gidx {
+        Some(g) => g,
+        None => {
+            let g = *engine.game_id_to_idx.get(&match_state.match_id.to_string())?;
+            match_state.gidx = Some(g);
+            g
+        }
+    };
     let gi = gidx.0 as usize;
 
     if engine.final_resolved_games[gi] {
@@ -289,7 +293,7 @@ pub(crate) fn process_pandascore_cs2_frame(
 
     // Construct engine state
     let match_completed =
-        match_status == "finished" || match_state.maps_home >= match_state.maps_to_win
+        match_status_finished || match_state.maps_home >= match_state.maps_to_win
             || match_state.maps_away >= match_state.maps_to_win;
     let game_state: &'static str = if match_completed { "FINAL" } else { "LIVE" };
 
