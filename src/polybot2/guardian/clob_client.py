@@ -55,18 +55,19 @@ class ClobClient:
         self._sdk_client = None
         if private_key and api_key:
             try:
-                from py_clob_client_v2 import ClobClient as SdkClobClient, ApiCreds
+                from py_clob_client_v2 import ClobClient as SdkClobClient, ApiCreds, SignatureTypeV2
                 creds = ApiCreds(
                     api_key=api_key,
                     api_secret=api_secret,
                     api_passphrase=api_passphrase,
                 )
+                _sig_type = SignatureTypeV2.POLY_1271 if signature_type == 3 else signature_type
                 self._sdk_client = SdkClobClient(
                     host=clob_host.rstrip("/"),
                     chain_id=chain_id,
                     key=private_key,
                     creds=creds,
-                    signature_type=signature_type,
+                    signature_type=_sig_type,
                     funder=funder if funder else None,
                 )
                 logger.info("SDK client initialized for order signing")
@@ -155,15 +156,15 @@ class ClobClient:
             return None
         try:
             import asyncio
-            from py_clob_client_v2 import OrderArgsV2, OrderType, PartialCreateOrderOptions
+            from py_clob_client_v2 import OrderArgs, OrderType, PartialCreateOrderOptions, Side
 
             neg_risk, tick_size = await self.get_market_info(condition_id) if condition_id else (True, "0.01")
 
-            order_args = OrderArgsV2(
+            order_args = OrderArgs(
                 token_id=token_id,
                 price=price,
                 size=size,
-                side="SELL",
+                side=Side.SELL,
             )
             options = PartialCreateOrderOptions(neg_risk=neg_risk, tick_size=tick_size)
             signed_order = await asyncio.to_thread(

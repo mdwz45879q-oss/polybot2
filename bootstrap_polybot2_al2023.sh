@@ -174,7 +174,8 @@ POLY_EXEC_API_SECRET=__SET_ME__
 POLY_EXEC_API_PASSPHRASE=__SET_ME__
 POLY_EXEC_PRESIGN_PRIVATE_KEY=__SET_ME__
 POLY_EXEC_FUNDER=__SET_ME__
-POLY_EXEC_SIGNATURE_TYPE=1
+# Signature type: 1 = Proxy wallet, 3 = Deposit wallet (Poly1271/ERC-7739)
+POLY_EXEC_SIGNATURE_TYPE=3
 POLY_EXEC_CLOB_HOST=https://clob.polymarket.com
 
 # =============================================================================
@@ -185,10 +186,20 @@ KALSTROP_SHARED_SECRET_RAW=__SET_ME__
 BOLTODDS_API_KEY=__SET_ME__
 
 # =============================================================================
-# HOTPATH COMMAND
-# Edit for your actual run-id, db path, and execution mode.
+# RUNTIME PATHS
 # =============================================================================
-POLYBOT2_COMMAND=hotpath live --league mlb --execution-mode paper
+POLYBOT2_DB_PATH=__SET_ME__
+POLYBOT2_LOG_DIR=__SET_ME__
+
+# =============================================================================
+# HOTPATH COMMAND
+# Edit for your sport/league and execution mode.
+# Examples:
+#   hotpath live --league mlb --execution-mode paper
+#   hotpath live --sport tennis --execution-mode live
+#   hotpath live --sport soccer --execution-mode live
+# =============================================================================
+POLYBOT2_COMMAND=hotpath live --sport tennis --execution-mode paper
 ENV
   sudo chmod 600 /etc/polybot2/polybot2.env
   sudo chown "$APP_USER:$APP_USER" /etc/polybot2/polybot2.env

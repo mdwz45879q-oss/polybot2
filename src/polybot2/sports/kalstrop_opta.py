@@ -32,7 +32,7 @@ class KalstropOptaProviderConfig:
         self,
         *,
         api_base: str = "https://stats.kalstropservice.com/api/v2/opta",
-        catalog_sport_slugs: Sequence[str] = ("football", "baseball"),
+        catalog_sport_slugs: Sequence[str] = ("football",),
         request_timeout_seconds: float = 15.0,
         client_id: str = "",
         shared_secret_raw: str = "",

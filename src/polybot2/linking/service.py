@@ -1547,7 +1547,9 @@ class LinkService:
             # Resolve per-league default if --horizon-hours not explicitly set.
             effective_horizon = horizon_hours
             if effective_horizon is None:
-                runtime_cfg = policy.hotpath_runtime_by_league.get(league, {})
+                _rt = policy.hotpath_runtime_by_league or {}
+                sf = str(mapping.leagues.get(league, {}).get("sport_family", "")).strip().lower()
+                runtime_cfg = _rt.get(league, _rt.get(sf, {}))
                 effective_horizon = runtime_cfg.get("plan_horizon_hours")
             batch = self._process_provider_league(
                 provider=provider, league=league, mapping=mapping,
