@@ -824,4 +824,18 @@ TEAM_MAP_CS2 = {
         },
         "pm_aliases": ["Nexus"],
     },
+    "natus vincere": {
+        "polymarket_code": "navi",
+        "provider_aliases": {
+            "pandascore": ["Natus Vincere"],
+        },
+        "pm_aliases": ["Natus Vincere", "NAVI"],
+    },
+    "team falcons": {
+        "polymarket_code": "fal2",
+        "provider_aliases": {
+            "pandascore": ["Team Falcons"],
+        },
+        "pm_aliases": ["Team Falcons"],
+    },
 }
