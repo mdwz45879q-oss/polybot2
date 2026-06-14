@@ -481,11 +481,6 @@ impl NativeHotPathRuntime {
                         ));
                     }
                     let match_inits = cfg.pandascore_matches.clone().unwrap_or_default();
-                    if match_inits.is_empty() {
-                        return Err(PyValueError::new_err(
-                            "pandascore_matches_required_for_pandascore_provider",
-                        ));
-                    }
                     let ps_cfg = crate::pandascore::ws::PandaScoreWorkerConfig { api_token };
 
                     thread::spawn(move || {

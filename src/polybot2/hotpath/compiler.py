@@ -1145,10 +1145,15 @@ def compile_multi_league_plan(
                 continue
             raise
 
-    if successes == 0:
-        raise HotPathPlanError(
-            "scope_blocked",
-            f"no in-scope games for any of {len(leagues)} leagues",
+    if successes == 0 and not all_games:
+        return CompiledPlan(
+            provider=leagues[0][1] if leagues else "",
+            league=leagues[0][0] if leagues else "",
+            sport=sport,
+            run_id=run_id,
+            plan_hash="empty",
+            compiled_at=int(now_ts_utc),
+            games=(),
         )
 
     canonical_payload = {

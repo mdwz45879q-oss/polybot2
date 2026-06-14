@@ -294,7 +294,8 @@ pub(crate) async fn run_pandascore_worker_async(
         }
 
         // --- Check if all matches are done ---
-        let all_done = connections.iter().all(|c| c.match_state.match_completed);
+        let all_done =
+            !connections.is_empty() && connections.iter().all(|c| c.match_state.match_completed);
         if all_done {
             with_health(&health, |h| h.running = false);
             break;
