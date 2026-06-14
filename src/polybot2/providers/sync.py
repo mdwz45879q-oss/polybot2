@@ -236,6 +236,12 @@ def load_provider_catalog(*, provider: str) -> list[tuple[Any, ...]]:
         if not api_key:
             raise RuntimeError("missing_BOLTODDS_API_KEY")
         client = BoltOddsProvider(config=BoltOddsProviderConfig(api_key=api_key))
+    elif p == "pandascore":
+        from polybot2.sports.pandascore import PandaScoreProvider, PandaScoreProviderConfig
+        api_token = str(os.getenv("PANDASCORE_API_TOKEN") or "").strip()
+        if not api_token:
+            raise RuntimeError("missing_PANDASCORE_API_TOKEN")
+        client = PandaScoreProvider(config=PandaScoreProviderConfig(api_token=api_token))
     else:
         raise ValueError(f"load_provider_catalog: unsupported provider {p!r}")
 

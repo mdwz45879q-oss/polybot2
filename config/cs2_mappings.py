@@ -516,7 +516,7 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Nuclear TigeRES"],
             "pandascore": ["Nuclear TigeRES"],
         },
-    "pm_aliases": ["NTR"],
+    "pm_aliases": ["NTR", "Nuclear TigeRES"],
     },
     # ODDIK Academy
     "oddik academy": {
@@ -802,5 +802,26 @@ TEAM_MAP_CS2 = {
             "pandascore": ["WRAITH PCIFIC"],
         },
         "pm_aliases": ["WRAITH PCIFIC"],
+    },
+    "mouz": {
+        "polymarket_code": "mouz",
+        "provider_aliases": {
+            "pandascore": ["MOUZ"],
+        },
+        "pm_aliases": ["MOUZ"],
+    },
+    "themongolz": {
+        "polymarket_code": "mglz",
+        "provider_aliases": {
+            "pandascore": ["TheMongolz"],
+        },
+        "pm_aliases": ["TheMongolz"],
+    },
+    "nexus": {
+        "polymarket_code": "nxs1",
+        "provider_aliases": {
+            "pandascore": ["Nexus"],
+        },
+        "pm_aliases": ["Nexus"],
     },
 }

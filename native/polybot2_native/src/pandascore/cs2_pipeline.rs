@@ -54,7 +54,7 @@ impl PandaScoreMatchState {
             map_fired,
             home_team_id,
             away_team_id,
-            match_completed: false,
+            match_completed: maps_home >= maps_to_win || maps_away >= maps_to_win,
             forfeit_pending: false,
             prev_total_maps: None,
             completed_game_ids: smallvec::SmallVec::new(),
