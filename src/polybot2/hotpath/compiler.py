@@ -1102,6 +1102,7 @@ def compile_multi_league_plan(
     now_ts_utc: int | None = None,
     plan_horizon_hours: int | None = None,
     exclude_strategy_keys: set[str] | None = None,
+    include_inactive: bool = False,
 ) -> CompiledPlan:
     """Compile plans for multiple leagues and merge into one.
 
@@ -1132,6 +1133,7 @@ def compile_multi_league_plan(
                 now_ts_utc=now_ts_utc,
                 plan_horizon_hours=plan_horizon_hours,
                 exclude_strategy_keys=exclude_strategy_keys,
+                include_inactive=include_inactive,
             )
             for game in plan.games:
                 if game.provider_game_id not in seen_game_ids:

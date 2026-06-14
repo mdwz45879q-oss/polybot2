@@ -11,6 +11,7 @@ from typing import Any
 
 from polybot2._cli.common import _apply_env_uid_filter
 from polybot2._cli.common import _build_hotpath_template_orders
+from polybot2._cli.common import _build_pandascore_match_inits
 from polybot2._cli.common import _build_retirement_template_orders
 from polybot2._cli.common import _hotpath_order_policy_for_league as _common_hotpath_order_policy_for_league
 from polybot2._cli.common import _hotpath_runtime_policy_for_league as _common_hotpath_runtime_policy_for_league
@@ -403,6 +404,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             if retirement_templates and hasattr(hotpath, "prewarm_presign_retirement"):
                 hotpath.prewarm_presign_retirement(retirement_templates)
 
+            if provider_name == "pandascore":
+                ps_inits = _build_pandascore_match_inits(compiled_plan, prov, logger)
+                hotpath.set_pandascore_matches(ps_inits)
+
             n_targets = sum(len(m.targets) for g in compiled_plan.games for m in g.markets)
             logger.info(
                 "hotpath starting: run_id=%d games=%d targets=%d subs=%d refresh=%ds",
@@ -443,11 +448,13 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             from polybot2.sports.factory import resolve_kalstrop_credentials_from_env
             v2_client_id, v2_shared_secret_raw, _ = resolve_kalstrop_credentials_from_env()
 
-        # --- Main loop (1s ticks, independent timers for V2 resolution + market refresh) ---
+        # --- Main loop (1s ticks, independent timers for V2 resolution + market refresh + game discovery) ---
         v2_resolve_interval = 30
         market_refresh_interval = refresh_interval
+        game_refresh_interval = int(runtime_policy.get("game_refresh_interval_seconds", 0))
         last_v2_check = 0.0
         last_market_refresh = 0.0
+        last_game_refresh = 0.0
         _cumulative_provider_subs: dict[str, list[str]] = {}
         if rust_started and 'provider_subs' in locals():
             _cumulative_provider_subs = {p: list(ids) for p, ids in provider_subs.items()}
@@ -644,6 +651,91 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             guardian.update_plan(result.new_plan)
                 else:
                     logger.info("incremental refresh cycle=%d: no new markets (events_fetched=%d)", iteration, result.events_fetched)
+
+            # --- Incremental game discovery (every game_refresh_interval, only if enabled) ---
+            if rust_started and game_refresh_interval > 0 and (now - last_game_refresh) >= game_refresh_interval:
+                last_game_refresh = now
+                _pre_discovery_game_ids = {
+                    str(g.provider_game_id) for g in hotpath._compiled_plan.games
+                    if str(g.provider_game_id or "").strip()
+                } if hotpath._compiled_plan else set()
+                _slug_by_game_id: dict[str, str] = {}
+                try:
+                    from polybot2.hotpath.incremental import discover_new_games_sync
+                    with open_database(runtime) as db:
+                        _stw_map = {
+                            lk: int(mapping.leagues.get(lk, {}).get("sets_to_win", 2))
+                            for lk in league_keys
+                        }
+                        game_result = discover_new_games_sync(
+                            current_plan=hotpath._compiled_plan,
+                            db=db,
+                            mapping=mapping,
+                            live_policy=live_policy,
+                            league_keys=list(league_keys),
+                            provider_name=provider_name,
+                            run_id=run_id,
+                            plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                            sport=sport_family,
+                            sets_to_win_by_league=_stw_map,
+                        )
+                        if game_result and game_result.new_targets and game_result.new_plan:
+                            _new_gids = [
+                                str(g.provider_game_id) for g in game_result.new_plan.games
+                                if str(g.provider_game_id) not in _pre_discovery_game_ids
+                            ]
+                            if _new_gids:
+                                _ph = ",".join("?" for _ in _new_gids)
+                                _slug_rows = db.execute(
+                                    f"SELECT provider_game_id, selected_event_slug "
+                                    f"FROM link_run_game_reviews "
+                                    f"WHERE run_id = ? AND provider_game_id IN ({_ph})",
+                                    (run_id, *_new_gids),
+                                ).fetchall()
+                                _slug_by_game_id = {str(r[0]): str(r[1] or "") for r in _slug_rows}
+                except (NameError, TypeError, AttributeError, KeyError):
+                    raise
+                except Exception as exc:
+                    logger.warning("game discovery failed (continuing): %s: %s", type(exc).__name__, exc)
+                    game_result = None
+
+                if game_result and game_result.new_targets and game_result.new_plan:
+                    count = hotpath.apply_incremental_refresh(game_result, order_policies)
+                    logger.info(
+                        "game discovery: %d new games, %d new targets, %d presigned",
+                        game_result.games_discovered, len(game_result.new_targets), count,
+                    )
+                    for g in game_result.new_plan.games:
+                        gid = str(g.provider_game_id)
+                        if gid not in _pre_discovery_game_ids:
+                            _slug = _slug_by_game_id.get(gid, "")
+                            logger.info(
+                                "  + %s vs %s (%s) <- %s",
+                                g.canonical_home_team, g.canonical_away_team,
+                                g.canonical_league, _slug or gid,
+                            )
+                    if guardian is not None:
+                        guardian.update_plan(game_result.new_plan)
+                    # Update subscriptions for new games (additive).
+                    if game_result.new_plan:
+                        for g in game_result.new_plan.games:
+                            gid = str(g.provider_game_id or "").strip()
+                            if not gid:
+                                continue
+                            _league = g.canonical_league
+                            _prov = _primary_provider_for_league(mapping.leagues.get(_league, {}))
+                            if gid not in _cumulative_provider_subs.get(_prov, []):
+                                _cumulative_provider_subs.setdefault(_prov, []).append(gid)
+                            for alt_prov, alt_id in (g.alternate_provider_game_ids or []):
+                                alt_id = str(alt_id or "").strip()
+                                if alt_id and alt_id not in _cumulative_provider_subs.get(str(alt_prov), []):
+                                    _cumulative_provider_subs.setdefault(str(alt_prov), []).append(alt_id)
+                        hotpath.set_subscriptions(_cumulative_provider_subs)
+                elif game_result:
+                    logger.info(
+                        "game discovery: no new games (catalog=%d, pm_events=%d)",
+                        game_result.provider_games_refreshed, game_result.pm_events_refreshed,
+                    )
 
     except HotPathPlanError as exc:
         logger.error("plan compile failed: code=%s message=%s", exc.code, exc)

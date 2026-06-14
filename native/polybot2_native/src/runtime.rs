@@ -473,6 +473,47 @@ impl NativeHotPathRuntime {
                         }
                     })
                 }
+                "pandascore" => {
+                    let api_token = cfg.pandascore_api_token.clone().unwrap_or_default();
+                    if api_token.is_empty() {
+                        return Err(PyValueError::new_err(
+                            "pandascore_api_token_required_for_pandascore_provider",
+                        ));
+                    }
+                    let match_inits = cfg.pandascore_matches.clone().unwrap_or_default();
+                    if match_inits.is_empty() {
+                        return Err(PyValueError::new_err(
+                            "pandascore_matches_required_for_pandascore_provider",
+                        ));
+                    }
+                    let ps_cfg = crate::pandascore::ws::PandaScoreWorkerConfig { api_token };
+
+                    thread::spawn(move || {
+                        let _ = pin_current_thread(ws_core_idx);
+                        if let Ok(runtime) =
+                            TokioBuilder::new_current_thread().enable_all().build()
+                        {
+                            runtime.block_on(
+                                crate::pandascore::ws::run_pandascore_worker_async(
+                                    &mut worker_engine,
+                                    ps_cfg,
+                                    match_inits,
+                                    worker_dispatch_handle,
+                                    subs_clone,
+                                    health_clone,
+                                    command_rx,
+                                    patch_rx,
+                                    worker_log_arc,
+                                ),
+                            );
+                        } else {
+                            crate::ws::with_health(&health_clone, |h| {
+                                h.running = false;
+                                h.last_error = "tokio_runtime_create_failed".to_string();
+                            });
+                        }
+                    })
+                }
                 "kalstrop_v2" => {
                     let base_url = cfg.kalstrop_v2_base_url.clone()
                         .unwrap_or_else(|| "https://stats.kalstropservice.com".to_string());

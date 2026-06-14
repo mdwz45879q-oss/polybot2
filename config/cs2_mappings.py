@@ -31,6 +31,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "9z",
         "provider_aliases": {
             "kalstrop_v1": ["9z Team"],
+            "pandascore": ["9z"],
         },
         "pm_aliases": ["9z"],
     },
@@ -55,6 +56,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "alkaa",
         "provider_aliases": {
             "kalstrop_v1": ["ALKA"],
+            "pandascore": ["ALKA GAMING"],
         },
         "pm_aliases": ["ALKA"],
     },
@@ -123,9 +125,10 @@ TEAM_MAP_CS2 = {
         "pm_aliases": ["BESTIA"],
     },
     "betboom":{
-        "polymarket_code": "bb3", 
+        "polymarket_code": "bb3",
         "provider_aliases": {
             "kalstrop_v1": ["BetBoom Team"],
+            "pandascore": ["BetBoom Team"],
         },
         "pm_aliases": ["BetBoom", "BB",],
     },
@@ -173,6 +176,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "don",
         "provider_aliases": {
             "kalstrop_v1": ["Donstu Esports"],
+            "pandascore": ["Donstu Esports"],
         },
         "pm_aliases": ["DON", "Donstu Esports", "DNT"],
     },
@@ -220,6 +224,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "ruby1",
         "provider_aliases": {
             "kalstrop_v1": ["Ex-RUBY"],
+            "pandascore": ["ex-RUBY"],
         },
         "pm_aliases": ["RUBY1", "Ex-RUBY"],
     },
@@ -278,9 +283,10 @@ TEAM_MAP_CS2 = {
         "pm_aliases": ["fnatic"],
     },
     "fut":{
-        "polymarket_code": "fut", 
+        "polymarket_code": "fut",
         "provider_aliases": {
             "kalstrop_v1": ["FUT Esports"],
+            "pandascore": ["FUT Esports"],
         },
         "pm_aliases": ["FUT", "FUT Esports"],
     },
@@ -315,9 +321,10 @@ TEAM_MAP_CS2 = {
 
     },
     "gaimin":{
-        "polymarket_code": "gg5", 
+        "polymarket_code": "gg5",
         "provider_aliases": {
             "kalstrop_v1": ["Gaimin Gladiators"],
+            "pandascore": ["Gaimin Gladiators"],
         },
         "pm_aliases": ["Gaimin"],
 
@@ -402,9 +409,10 @@ TEAM_MAP_CS2 = {
         "pm_aliases": ["largadosypelados"],
     },
     "last resort":{
-        "polymarket_code": "tlr", 
+        "polymarket_code": "tlr",
         "provider_aliases": {
             "kalstrop_v1": ["The Last Resort"],
+            "pandascore": ["The Last Resort"],
         },
         "pm_aliases": ["TLR"],
     },
@@ -473,6 +481,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "nemi1",
         "provider_aliases": {
             "kalstrop_v1": ["Nemiga Gaming"],
+            "pandascore": ["Nemiga"],
         },
         "pm_aliases": ["Nemiga"],
     },
@@ -488,6 +497,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "nip",
         "provider_aliases": {
             "kalstrop_v1": ["Ninjas in Pyjamas"],
+            "pandascore": ["NIP"],
         },
         "pm_aliases": ["NIP"],
     },
@@ -501,10 +511,11 @@ TEAM_MAP_CS2 = {
     },
 
     "nuclear tigres":{
-        "polymarket_code": "ntr", 
+        "polymarket_code": "ntr",
         "provider_aliases": {
-        "kalstrop_v1": ["Nuclear TigeRES",],  # ← add "NRG Esports"
-    },
+            "kalstrop_v1": ["Nuclear TigeRES"],
+            "pandascore": ["Nuclear TigeRES"],
+        },
     "pm_aliases": ["NTR"],
     },
     # ODDIK Academy
@@ -543,6 +554,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "pha",
         "provider_aliases": {
             "kalstrop_v1": ["Phantom Esports"],
+            "pandascore": ["Phantom"],
         },
         "pm_aliases": ["Phantom"],
     },
@@ -559,13 +571,15 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "shk",
         "provider_aliases": {
             "kalstrop_v1": ["Sharks Esports"],
+            "pandascore": ["Sharks"],
         },
         "pm_aliases": ["Sharks"],
     },
     "sinner":{
-        "polymarket_code": "sin2", 
+        "polymarket_code": "sin2",
         "provider_aliases": {
             "kalstrop_v1": ["Sinners Esports"],
+            "pandascore": ["Sinners"],
         },
         "pm_aliases": ["Sinner"],
     },
@@ -594,9 +608,10 @@ TEAM_MAP_CS2 = {
         "pm_aliases": ["TDK"],
     },
     "team liquid":{
-         "polymarket_code": "tl1",
+        "polymarket_code": "tl1",
         "provider_aliases": {
             "kalstrop_v1": ["Team Liquid"],
+            "pandascore": ["Liquid"],
         },
         "pm_aliases": ["Liquid"],
     },
@@ -634,6 +649,7 @@ TEAM_MAP_CS2 = {
         "polymarket_code": "tri9",
         "provider_aliases": {
             "kalstrop_v1": ["Tricked Esport"],
+            "pandascore": ["Tricked"],
         },
         "pm_aliases": ["Tricked"],
     },
@@ -652,5 +668,139 @@ TEAM_MAP_CS2 = {
             "kalstrop_v1": ["Young Ninjas"],
         },
         "pm_aliases": ["Young Ninjas"],
+    },
+    # --- PandaScore LL feed teams (added for LL-supported tournaments) ---
+    "3dmax": {
+        "polymarket_code": "3dmax",
+        "provider_aliases": {
+            "pandascore": ["3DMAX"],
+        },
+        "pm_aliases": ["3DMAX"],
+    },
+    "basement boys": {
+        "polymarket_code": "bmb",
+        "provider_aliases": {
+            "pandascore": ["BASEMENT BOYS"],
+        },
+        "pm_aliases": ["BASEMENT BOYS"],
+    },
+    "clutchain": {
+        "polymarket_code": "clutch",
+        "provider_aliases": {
+            "pandascore": ["Clutchain"],
+        },
+        "pm_aliases": ["Clutchain"],
+    },
+    "eyeballers": {
+        "polymarket_code": "eye",
+        "provider_aliases": {
+            "pandascore": ["EYEBALLERS"],
+        },
+        "pm_aliases": ["EYEBALLERS"],
+    },
+    "g2 ares": {
+        "polymarket_code": "g2a",
+        "provider_aliases": {
+            "pandascore": ["G2 Ares"],
+        },
+        "pm_aliases": ["G2 Ares"],
+    },
+    "hotu": {
+        "polymarket_code": "hotu",
+        "provider_aliases": {
+            "pandascore": ["HOTU"],
+        },
+        "pm_aliases": ["HOTU"],
+    },
+    "illwill": {
+        "polymarket_code": "ill",
+        "provider_aliases": {
+            "pandascore": ["illwill"],
+        },
+        "pm_aliases": ["illwill"],
+    },
+    "infinite": {
+        "polymarket_code": "inf6",
+        "provider_aliases": {
+            "pandascore": ["Infinite"],
+        },
+        "pm_aliases": ["Infinite"],
+    },
+    "inox division": {
+        "polymarket_code": "inox",
+        "provider_aliases": {
+            "pandascore": ["INOX Division"],
+        },
+        "pm_aliases": ["INOX Division"],
+    },
+    "k27": {
+        "polymarket_code": "k271",
+        "provider_aliases": {
+            "pandascore": ["K27"],
+        },
+        "pm_aliases": ["K27"],
+    },
+    "leo team": {
+        "polymarket_code": "leo2",
+        "provider_aliases": {
+            "pandascore": ["Leo Team"],
+        },
+        "pm_aliases": ["Leo Team"],
+    },
+    "metizport": {
+        "polymarket_code": "mzp",
+        "provider_aliases": {
+            "pandascore": ["Metizport"],
+        },
+        "pm_aliases": ["Metizport"],
+    },
+    "noir verse": {
+        "polymarket_code": "noirve",
+        "provider_aliases": {
+            "pandascore": ["Noir Verse"],
+        },
+        "pm_aliases": ["Noir Verse"],
+    },
+    "oxuji esports": {
+        "polymarket_code": "oxuji",
+        "provider_aliases": {
+            "pandascore": ["Oxuji Esports"],
+        },
+        "pm_aliases": ["Oxuji Esports"],
+    },
+    "parivision": {
+        "polymarket_code": "prv",
+        "provider_aliases": {
+            "pandascore": ["PARIVISION"],
+        },
+        "pm_aliases": ["PARIVISION"],
+    },
+    "sparta": {
+        "polymarket_code": "sparta",
+        "provider_aliases": {
+            "pandascore": ["SPARTA"],
+        },
+        "pm_aliases": ["SPARTA"],
+    },
+    "virtus.pro": {
+        "polymarket_code": "vp",
+        "provider_aliases": {
+            "pandascore": ["Virtus.pro"],
+        },
+        "pm_aliases": ["Virtus.pro"],
+    },
+    "walczaki": {
+        "polymarket_code": "wal2",
+        "provider_aliases": {
+            "pandascore": ["Walczaki"],
+        },
+        "pm_aliases": ["Walczaki"],
+    },
+    "wraith pcific": {
+        "polymarket_code": "wraith",
+        "provider_aliases": {
+            "pandascore": ["WRAITH PCIFIC"],
+        },
+        "pm_aliases": ["WRAITH PCIFIC"],
     },
 }

@@ -61,12 +61,16 @@ class NativeHotPathService:
         self._ws_core_idx: int | None = None
         self._submitter_core_idx: int | None = None
         self._providers: list[dict[str, Any]] | None = None
+        self._pandascore_matches: list[dict[str, Any]] | None = None
 
         self.set_compiled_plan(compiled_plan)
 
     def set_compiled_plan(self, plan: CompiledPlan | None) -> None:
         with self._plan_lock:
             self._compiled_plan = plan
+
+    def set_pandascore_matches(self, matches: list[dict[str, Any]]) -> None:
+        self._pandascore_matches = matches
 
     def set_order_policy(self, policy: OrderPolicy) -> None:
         self._order_policies = {"_default": policy}
@@ -169,6 +173,13 @@ class NativeHotPathService:
             payload["submitter_core_idx"] = int(self._submitter_core_idx)
         if self._providers:
             payload["providers"] = list(self._providers)
+        if provider_name == "pandascore":
+            ps_cfg = provider_cfg or getattr(self._provider, "_cfg", None)
+            payload["pandascore_api_token"] = str(
+                getattr(ps_cfg, "api_token", "") or ""
+            )
+            if self._pandascore_matches:
+                payload["pandascore_matches"] = self._pandascore_matches
         return payload
 
     def _execution_config_payload(self) -> dict[str, Any]:
@@ -307,8 +318,8 @@ class NativeHotPathService:
         for game in result.new_plan.games:
             base_policy = policies.get(game.canonical_league, _fallback)
             for market in game.markets:
-                p = base_policy.for_market_type(market.sports_market_type)
                 for target in market.targets:
+                    p = base_policy.for_market_type(market.sports_market_type, target.outcome_semantic)
                     token_id = str(target.token_id or "").strip()
                     if not token_id or token_id in seen_tokens:
                         continue

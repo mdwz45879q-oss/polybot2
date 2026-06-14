@@ -20,17 +20,33 @@ class LinkingAdapter:
             self._db.commit()
 
     def upsert_provider_games(self, rows: list[tuple[Any, ...]]) -> None:
-        self._batched_executemany(
-            """
-            INSERT OR REPLACE INTO provider_games
-            (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
-             category_name, category_country_code,
-             when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
-             parse_reason, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            rows,
-        )
+        if not rows:
+            return
+        n_cols = len(rows[0]) if rows else 0
+        if n_cols == 17:
+            self._batched_executemany(
+                """
+                INSERT OR REPLACE INTO provider_games
+                (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
+                 category_name, category_country_code,
+                 when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+                 parse_reason, extra_json, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                rows,
+            )
+        else:
+            self._batched_executemany(
+                """
+                INSERT OR REPLACE INTO provider_games
+                (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
+                 category_name, category_country_code,
+                 when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+                 parse_reason, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                rows,
+            )
 
     def replace_provider_games_snapshot(self, *, provider: str, rows: list[tuple[Any, ...]]) -> None:
         p = str(provider or "").strip().lower()

@@ -17,8 +17,11 @@ from polybot2.hotpath.order_policy import OrderPolicy
 from polybot2.hotpath.native_service import NativeHotPathService
 from polybot2.hotpath.incremental import (
     IncrementalRefreshResult,
+    IncrementalGameResult,
     discover_new_markets,
     discover_new_markets_sync,
+    discover_new_games,
+    discover_new_games_sync,
 )
 
 __all__ = [
@@ -28,11 +31,14 @@ __all__ = [
     "CompiledTarget",
     "HotPathConfig",
     "HotPathPlanError",
+    "IncrementalGameResult",
     "IncrementalRefreshResult",
     "OrderPolicy",
     "NativeHotPathService",
     "ScopedLaunchCheck",
     "compile_hotpath_plan",
+    "discover_new_games",
+    "discover_new_games_sync",
     "discover_new_markets",
     "discover_new_markets_sync",
     "evaluate_hotpath_scope",

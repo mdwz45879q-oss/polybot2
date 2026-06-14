@@ -235,15 +235,15 @@ The worker uses `worker_clock_origin: Instant` set at startup, and `source_recv_
 | `data/` | Market sync from Polymarket CLOB API, SQLite storage |
 | `linking/` | Deterministic provider↔Polymarket matching, review workflows. `sport_raw` fallback in `_resolve_provider_game` for esports league resolution (when `league_raw` is empty). |
 | `execution/` | Config container for Rust dispatch (no order methods — Rust handles all dispatch) |
-| `hotpath/` | Plan compiler, native service adapter, incremental market refresh |
-| `hotpath/incremental.py` | `discover_new_markets()` — targeted Gamma API fetch for known event IDs (`include_inactive=True`), diff against current plan, insert new market targets, return delta for hot-patch. `sets_to_win` read from LEAGUES config (source of truth), not from first game in plan. |
+| `hotpath/` | Plan compiler, native service adapter, incremental market refresh + game discovery |
+| `hotpath/incremental.py` | Two incremental refresh functions: `discover_new_markets()` — targeted Gamma API fetch for known event IDs, diff against current plan, insert new market targets, return delta for hot-patch. `discover_new_games()` — refreshes provider catalog + PM events by league tag, runs incremental link (`build_links_incremental`) for newly discovered games, compiles via `compile_multi_league_plan`, returns delta for hot-patch. Controlled by `game_refresh_interval_seconds` in runtime policy (default 3600s for tennis, 0 = disabled). |
 | `hotpath/order_policy.py` | `OrderPolicy` dataclass — sport-generic execution profile (amount, size, price, time-in-force). `market_overrides` dict for per-market-type sizing (e.g., smaller bets on exact score). `for_market_type()` resolves overrides. Supports dual-order via `secondary_*` fields — when configured, each intent fires two pre-signed orders (primary + secondary). |
 | `hotpath/v2_resolver.py` | V2 fixture ID resolver: `build_pending_games`, `try_resolve_games` (polls V2 tournament fixtures, matches by teams+time), `compile_for_resolved_game` (single-game plan with fixture_id substitution). Detects finished games. |
 | `sports/` | Provider catalog adapters: `KalstropV1Provider` (V1 REST catalog), `KalstropV2Provider` (V2 REST catalog), `KalstropOptaProvider` (Opta REST catalog), `BoltOddsProvider` (REST catalog, with esports label resolution via `_fetch_esports_pbp_labels()` from `/api/playbyplay/esports`). No Python-side streaming — all WS streaming is handled by Rust or standalone capture scripts. |
 | `sports/kalstrop_v2.py` | Kalstrop V2 catalog discovery — REST hierarchy: sports → competitions → tournaments → fixtures |
 | `sports/kalstrop_opta.py` | Kalstrop Opta catalog discovery — REST hierarchy: sports → competitions (numeric IDs) → fixtures. Covers football + baseball. Composite `"Name|ID"` encoding in `category_name`/`league_raw` columns. |
 | `sports/kalstrop_auth.py` | Shared HMAC auth helper for V1, V2, and Opta REST + WS auth headers. `kalstrop_livestats_auth_query()` for LiveStats Socket.IO endpoint (no Bearer prefix). |
-| `config/` | `live_trading.py` (execution policy), `mappings.py` (league registry, provider aliases, league disambiguation via `PROVIDER_LEAGUE_COUNTRY`), `baseball_mappings.py` / `soccer_mappings.py` / `tennis_mappings.py` / `cs2_mappings.py` (team/player aliases per league). Tennis uses `PLAYER_MAP_*` dicts with PM code derivation rule: last word of PM name, lowercased, truncated to 7 chars. Tennis includes both `PLAYER_MAP_FRENCH_OPEN_MEN_SINGLES` and `PLAYER_MAP_FRENCH_OPEN_WOMEN_SINGLES`. |
+| `config/` | `live_trading.py` (execution policy with sport-family fallback — e.g., single `"tennis"` key covers all tennis leagues), `mappings.py` (league registry, provider aliases, league disambiguation via `PROVIDER_LEAGUE_COUNTRY`), `baseball_mappings.py` / `soccer_mappings.py` / `tennis_mappings.py` / `cs2_mappings.py` (team/player aliases per league). Tennis uses `PLAYER_MAP_*` dicts (one per tournament) with PM code derivation rule: last word of PM name, lowercased, truncated to 7 chars. |
 | `guardian/` | Overturn detection for soccer. `manager.py` (orchestrator integration), `tracker.py` (log tailing + WS + state), `overturn.py` (dual-signal detector), `executor.py` (sell/cancel). See Guardian section below. |
 | `scripts/` | Standalone capture scripts for raw frame recording: `capture_kalstrop_v1.py`, `capture_kalstrop_v2.py`, `capture_opta.py`, `capture_multi.py` (multi-provider comparison with V1+V2+BoltOdds+Opta), `capture_boltodds.py`, `capture_boltodds_debug.py` (standalone BoltOdds debug with `--resolve-esports`), `capture_livestats.py` (multi-source: LiveStats Socket.IO + V1 + BoltOdds, dynamic subscription based on `start_ts_utc`), `build_capture_plan.py` (auto-generates `games.json` from DB, `--resolve-livestats` flag). Not part of the `polybot2` package — run directly. |
 
@@ -353,7 +353,7 @@ The `providers` field in `RuntimeStartConfig` triggers the multiplexed worker. W
 
 `--sport soccer` runs all live soccer leagues in one process (one engine, one presign pool, one submitter). Non-V2 leagues (EPL via BoltOdds) start immediately. V2 leagues (La Liga, UCL, Bundesliga) resolve via an interleaved V2 resolution loop. `compile_multi_league_plan()` merges per-league plans into one `CompiledPlan` with `provider` and `league` derived from the first league in the input (not hardcoded). The Rust `detect_league_from_plan` reads `league` to determine the sport engine (Baseball vs Soccer). Mixed-sport processes (e.g., `--league mlb epl`) are rejected at startup.
 
-**Per-league order policies:** `HOTPATH_EXECUTION_POLICY` in `config/live_trading.py` is keyed by league. The orchestrator loads policies for all leagues in the process and passes them as `dict[str, OrderPolicy]`. Template generation and incremental refresh route each game's targets through its league's policy via `game.canonical_league`. Supports `market_overrides` per market type (e.g., smaller bets on exact score).
+**Per-league order policies:** `HOTPATH_EXECUTION_POLICY`, `HOTPATH_RUNTIME_POLICY`, and `LIVE_BETTING_MARKET_TYPES` in `config/live_trading.py` support sport-family fallback. Lookup chain: `league_key → sport_family → hardcoded defaults`. A single `"tennis"` key covers all 27 tennis leagues; per-league overrides (e.g., different sizing for Grand Slams) take priority when present. The orchestrator resolves `sport_family` from `LEAGUES[league]["sport_family"]` in `mappings.py` and passes it to the lookup functions. Template generation and incremental refresh route each game's targets through its league's policy via `game.canonical_league`. Supports `market_overrides` per market type (e.g., smaller bets on exact score).
 
 ### Hotpath Live Orchestrator
 
@@ -374,11 +374,19 @@ Review is opt-out: all linked games enter the plan unless explicitly rejected vi
 
 **Alternate provider game IDs:** The compiled plan carries `alternate_provider_game_ids` per game — other providers' IDs for the same canonical game. The Rust engine inserts these into `game_id_to_idx` at plan load so frames from any provider resolve to the same `GameIdx`.
 
-Refresh loop (every `refresh_interval_seconds` from `config/live_trading.py`, default 1800s):
+Two independent refresh loops run during a live session:
+
+**Market refresh** (every `refresh_interval_seconds`, default 1800s):
 1. `discover_new_markets_sync()` — fetches markets from the Gamma API for known event IDs only (5–20 targeted HTTP requests, ~2s)
 2. Diffs against current plan by strategy_key — if no new targets, does nothing
 3. `hotpath.apply_incremental_refresh()` — signs new presign orders (GIL released), sends `PatchPayload` to WS thread
 4. WS thread applies `engine.merge_plan()` at a quiescent point — extends per-game arrays, rebuilds `Arc<TargetRegistry>`, propagates to submitter
+
+**Game discovery** (every `game_refresh_interval_seconds`, default 3600s for tennis, 0 = disabled):
+1. `discover_new_games_sync()` — refreshes V1 catalog via `load_provider_catalog()` (upsert, not full replace) + PM events via Gamma API `?tag={league_code}` per league
+2. `build_links_incremental()` — runs full linker matching on new catalog games, appends to existing `run_id` (does not delete existing bindings)
+3. `compile_multi_league_plan()` with `include_inactive=True` — recompiles all leagues, extracts delta
+4. `apply_incremental_refresh()` + subscription update via `set_subscriptions()`
 
 Key features:
 - **Single run_id for the session** — no link rebuild, no run_id incrementing, observer keeps working
@@ -597,7 +605,7 @@ The `map_sdk_signature_type` function in `dispatch/mod.rs` maps integer 3 to `Sd
 
 ## Tennis Integration
 
-Third sport alongside baseball and soccer. Supports multiple tournaments: French Open men's/women's (`rgm`/`rgw`, BO5/BO3), Birmingham men's/women's (`birmm`/`birmw`, BO3), and ATP Challengers/WTA 125K events (`tyler`, `centurion`, `perugia`, `heilbronn`, `prostejov`, `foggia`, `makarska` — all BO3). Documentation in `docs/tennis/` and `tennis_upgrade.md`.
+Third sport alongside baseball and soccer. Supports 27 tournaments across ATP, WTA, and Challengers. Grand Slams: French Open men's/women's (`rgm`/`rgw`, BO5/BO3). ATP: `halle_m`, `queen_m`, `stuttgart`, `libema_m`. WTA: `berlin_w`, `nott_w`, `libema_w`, `queen` (London women's), `modena`. Challengers: `birmm`, `birmw`, `tyler`, `centurion`, `perugia`, `heilbronn`, `prostejov`, `foggia`, `makarska`, `bratislava`, `ilkley_w`, `ilkley_m`, `cattolica`, `lyon`, `tucuman`, `nott_m`. All BO3 except `rgm` (BO5). Tournaments are added progressively as they appear in the V1 catalog. Documentation in `docs/tennis/` and `tennis_upgrade.md`.
 
 ### Scoring Hierarchy
 
@@ -665,7 +673,7 @@ The slug determines the favored side, not `outcome_index`. Slugs contain `-handi
 
 ### Player Mappings
 
-Tennis uses player names instead of team names. `config/tennis_mappings.py` and `config/tennis_birmingham_mappings.py` contain `PLAYER_MAP_*` dicts per tournament with Kalstrop V1 aliases (`"Last, First"`), V2 aliases (`"First Last"`), and PM aliases. PM code derivation: last word of PM full name, lowercased, truncated to 7 chars. Same-surname disambiguation uses shorter truncation (e.g., two Cerundolo brothers). Player maps are built progressively — run `hotpath compile --league <X>` to identify unmapped players.
+Tennis uses player names instead of team names. `config/tennis_mappings.py` contains all `PLAYER_MAP_*` dicts for every tournament, with Kalstrop V1 aliases (`"Last, First"`) and PM aliases. PM code derivation: last word of PM full name, lowercased, truncated to 7 chars. Same-surname disambiguation uses shorter truncation (e.g., two Cerundolo brothers). Player maps are built progressively — run `hotpath compile --league <X>` to identify unmapped players.
 
 ### Sport Isolation
 

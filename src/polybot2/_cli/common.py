@@ -53,7 +53,7 @@ def _resolve_provider_name(
     explicit = str(getattr(args, "provider", "")).strip().lower()
     if explicit:
         if explicit not in _VALID_PROVIDERS:
-            logger.error("%s supports only provider=boltodds|kalstrop_v1|kalstrop_v2|kalstrop_opta", context)
+            logger.error("%s supports only provider=boltodds|kalstrop_v1|kalstrop_v2|kalstrop_opta|pandascore", context)
             return None
         return explicit
 
@@ -61,7 +61,7 @@ def _resolve_provider_name(
     default_provider = str(getattr(policy, "default_provider", "") or "").strip().lower() or "kalstrop_v1"
     if default_provider not in _VALID_PROVIDERS:
         logger.error(
-            "invalid DEFAULT_PROVIDER=%s (must be boltodds|kalstrop_v1|kalstrop_v2|kalstrop_opta)",
+            "invalid DEFAULT_PROVIDER=%s (must be boltodds|kalstrop_v1|kalstrop_v2|kalstrop_opta|pandascore)",
             str(getattr(policy, "default_provider", "") or ""),
         )
         return None
@@ -109,6 +109,7 @@ def _hotpath_runtime_policy_for_league(*, live_policy: Any, league_key: str, spo
         "subscription_refresh_seconds": refresh_seconds,
         "ws_core_idx": cfg.get("ws_core_idx"),
         "submitter_core_idx": cfg.get("submitter_core_idx"),
+        "game_refresh_interval_seconds": int(cfg.get("game_refresh_interval_seconds", 0)),
     }
 
 
@@ -127,8 +128,8 @@ def _build_hotpath_template_orders(
     for game in tuple(compiled_plan.games):
         base_policy = order_policies.get(game.canonical_league, _fallback_policy)
         for market in tuple(game.markets):
-            policy = base_policy.for_market_type(market.sports_market_type)
             for target in tuple(market.targets):
+                policy = base_policy.for_market_type(market.sports_market_type, target.outcome_semantic)
                 token_id = str(target.token_id or "").strip()
                 if not token_id:
                     continue
@@ -315,6 +316,76 @@ def _render_table(*, rows: list[dict[str, Any]], columns: list[tuple[str, str]])
     return "\n".join([header, sep, *body])
 
 
+def _build_pandascore_match_inits(
+    compiled_plan: Any,
+    provider: Any,
+    logger: logging.Logger | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch current match state from PandaScore REST and build match init dicts for Rust."""
+    log = logger or logging.getLogger(__name__)
+    match_ids = [
+        str(g.provider_game_id).strip()
+        for g in compiled_plan.games
+        if g.provider_game_id
+    ]
+    if not match_ids:
+        return []
+
+    try:
+        ll_data = provider._api_get("/low_latency_feeds")
+    except Exception as exc:
+        log.warning("PandaScore /low_latency_feeds failed (using defaults): %s", exc)
+        ll_data = []
+
+    ll_by_id: dict[str, dict[str, Any]] = {}
+    if isinstance(ll_data, list):
+        for entry in ll_data:
+            m = entry.get("match") or {}
+            mid = str(m.get("id", ""))
+            if mid:
+                ll_by_id[mid] = m
+
+    inits: list[dict[str, Any]] = []
+    for game in compiled_plan.games:
+        gid = str(game.provider_game_id).strip()
+        maps_to_win = int(getattr(game, "sets_to_win", 2) or 2)
+        m = ll_by_id.get(gid)
+        if m:
+            opponents = m.get("opponents") or []
+            results = m.get("results") or []
+            home_tid = int((opponents[0].get("opponent") or {}).get("id", 0)) if len(opponents) > 0 else 0
+            away_tid = int((opponents[1].get("opponent") or {}).get("id", 0)) if len(opponents) > 1 else 0
+            maps_home = 0
+            maps_away = 0
+            for r in results:
+                tid = r.get("team_id")
+                score = int(r.get("score", 0) or 0)
+                if tid == home_tid:
+                    maps_home = score
+                elif tid == away_tid:
+                    maps_away = score
+            log.info(
+                "PandaScore match %s: maps=%d-%d home_tid=%d away_tid=%d",
+                gid, maps_home, maps_away, home_tid, away_tid,
+            )
+        else:
+            home_tid = 0
+            away_tid = 0
+            maps_home = 0
+            maps_away = 0
+
+        inits.append({
+            "match_id": int(gid),
+            "maps_to_win": maps_to_win,
+            "maps_home": maps_home,
+            "maps_away": maps_away,
+            "home_team_id": home_tid,
+            "away_team_id": away_tid,
+        })
+
+    return inits
+
+
 __all__ = [
     "_runtime_from_args",
     "_int_or_none",
@@ -324,6 +395,7 @@ __all__ = [
     "_apply_env_uid_filter",
     "_build_hotpath_template_orders",
     "_build_retirement_template_orders",
+    "_build_pandascore_match_inits",
     "_scope_provider_catalog_to_league",
     "_render_table",
 ]

@@ -220,7 +220,7 @@ LEAGUES = {
     "cs2":{
         "polymarket_league_code": "cs2",
         "sport_family": "cs2",
-        "provider": "kalstrop_v1",
+        "provider": "pandascore",
     },
     "dota2":{
         "polymarket_league_code": "dota2",

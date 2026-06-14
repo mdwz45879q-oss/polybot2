@@ -1557,3 +1557,176 @@ class LinkService:
             batches.append(batch)
         return self._persist_link_run(batches, mapping=mapping, league_scope=league_scope)
 
+    def build_links_incremental(
+        self,
+        *,
+        run_id: int,
+        league_provider_pairs: list[tuple[str, str]],
+        mapping: LoadedMapping,
+        live_policy: LoadedLiveTradingPolicy,
+        existing_game_ids: set[str],
+        horizon_hours: float | None = None,
+    ) -> LinkBuildResult:
+        """Link newly discovered games and append to an existing run_id.
+
+        Reuses the same matching logic as build_links_multi but:
+        - Filters out games already in existing_game_ids
+        - Appends to the given run_id instead of creating a new one
+        - Does not delete existing bindings
+        """
+        batches: list[_LinkBuildBatch] = []
+        for league, provider in league_provider_pairs:
+            effective_horizon = horizon_hours
+            if effective_horizon is None:
+                _rt = live_policy.hotpath_runtime_by_league or {}
+                sf = str(mapping.leagues.get(league, {}).get("sport_family", "")).strip().lower()
+                runtime_cfg = _rt.get(league, _rt.get(sf, {}))
+                effective_horizon = runtime_cfg.get("plan_horizon_hours")
+            batch = self._process_provider_league(
+                provider=provider, league=league, mapping=mapping,
+                live_policy=live_policy, league_scope="live",
+                horizon_hours=effective_horizon,
+            )
+            batches.append(batch)
+
+        now_ts = int(time.time())
+        n_new_games = 0
+        n_new_targets = 0
+        new_game_ids: list[str] = []
+
+        try:
+            self._db.execute("BEGIN IMMEDIATE")
+
+            for batch in batches:
+                bp = batch.provider
+                new_game_set_batch: set[str] = set()
+
+                for rec in batch.run_provider_games:
+                    gid = str(rec.get("provider_game_id") or "")
+                    if gid in existing_game_ids:
+                        continue
+                    if not int(rec.get("is_tradeable") or 0):
+                        continue
+                    n_new_games += 1
+                    new_game_ids.append(gid)
+                    new_game_set_batch.add(gid)
+
+                    self._db.linking.upsert_run_provider_games(
+                        [(
+                            int(run_id), bp, gid,
+                            str(rec.get("parse_status") or ""),
+                            str(rec.get("parse_reason") or ""),
+                            str(rec.get("game_label") or ""),
+                            str(rec.get("sport_raw") or ""),
+                            str(rec.get("league_raw") or ""),
+                            str(rec.get("when_raw") or ""),
+                            _int_or_none(rec.get("start_ts_utc")),
+                            str(rec.get("game_date_et") or ""),
+                            str(rec.get("home_raw") or ""),
+                            str(rec.get("away_raw") or ""),
+                            str(rec.get("canonical_league") or ""),
+                            str(rec.get("canonical_home_team") or ""),
+                            str(rec.get("canonical_away_team") or ""),
+                            str(rec.get("event_slug_prefix") or ""),
+                            str(rec.get("binding_status") or ""),
+                            str(rec.get("reason_code") or ""),
+                            1 if int(rec.get("is_tradeable") or 0) == 1 else 0,
+                            int(now_ts),
+                        )],
+                        commit=False,
+                    )
+
+                for rec in batch.run_game_reviews:
+                    gid = str(rec.get("provider_game_id") or "")
+                    if gid not in new_game_set_batch:
+                        continue
+                    self._db.linking.upsert_run_game_reviews(
+                        [(
+                            int(run_id), bp, gid,
+                            str(rec.get("resolution_state") or ""),
+                            str(rec.get("reason_code") or ""),
+                            str(rec.get("selected_event_id") or ""),
+                            str(rec.get("selected_event_slug") or ""),
+                            1 if int(rec.get("used_slug_fallback") or 0) == 1 else 0,
+                            int(rec.get("kickoff_tolerance_minutes") or 0),
+                            _int_or_none(rec.get("kickoff_delta_sec")),
+                            json.dumps(rec.get("score_tuple") or [], separators=(",", ":"), default=str),
+                            json.dumps(rec.get("trace_json") or {}, separators=(",", ":"), sort_keys=True, default=str),
+                            int(now_ts),
+                        )],
+                        commit=False,
+                    )
+
+                for rec in batch.run_market_targets:
+                    gid = str(rec.get("provider_game_id") or "")
+                    if gid not in new_game_set_batch:
+                        continue
+                    n_new_targets += 1
+                    self._db.linking.upsert_run_market_targets(
+                        [(
+                            int(run_id), bp, gid,
+                            str(rec.get("condition_id") or ""),
+                            int(rec.get("outcome_index") or 0),
+                            str(rec.get("token_id") or ""),
+                            str(rec.get("market_slug") or ""),
+                            str(rec.get("sports_market_type") or ""),
+                            str(rec.get("binding_status") or ""),
+                            str(rec.get("reason_code") or ""),
+                            1 if int(rec.get("is_tradeable") or 0) == 1 else 0,
+                            int(now_ts),
+                        )],
+                        commit=False,
+                    )
+
+                new_event_rows = [r for r in batch.event_binding_rows
+                                  if str(r[1] if len(r) > 1 else "") in new_game_set_batch]
+                if new_event_rows:
+                    self._db.linking.upsert_event_bindings(new_event_rows, commit=False)
+                    for r in new_event_rows:
+                        self._db.execute(
+                            "UPDATE link_event_bindings SET run_id = ? WHERE provider = ? AND provider_game_id = ?",
+                            (int(run_id), bp, str(r[1] if len(r) > 1 else "")),
+                        )
+
+                new_game_rows = [r for r in batch.game_binding_rows
+                                 if str(r[1] if len(r) > 1 else "") in new_game_set_batch]
+                if new_game_rows:
+                    self._db.linking.upsert_game_bindings(new_game_rows, commit=False)
+                    for r in new_game_rows:
+                        self._db.execute(
+                            "UPDATE link_game_bindings SET run_id = ? WHERE provider = ? AND provider_game_id = ?",
+                            (int(run_id), bp, str(r[1] if len(r) > 1 else "")),
+                        )
+
+                new_market_rows = [r for r in batch.market_binding_rows
+                                   if str(r[1] if len(r) > 1 else "") in new_game_set_batch]
+                if new_market_rows:
+                    self._db.linking.upsert_market_bindings(new_market_rows, commit=False)
+                    for r in new_market_rows:
+                        self._db.execute(
+                            "UPDATE link_market_bindings SET run_id = ? WHERE provider = ? AND provider_game_id = ?",
+                            (int(run_id), bp, str(r[1] if len(r) > 1 else "")),
+                        )
+
+            self._db.commit()
+        except Exception:
+            try:
+                self._db.rollback()
+            except Exception:
+                pass
+            raise
+
+        return LinkBuildResult(
+            provider=",".join(sorted({b.provider for b in batches})),
+            run_id=int(run_id),
+            mapping_version=mapping.mapping_version,
+            mapping_hash=mapping.mapping_hash,
+            n_games_seen=sum(b.n_games_seen for b in batches),
+            n_games_linked=n_new_games,
+            n_games_tradeable=n_new_games,
+            n_targets=n_new_targets,
+            n_targets_tradeable=n_new_targets,
+            gate_result="pass" if n_new_targets > 0 else "no_new",
+            report={"new_game_ids": new_game_ids},
+        )
+

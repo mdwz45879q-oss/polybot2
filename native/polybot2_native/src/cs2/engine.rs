@@ -586,8 +586,222 @@ impl NativeCs2Engine {
         out
     }
 
-    pub(crate) fn merge_plan(&mut self, _plan_json: &str) -> Result<crate::MergePlanResult, String> {
-        Err("cs2_merge_plan_not_implemented".to_string())
+    pub(crate) fn merge_plan(&mut self, plan_json: &str) -> Result<crate::MergePlanResult, String> {
+        let plan_value: serde_json::Value =
+            serde_json::from_str(plan_json).map_err(|e| format!("merge_plan_json_parse:{}", e))?;
+        let games = plan_value
+            .get("games")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "merge_plan_missing_games".to_string())?;
+
+        let mut new_game_count = 0usize;
+        let mut new_token_count = 0usize;
+        let mut new_target_count = 0usize;
+        let mut dirty_games: HashSet<usize> = HashSet::new();
+
+        for game_val in games {
+            let uid = game_val
+                .get("provider_game_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if uid.is_empty() {
+                continue;
+            }
+            let gidx = match self.game_id_to_idx.get(uid) {
+                Some(&idx) => {
+                    if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                        for alt in alts {
+                            let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                                self.game_id_to_idx.insert(alt_id.to_string(), idx);
+                            }
+                        }
+                    }
+                    idx
+                }
+                None => {
+                    if self.game_ids.len() >= u16::MAX as usize {
+                        eprintln!("[cs2] WARN: merge_plan game overflow, skipping {}", uid);
+                        continue;
+                    }
+                    let idx = GameIdx(self.game_ids.len() as u16);
+                    self.game_id_to_idx.insert(uid.to_string(), idx);
+                    self.game_ids.push(uid.to_string());
+                    let league_str = game_val.get("canonical_league").and_then(|v| v.as_str()).unwrap_or("");
+                    self.game_leagues.push(Arc::from(league_str));
+                    if let Some(alts) = game_val.get("alternate_provider_game_ids").and_then(|v| v.as_array()) {
+                        for alt in alts {
+                            let alt_id = alt.get("game_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                            if !alt_id.is_empty() && !self.game_id_to_idx.contains_key(alt_id) {
+                                self.game_id_to_idx.insert(alt_id.to_string(), idx);
+                            }
+                        }
+                    }
+                    let kickoff = game_val.get("kickoff_ts_utc").and_then(|v| v.as_i64());
+                    self.kickoff_ts.push(kickoff);
+                    let mtw = game_val.get("sets_to_win").and_then(|v| v.as_i64()).unwrap_or(2);
+                    self.maps_to_win.push(mtw);
+                    self.game_targets.push(Cs2GameTargets::default());
+                    self.has_moneyline.push(false);
+                    self.has_totals.push(false);
+                    self.has_child_moneyline.push(false);
+                    self.has_map_handicap.push(false);
+                    self.token_ids_by_game.push(Vec::new());
+                    self.rows.push(None);
+                    self.game_states.push(Cs2GameState::default());
+                    self.final_resolved_games.push(false);
+                    self.totals_under_emitted.push(false);
+                    self.map_handicap_early_emitted.push(false);
+                    self.pending_phase_verify.push(None);
+                    let max_maps = (mtw * 2 - 1).max(1) as usize;
+                    self.map_winner_resolved.push(vec![false; max_maps]);
+                    new_game_count += 1;
+                    idx
+                }
+            };
+            let gi = gidx.0 as usize;
+
+            let markets = match game_val.get("markets").and_then(|v| v.as_array()) {
+                Some(m) => m,
+                None => continue,
+            };
+
+            for market_val in markets {
+                let sports_market_type = canonical_cs2_market_type(
+                    market_val.get("sports_market_type").and_then(|v| v.as_str()).unwrap_or(""),
+                );
+                let line = market_val.get("line").and_then(|v| v.as_f64());
+                let targets_arr = match market_val.get("targets").and_then(|v| v.as_array()) {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+                for target_val in targets_arr {
+                    let strategy_key = target_val
+                        .get("strategy_key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    if strategy_key.is_empty() { continue; }
+                    if self.strategy_keys.contains(&strategy_key) { continue; }
+                    let token_id = target_val
+                        .get("token_id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    if token_id.is_empty() { continue; }
+                    if self.target_slots.len() >= u16::MAX as usize {
+                        return Err("merge_plan_target_overflow".to_string());
+                    }
+                    if self.tokens.len() >= u16::MAX as usize {
+                        return Err("merge_plan_token_overflow".to_string());
+                    }
+
+                    let semantic = norm(
+                        target_val.get("outcome_semantic").and_then(|v| v.as_str()).unwrap_or(""),
+                    );
+                    let effective_line = target_val.get("line").and_then(|v| v.as_f64()).or(line);
+
+                    let token_idx = match self.token_id_to_idx.get(&token_id) {
+                        Some(&idx) => idx,
+                        None => {
+                            let idx = TokenIdx(self.tokens.len() as u16);
+                            self.tokens.push(TokenSlot { token_id: Arc::from(token_id.as_str()) });
+                            self.token_id_to_idx.insert(token_id.clone(), idx);
+                            new_token_count += 1;
+                            idx
+                        }
+                    };
+
+                    let tidx = TargetIdx(self.target_slots.len() as u16);
+                    self.strategy_keys.insert(strategy_key.clone());
+                    self.target_slots.push(TargetSlot {
+                        token_idx,
+                        strategy_key: Arc::from(strategy_key.as_str()),
+                    });
+                    new_target_count += 1;
+
+                    let game_tgt = &mut self.game_targets[gi];
+                    match sports_market_type.as_str() {
+                        "moneyline" => {
+                            self.has_moneyline[gi] = true;
+                            match semantic.as_str() {
+                                "home" => game_tgt.moneyline_home = Some(tidx),
+                                "away" => game_tgt.moneyline_away = Some(tidx),
+                                _ => {}
+                            }
+                        }
+                        "child_moneyline" => {
+                            self.has_child_moneyline[gi] = true;
+                            let map_num = parse_map_number_from_strategy_key(&strategy_key);
+                            if map_num > 0 {
+                                let idx = (map_num - 1) as usize;
+                                while game_tgt.map_moneyline.len() <= idx {
+                                    game_tgt.map_moneyline.push((None, None));
+                                }
+                                match semantic.as_str() {
+                                    "home" => game_tgt.map_moneyline[idx].0 = Some(tidx),
+                                    "away" => game_tgt.map_moneyline[idx].1 = Some(tidx),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        "totals" => {
+                            self.has_totals[gi] = true;
+                            if let Some(l) = effective_line {
+                                let half = l.floor() as u16;
+                                match semantic.as_str() {
+                                    "over" => game_tgt.over_lines.push(OverLine { half_int: half, target_idx: tidx }),
+                                    "under" => game_tgt.under_lines.push(OverLine { half_int: half, target_idx: tidx }),
+                                    _ => {}
+                                }
+                            }
+                            dirty_games.insert(gi);
+                        }
+                        "map_handicap" => {
+                            self.has_map_handicap[gi] = true;
+                            if let Some(l) = effective_line {
+                                let side = match semantic.as_str() {
+                                    "home_covers" | "home_not_covers" => SpreadSide::Home,
+                                    "away_covers" | "away_not_covers" => SpreadSide::Away,
+                                    _ => continue,
+                                };
+                                let slot = game_tgt.map_handicaps.iter_mut()
+                                    .find(|s| s.side == side && (s.line - l).abs() < 1e-9);
+                                if let Some(slot) = slot {
+                                    match semantic.as_str() {
+                                        "home_covers" | "away_covers" => slot.covers_idx = Some(tidx),
+                                        _ => slot.not_covers_idx = Some(tidx),
+                                    }
+                                } else {
+                                    let (covers, not_covers) = match semantic.as_str() {
+                                        "home_covers" | "away_covers" => (Some(tidx), None),
+                                        _ => (None, Some(tidx)),
+                                    };
+                                    game_tgt.map_handicaps.push(SpreadSlot {
+                                        side, line: l, covers_idx: covers, not_covers_idx: not_covers,
+                                    });
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    if !self.token_ids_by_game[gi].contains(&token_id) {
+                        self.token_ids_by_game[gi].push(token_id);
+                        dirty_games.insert(gi);
+                    }
+                }
+            }
+        }
+
+        for gi in dirty_games {
+            self.game_targets[gi].over_lines.sort_by_key(|ol| ol.half_int);
+            self.game_targets[gi].under_lines.sort_by_key(|ol| ol.half_int);
+            self.token_ids_by_game[gi].sort();
+            self.token_ids_by_game[gi].dedup();
+        }
+
+        Ok(crate::MergePlanResult {
+            new_games: new_game_count,
+            new_tokens: new_token_count,
+            new_targets: new_target_count,
+        })
     }
 
     pub(crate) fn all_token_ids(&self) -> Vec<String> {

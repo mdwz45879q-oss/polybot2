@@ -305,8 +305,9 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "provider_catalog_max_age_seconds": 43200,
         "refresh_interval_seconds": 1800,
-	    "ws_core_idx": 1,
-	    "submitter_core_idx": 2,
+        "game_refresh_interval_seconds": 300,
+        "ws_core_idx": 1,
+        "submitter_core_idx": 2,
     },
     "lol": {
         "plan_horizon_hours": 12,

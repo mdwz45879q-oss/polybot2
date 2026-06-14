@@ -65,9 +65,18 @@ class OrderPolicy:
             tertiary_time_in_force=str(r.get("tertiary_time_in_force", "") or ""),
         )
 
-    def for_market_type(self, sports_market_type: str) -> OrderPolicy:
-        """Return a policy with overrides applied for this market type."""
-        overrides = self.market_overrides.get(sports_market_type, {})
+    def for_market_type(self, sports_market_type: str, outcome_semantic: str = "") -> OrderPolicy:
+        """Return a policy with overrides applied for this market type.
+
+        Lookup chain: ``"{type}:{semantic}"`` → ``"{type}"`` → base policy.
+        Per-side overrides (e.g. ``"totals:over"`` vs ``"totals:under"``)
+        take priority over market-type-level overrides.
+        """
+        overrides: dict[str, float | str] = {}
+        if outcome_semantic and self.market_overrides:
+            overrides = dict(self.market_overrides.get(f"{sports_market_type}:{outcome_semantic}", {}))
+        if not overrides and self.market_overrides:
+            overrides = dict(self.market_overrides.get(sports_market_type, {}))
         if not overrides:
             return self
         return OrderPolicy(

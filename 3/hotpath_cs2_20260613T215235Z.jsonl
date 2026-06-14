@@ -1,0 +1,5 @@
+{"ts":1781387555354,"ev":"startup","v":2,"sport":"cs2","leagues":["cs2"],"run_id":3,"games":1,"tokens":12,"mode":"noop"}
+{"ts":1781387555830,"ev":"ws_connect","src":"pandascore","subs":["1513143"]}
+{"ts":1781387561436,"ev":"order","gid":"1513143","sk":"1513143:MAP_HANDICAP:HOME_NOT_COVERS:-1.5","tok":"67656513876507070422204387771618936985076025022340404040900522623285062397391","ok":true,"eid":"noop","tif":""}
+{"ts":1781387561436,"ev":"tick","sport":"cs2","lg":"cs2","gid":"1513143","maps_home":1,"maps_away":1,"rounds_home":5,"rounds_away":6,"current_map":3,"gs":"LIVE","src":"pandascore"}
+{"ts":1781387678357,"ev":"tick","sport":"cs2","lg":"cs2","gid":"1513143","maps_home":1,"maps_away":1,"rounds_home":6,"rounds_away":6,"current_map":3,"gs":"LIVE","src":"pandascore"}

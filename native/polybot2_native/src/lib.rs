@@ -8,6 +8,7 @@ pub(crate) mod boltodds_moba_types;
 pub(crate) mod boltodds_moba_frame_pipeline;
 pub(crate) mod boltodds_types;
 mod dispatch;
+mod pandascore;
 pub(crate) mod fast_extract;
 mod kalstrop_types;
 pub(crate) mod kalstrop_v2_frame_pipeline;
@@ -294,6 +295,10 @@ struct RuntimeStartConfig {
     ws_core_idx: Option<usize>,
     #[serde(default)]
     submitter_core_idx: Option<usize>,
+    #[serde(default)]
+    pandascore_api_token: Option<String>,
+    #[serde(default)]
+    pandascore_matches: Option<Vec<crate::pandascore::ws::PandaScoreMatchInit>>,
     /// Multiple provider configs for the multiplexed worker.
     /// When present, overrides `provider` and spawns a multiplexed worker.
     #[serde(default)]

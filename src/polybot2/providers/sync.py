@@ -205,3 +205,73 @@ def sync_provider_games(
 
     db.linking.replace_provider_games_snapshot(provider=p, rows=rows)
     return ProviderSyncResult(provider=p, n_rows=len(rows), status="ok")
+
+
+def load_provider_catalog(*, provider: str) -> list[tuple[Any, ...]]:
+    """Load the provider game catalog and return DB-ready rows without persisting."""
+    p = str(provider or "").strip().lower()
+    if p == "kalstrop" or p == "kalstrop_v1":
+        p = "kalstrop_v1"
+    now_ts = int(datetime.now(tz=_UTC).timestamp())
+
+    if p == "kalstrop_v1":
+        client_id, shared_secret_raw, _ = resolve_kalstrop_credentials_from_env()
+        if not client_id or not shared_secret_raw:
+            raise RuntimeError("missing_kalstrop_credentials")
+        http_base = str(os.getenv("KALSTROP_BASE_URL") or "https://sportsapi.kalstropservice.com/odds_v1/v1").strip()
+        sport_codes = _resolve_kalstrop_catalog_sport_codes()
+        client = KalstropV1Provider(
+            config=KalstropV1ProviderConfig(
+                client_id=client_id,
+                shared_secret_raw=shared_secret_raw,
+                http_base=http_base,
+                catalog_sport_codes=sport_codes,
+                catalog_types=("live", "upcoming", "popular"),
+                catalog_first=10,
+                catalog_fixture_first=10,
+            )
+        )
+    elif p == "boltodds":
+        api_key = str(os.getenv("BOLTODDS_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError("missing_BOLTODDS_API_KEY")
+        client = BoltOddsProvider(config=BoltOddsProviderConfig(api_key=api_key))
+    else:
+        raise ValueError(f"load_provider_catalog: unsupported provider {p!r}")
+
+    try:
+        records = client.load_game_catalog()
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    rows: list[tuple[Any, ...]] = []
+    for rec in records:
+        start_ts_utc, game_date_et = _derive_start_ts_and_game_date_et(
+            provider_start_ts_utc=(None if rec.start_ts_utc is None else int(rec.start_ts_utc)),
+            when_raw=str(rec.when_raw or ""),
+        )
+        rows.append(
+            (
+                p,
+                str(rec.provider_game_id),
+                str(rec.game_label or ""),
+                str(rec.orig_teams or ""),
+                str(rec.sport_raw or ""),
+                str(rec.league_raw or ""),
+                str(rec.category_name or ""),
+                str(rec.category_country_code or ""),
+                str(rec.when_raw or ""),
+                start_ts_utc,
+                str(game_date_et or ""),
+                str(rec.home_team_raw or ""),
+                str(rec.away_team_raw or ""),
+                str(rec.parse_status or ""),
+                str(rec.parse_reason or ""),
+                str(rec.extra_json or ""),
+                now_ts,
+            )
+        )
+    return rows

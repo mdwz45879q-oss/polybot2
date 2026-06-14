@@ -381,8 +381,213 @@ def discover_new_markets_sync(
         return future.result()
 
 
+@dataclass(frozen=True, slots=True)
+class IncrementalGameResult:
+    new_plan: CompiledPlan | None
+    new_targets: tuple[CompiledTarget, ...]
+    games_discovered: int
+    markets_discovered: int
+    provider_games_refreshed: int
+    pm_events_refreshed: int
+
+
+async def _fetch_events_by_tags(
+    *,
+    gamma_api: str,
+    tags: set[str],
+    timeout: float = 30.0,
+) -> list[dict[str, Any]]:
+    all_events: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for tag in sorted(tags):
+            offset = 0
+            while True:
+                payload = await request_json_with_retry(
+                    client=client,
+                    method="GET",
+                    url=f"{gamma_api}/events",
+                    params={"tag": tag, "active": "true", "closed": "false", "limit": 100, "offset": offset},
+                    max_retries=3,
+                    logger=log,
+                    log_context=f"game_discovery_tag={tag}",
+                )
+                if not isinstance(payload, list) or not payload:
+                    break
+                for ev in payload:
+                    if isinstance(ev, dict):
+                        eid = str(ev.get("id", ""))
+                        if eid and eid not in seen_ids:
+                            seen_ids.add(eid)
+                            all_events.append(ev)
+                if len(payload) < 100:
+                    break
+                offset += 100
+    return all_events
+
+
+async def discover_new_games(
+    *,
+    current_plan: CompiledPlan,
+    db: Any,
+    mapping: Any,
+    live_policy: LoadedLiveTradingPolicy,
+    league_keys: list[str],
+    provider_name: str,
+    run_id: int,
+    plan_horizon_hours: int,
+    sport: str,
+    sets_to_win_by_league: dict[str, int] | None = None,
+    gamma_api: str = _GAMMA_API_DEFAULT,
+) -> IncrementalGameResult:
+    empty = IncrementalGameResult(
+        new_plan=None, new_targets=(), games_discovered=0,
+        markets_discovered=0, provider_games_refreshed=0, pm_events_refreshed=0,
+    )
+    if not current_plan or not league_keys:
+        return empty
+
+    existing_game_ids = {
+        str(g.provider_game_id) for g in current_plan.games
+        if str(g.provider_game_id or "").strip()
+    }
+
+    # Step 1: Refresh provider catalog (upsert, not replace).
+    from polybot2.providers.sync import load_provider_catalog
+    try:
+        catalog_rows = load_provider_catalog(provider=provider_name)
+        if catalog_rows:
+            db.linking.upsert_provider_games(catalog_rows)
+        provider_games_refreshed = len(catalog_rows) if catalog_rows else 0
+    except Exception as exc:
+        log.warning("game discovery: catalog refresh failed: %s: %s", type(exc).__name__, exc)
+        provider_games_refreshed = 0
+
+    # Step 2: Refresh PM events by league tags.
+    pm_league_codes = {
+        str(mapping.leagues.get(lk, {}).get("polymarket_league_code", "")).strip().lower()
+        for lk in league_keys
+    }
+    pm_league_codes.discard("")
+    try:
+        events_data = await _fetch_events_by_tags(gamma_api=gamma_api, tags=pm_league_codes)
+        if events_data:
+            db.markets.upsert_from_gamma_events(
+                events_data=events_data, updated_ts=int(time.time()), commit=True,
+            )
+        pm_events_refreshed = len(events_data)
+    except Exception as exc:
+        log.warning("game discovery: PM event refresh failed: %s: %s", type(exc).__name__, exc)
+        pm_events_refreshed = 0
+
+    # Step 3: Incremental link.
+    from polybot2.linking.service import LinkService
+    link_service = LinkService(db=db)
+    league_provider_pairs = [(lk, provider_name) for lk in league_keys]
+    try:
+        link_result = link_service.build_links_incremental(
+            run_id=run_id,
+            league_provider_pairs=league_provider_pairs,
+            mapping=mapping,
+            live_policy=live_policy,
+            existing_game_ids=existing_game_ids,
+            horizon_hours=plan_horizon_hours,
+        )
+    except Exception as exc:
+        log.warning("game discovery: incremental link failed: %s: %s", type(exc).__name__, exc)
+        return IncrementalGameResult(
+            new_plan=None, new_targets=(), games_discovered=0,
+            markets_discovered=0, provider_games_refreshed=provider_games_refreshed,
+            pm_events_refreshed=pm_events_refreshed,
+        )
+
+    new_game_ids = link_result.report.get("new_game_ids", []) if isinstance(link_result.report, dict) else []
+    if not new_game_ids:
+        log.info("game discovery: no new games (catalog=%d, pm_events=%d)", provider_games_refreshed, pm_events_refreshed)
+        return IncrementalGameResult(
+            new_plan=None, new_targets=(), games_discovered=0,
+            markets_discovered=0, provider_games_refreshed=provider_games_refreshed,
+            pm_events_refreshed=pm_events_refreshed,
+        )
+
+    # Step 4: Recompile full plan and extract delta.
+    from polybot2.hotpath.compiler import compile_multi_league_plan
+    league_provider_pairs = [(lk, provider_name) for lk in league_keys]
+    new_plan = compile_multi_league_plan(
+        db=db,
+        leagues=league_provider_pairs,
+        run_id=run_id,
+        sport=sport,
+        sets_to_win_by_league=sets_to_win_by_league,
+        live_policy=live_policy,
+        now_ts_utc=int(time.time()),
+        plan_horizon_hours=plan_horizon_hours,
+        include_inactive=True,
+    )
+
+    old_keys = {
+        t.strategy_key
+        for g in current_plan.games for m in g.markets for t in m.targets
+        if t.strategy_key
+    }
+    new_targets = [
+        t
+        for g in new_plan.games for m in g.markets for t in m.targets
+        if t.strategy_key and t.strategy_key not in old_keys
+    ]
+
+    log.info(
+        "game discovery: %d new games, %d new targets (catalog=%d, pm_events=%d)",
+        len(new_game_ids), len(new_targets), provider_games_refreshed, pm_events_refreshed,
+    )
+    return IncrementalGameResult(
+        new_plan=new_plan,
+        new_targets=tuple(new_targets),
+        games_discovered=len(new_game_ids),
+        markets_discovered=len(new_targets),
+        provider_games_refreshed=provider_games_refreshed,
+        pm_events_refreshed=pm_events_refreshed,
+    )
+
+
+def discover_new_games_sync(
+    *,
+    current_plan: CompiledPlan,
+    db: Any,
+    mapping: Any,
+    live_policy: LoadedLiveTradingPolicy,
+    league_keys: list[str],
+    provider_name: str,
+    run_id: int,
+    plan_horizon_hours: int,
+    sport: str,
+    sets_to_win_by_league: dict[str, int] | None = None,
+    gamma_api: str = _GAMMA_API_DEFAULT,
+) -> IncrementalGameResult:
+    import concurrent.futures
+    coro = discover_new_games(
+        current_plan=current_plan,
+        db=db,
+        mapping=mapping,
+        live_policy=live_policy,
+        league_keys=league_keys,
+        provider_name=provider_name,
+        run_id=run_id,
+        plan_horizon_hours=plan_horizon_hours,
+        sport=sport,
+        sets_to_win_by_league=sets_to_win_by_league,
+        gamma_api=gamma_api,
+    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(asyncio.run, coro)
+        return future.result()
+
+
 __all__ = [
     "IncrementalRefreshResult",
+    "IncrementalGameResult",
     "discover_new_markets",
     "discover_new_markets_sync",
+    "discover_new_games",
+    "discover_new_games_sync",
 ]
