@@ -165,12 +165,12 @@ TEAM_MAP_CS2 = {
     },
     # CYBERSHOKE
     "cybershoke": {
-        "polymarket_code": "cyb",
+        "polymarket_code": "cs1",
         "provider_aliases": {
             "kalstrop_v1": ["CYBERSHOKE"],
             "pandascore": ["CYBERSHOKE Esports"],
         },
-        "pm_aliases": ["CYBERSHOKE Prospects"],
+        "pm_aliases": ["CYBERSHOKE Prospects", "CYBERSHOKE Esports"],
     },
     "dontsu":{
         "polymarket_code": "don",
@@ -837,5 +837,26 @@ TEAM_MAP_CS2 = {
             "pandascore": ["Team Falcons"],
         },
         "pm_aliases": ["Team Falcons"],
+    },
+    "bebop": {
+        "polymarket_code": "bbp",
+        "provider_aliases": {
+            "pandascore": ["Bebop"],
+        },
+        "pm_aliases": ["Bebop"],
+    },
+    "eac rising": {
+        "polymarket_code": "eacris",
+        "provider_aliases": {
+            "pandascore": ["EAC Rising"],
+        },
+        "pm_aliases": ["EAC Rising"],
+    },
+    "esuba": {
+        "polymarket_code": "esb",
+        "provider_aliases": {
+            "pandascore": ["eSuba"],
+        },
+        "pm_aliases": ["eSuba"],
     },
 }
