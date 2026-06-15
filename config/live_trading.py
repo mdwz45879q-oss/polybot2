@@ -193,11 +193,11 @@ HOTPATH_EXECUTION_POLICY = {
                     },
     },
     "tennis": {
-        "size_shares": 2250.0,
+        "size_shares": 3000.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
-        "secondary_amount_usdc": 2250.0,
+        "secondary_amount_usdc": 3000.0,
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "retirement": {
@@ -279,8 +279,8 @@ HOTPATH_RUNTIME_POLICY = {
         "reload_interval_seconds": 120,
         "refresh_interval_seconds": 1800,
         # "game_refresh_interval_seconds": 3600,
-        "ws_core_idx": 3,
-        "submitter_core_idx": 4,
+        # "ws_core_idx": 3,
+        # "submitter_core_idx": 4,
     },
     "cs2": {
         "plan_horizon_hours": 12,

@@ -301,15 +301,17 @@ class LinkService:
         pm_alias_idx: dict[tuple[str, str], str],
     ) -> str:
         lk = _norm(league)
-        keys = [
-            _norm(team_row.get("name") or ""),
-            _norm(team_row.get("abbreviation") or ""),
-            _norm(team_row.get("alias") or ""),
-        ]
-        matches = {pm_alias_idx.get((lk, k), "") for k in keys if k}
-        matches.discard("")
-        if len(matches) == 1:
-            return next(iter(matches))
+        name = _norm(team_row.get("name") or "")
+        if name:
+            hit = pm_alias_idx.get((lk, name), "")
+            if hit:
+                return hit
+        for field in ("abbreviation", "alias"):
+            key = _norm(team_row.get(field) or "")
+            if key:
+                hit = pm_alias_idx.get((lk, key), "")
+                if hit:
+                    return hit
         return ""
 
     def _select_event_for_provider_game(
