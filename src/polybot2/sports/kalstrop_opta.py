@@ -32,7 +32,7 @@ class KalstropOptaProviderConfig:
         self,
         *,
         api_base: str = "https://stats.kalstropservice.com/api/v2/opta",
-        catalog_sport_slugs: Sequence[str] = ("football",),
+        catalog_sport_slugs: Sequence[str] = ("football", "baseball", "tennis"),
         request_timeout_seconds: float = 15.0,
         client_id: str = "",
         shared_secret_raw: str = "",
@@ -188,7 +188,7 @@ class KalstropOptaProvider(SportsDataProviderBase):
         home_name = str(home_obj.get("name") or "").strip() if isinstance(home_obj, dict) else ""
         away_name = str(away_obj.get("name") or "").strip() if isinstance(away_obj, dict) else ""
 
-        # Baseball fixtures have null competitors — parse from game label
+        # Baseball/tennis fixtures have null competitors — parse from game label
         if not home_name or not away_name:
             game_name = str(fixture.get("name") or "").strip()
             if " at " in game_name:
@@ -196,6 +196,9 @@ class KalstropOptaProvider(SportsDataProviderBase):
             elif " vs " in game_name.lower():
                 parts = game_name.split(" vs ", 1) if " vs " in game_name else game_name.split(" Vs ", 1)
                 home_name, away_name = parts[0].strip(), parts[1].strip()
+            elif " - " in game_name:
+                home_name, away_name = game_name.split(" - ", 1)
+                home_name, away_name = home_name.strip(), away_name.strip()
             if not home_name or not away_name:
                 return None
 

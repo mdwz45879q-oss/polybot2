@@ -99,7 +99,7 @@ async def _fetch_events_by_ids(
     timeout: float = 30.0,
 ) -> list[dict[str, Any]]:
     all_events: list[dict[str, Any]] = []
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, headers={"Accept-Encoding": "gzip, deflate"}) as client:
         for event_id in sorted(event_ids):
             payload = await request_json_with_retry(
                 client=client,
@@ -409,7 +409,7 @@ async def _fetch_events_by_tags(
 ) -> list[dict[str, Any]]:
     all_events: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, headers={"Accept-Encoding": "gzip, deflate"}) as client:
         for tag in sorted(tags):
             offset = 0
             while True:
