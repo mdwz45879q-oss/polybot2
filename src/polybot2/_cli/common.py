@@ -103,7 +103,6 @@ def _hotpath_runtime_policy_for_league(*, live_policy: Any, league_key: str, spo
     return {
         "plan_horizon_hours": int(cfg.get("plan_horizon_hours", 24)),
         "subscribe_lead_minutes": int(cfg.get("subscribe_lead_minutes", 90)),
-        "provider_catalog_max_age_seconds": int(cfg.get("provider_catalog_max_age_seconds", 600)),
         "refresh_interval_seconds": int(cfg.get("refresh_interval_seconds", 300)),
         # Backward compatible: older policy uses reload_interval_seconds.
         "subscription_refresh_seconds": refresh_seconds,

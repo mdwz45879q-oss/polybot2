@@ -189,18 +189,10 @@ class LinkReviewService:
             run_row = self._resolve_run(provider=p, run_id=rid)
             if run_row is not None:
                 effective_now_ts = _int_or_none(run_row.get("run_ts"))
-        runtime_cfgs = list((policy.hotpath_runtime_by_league or {}).values())
-        max_age_seconds = 600
-        if runtime_cfgs:
-            max_age_seconds = max(
-                int(dict(cfg or {}).get("provider_catalog_max_age_seconds", 600))
-                for cfg in runtime_cfgs
-            )
         return actionable_game_ids(
             db=self._db,
             provider=p,
             run_id=rid,
-            max_age_seconds=max_age_seconds,
             now_ts_utc=effective_now_ts,
             league=None,
             require_open_targets=False,

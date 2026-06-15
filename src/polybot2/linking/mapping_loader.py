@@ -221,8 +221,8 @@ def load_live_trading_policy(policy_file: str | None = None) -> LoadedLiveTradin
             "plan_horizon_hours": int(cfg.get("plan_horizon_hours", 24)),
             "subscribe_lead_minutes": int(cfg.get("subscribe_lead_minutes", 90)),
             "reload_interval_seconds": int(cfg.get("reload_interval_seconds", 120)),
-            "provider_catalog_max_age_seconds": int(cfg.get("provider_catalog_max_age_seconds", 600)),
             "refresh_interval_seconds": int(cfg.get("refresh_interval_seconds", 300)),
+            "game_refresh_interval_seconds": int(cfg.get("game_refresh_interval_seconds", 0)),
         }
         if cfg.get("ws_core_idx") is not None:
             parsed["ws_core_idx"] = int(cfg["ws_core_idx"])
@@ -445,7 +445,6 @@ def validate_loaded_live_trading_policy(policy: LoadedLiveTradingPolicy) -> None
             "plan_horizon_hours",
             "subscribe_lead_minutes",
             "reload_interval_seconds",
-            "provider_catalog_max_age_seconds",
             "refresh_interval_seconds",
         ):
             if key not in cfg:

@@ -510,13 +510,13 @@ TEAM_MAP_CS2 = {
     "pm_aliases": ["nrg"],
     },
 
-    "nuclear tigres":{
+    "nuclear tigeres":{
         "polymarket_code": "ntr",
         "provider_aliases": {
             "kalstrop_v1": ["Nuclear TigeRES"],
             "pandascore": ["Nuclear TigeRES"],
         },
-    "pm_aliases": ["NTR", "Nuclear TigeRES"],
+        "pm_aliases": ["NTR", "Nuclear TigeRES"],
     },
     # ODDIK Academy
     "oddik academy": {

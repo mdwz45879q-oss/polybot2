@@ -250,6 +250,13 @@ async def discover_new_markets(
         str(g.provider_game_id) for g in current_plan.games
         if str(g.provider_game_id or "").strip()
     ]
+    # Include alternate provider IDs (e.g., V2 prematch_event_id preserved
+    # after fixture_id substitution) so the DB lookup finds link_event_bindings.
+    for g in current_plan.games:
+        for _prov, _aid in getattr(g, "alternate_provider_game_ids", ()):
+            aid = str(_aid or "").strip()
+            if aid and aid not in game_ids:
+                game_ids.append(aid)
     if not game_ids:
         return empty
 
@@ -281,9 +288,11 @@ async def discover_new_markets(
             events_fetched=events_fetched, markets_discovered=0, targets_inserted=0,
         )
 
+    _mt_by_league = policy.live_betting_market_types_by_league or {}
+    _sport = getattr(current_plan, "sport", "") or ""
     league_market_types = {
         normalize_sports_market_type(x)
-        for x in (policy.live_betting_market_types_by_league or {}).get(league, [])
+        for x in (_mt_by_league.get(league) or _mt_by_league.get(_sport, []))
         if normalize_sports_market_type(x) != "other"
     }
     if not league_market_types:
@@ -307,24 +316,25 @@ async def discover_new_markets(
             events_fetched=events_fetched, markets_discovered=len(new_cids), targets_inserted=0,
         )
 
-    # Resolve sets_to_win from the LEAGUES config (source of truth), not
-    # from the first game in the plan — a multi-league plan can mix BO3
-    # and BO5 leagues (e.g., women's BO3 + men's BO5 French Open).
+    from polybot2.hotpath.compiler import compile_multi_league_plan
     from polybot2.linking.mapping_loader import load_mapping as _load_mapping
     _mapping = _load_mapping()
-    _sets_to_win = int(_mapping.leagues.get(league, {}).get("sets_to_win", 2))
 
-    # include_inactive=True: skip the catalog-staleness check. The games
-    # are already in the running plan — we're just looking for new markets.
-    # Without this, incremental refresh fails with no_in_scope_games if
-    # provider sync hasn't run within provider_catalog_max_age_seconds.
-    new_plan = compile_hotpath_plan(
+    _league_provider_pairs = list({
+        (g.canonical_league, provider): None
+        for g in current_plan.games if g.canonical_league
+    }.keys())
+    _stw_by_league = {
+        lk: int(_mapping.leagues.get(lk, {}).get("sets_to_win", 2))
+        for lk, _ in _league_provider_pairs
+    }
+
+    new_plan = compile_multi_league_plan(
         db=db,
-        provider=provider,
-        league=league,
+        leagues=_league_provider_pairs if len(_league_provider_pairs) > 1 else [(league, provider)],
         run_id=run_id,
-        sport=getattr(current_plan, "sport", "") or "",
-        sets_to_win=_sets_to_win,
+        sport=_sport,
+        sets_to_win_by_league=_stw_by_league,
         live_policy=policy,
         now_ts_utc=now_ts_utc if now_ts_utc is not None else int(time.time()),
         plan_horizon_hours=plan_horizon_hours,

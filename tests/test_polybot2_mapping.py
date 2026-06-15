@@ -29,7 +29,6 @@ def test_load_live_trading_repo_file() -> None:
     assert "mlb" in loaded.hotpath_runtime_by_league
     assert int(loaded.hotpath_runtime_by_league["mlb"]["plan_horizon_hours"]) > 0
     assert int(loaded.hotpath_runtime_by_league["mlb"]["reload_interval_seconds"]) > 0
-    assert int(loaded.hotpath_runtime_by_league["mlb"]["provider_catalog_max_age_seconds"]) > 0
 
 
 def test_mapping_conflicting_alias_fails(tmp_path: Path) -> None:

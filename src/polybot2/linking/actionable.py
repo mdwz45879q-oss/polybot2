@@ -153,17 +153,13 @@ def actionable_game_ids(
     db: Any,
     provider: str,
     run_id: int,
-    max_age_seconds: int,
     now_ts_utc: int | None = None,
     league: str | None = None,
     require_open_targets: bool = True,
+    max_age_seconds: int | None = None,
 ) -> set[str]:
-    max_age = max(1, int(max_age_seconds))
-    now_ts = int(time.time()) if now_ts_utc is None else int(now_ts_utc)
     snapshot_ids, snapshot_updated_at = provider_snapshot_info(db=db, provider=provider)
-    if not snapshot_ids or snapshot_updated_at is None:
-        return set()
-    if int(now_ts - int(snapshot_updated_at)) > max_age:
+    if not snapshot_ids:
         return set()
     run_ids = run_scope_game_ids(db=db, provider=provider, run_id=run_id, league=league)
     if not run_ids:

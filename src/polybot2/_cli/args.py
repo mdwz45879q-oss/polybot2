@@ -59,6 +59,9 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     hotpath_live.add_argument("--sport", type=str, default=None,
                               choices=["soccer", "baseball", "tennis", "cs2", "moba"],
                               help="Run all live leagues for a sport")
+    hotpath_live.add_argument("--gender", type=str, default=None,
+                              choices=["atp", "wta"],
+                              help="Filter --sport tennis by gender (atp=men, wta=women)")
     hotpath_live.add_argument("--link-run-id", type=int, default=None,
                               help="Link run ID (default: latest for the league)")
     hotpath_live.add_argument("--execution-mode", type=str, choices=["live", "paper"], required=True)

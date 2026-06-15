@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import logging
 import os
@@ -171,10 +172,16 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             if cfg.get("sport_family") == sport_arg
             and lk in live_policy.live_betting_leagues
         )
+        gender_arg = str(getattr(args, "gender", "") or "").strip().lower()
+        if gender_arg:
+            league_keys = [
+                lk for lk in league_keys
+                if mapping.leagues.get(lk, {}).get("polymarket_league_code") == gender_arg
+            ]
         if not league_keys:
-            logger.error("no live leagues for sport=%s", sport_arg)
+            logger.error("no live leagues for sport=%s gender=%s", sport_arg, gender_arg or "all")
             return 1
-        logger.info("sport=%s resolved to leagues: %s", sport_arg, ", ".join(league_keys))
+        logger.info("sport=%s gender=%s resolved to leagues: %s", sport_arg, gender_arg or "all", ", ".join(league_keys))
     else:
         league_keys = [str(l).strip().lower() for l in raw_leagues]
 
@@ -493,118 +500,134 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 fg.prematch_event_id, fg.home_raw, fg.away_raw,
                             )
                         for resolved in resolution.resolved:
-                            resolved_prematch_ids.add(resolved.pending.prematch_event_id)
-                            delta_s = resolution_time_delta_seconds(resolved)
-                            logger.info(
-                                "V2 resolved: %s → fixture_id=%s (%s vs %s, status=%s, time_delta=%ds)",
-                                resolved.pending.prematch_event_id, resolved.fixture_id,
-                                resolved.resolved_home, resolved.resolved_away,
-                                resolved.match_status, delta_s,
-                            )
-                            _resolved_league = resolved.pending.league
-                            _resolved_provider = _primary_provider_for_league(
-                                mapping.leagues.get(_resolved_league, {})
-                            ) or provider_name
-                            with open_database(runtime) as db:
-                                game_plan = compile_for_resolved_game(
-                                    resolved=resolved, db=db, run_id=run_id,
-                                    provider=_resolved_provider, league=_resolved_league,
-                                    live_policy=live_policy,
-                                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
-                                    sport=sport_family,
-                                    sets_to_win=league_sets_to_win,
+                            try:
+                                delta_s = resolution_time_delta_seconds(resolved)
+                                logger.info(
+                                    "V2 resolved: %s → fixture_id=%s (%s vs %s, status=%s, time_delta=%ds)",
+                                    resolved.pending.prematch_event_id, resolved.fixture_id,
+                                    resolved.resolved_home, resolved.resolved_away,
+                                    resolved.match_status, delta_s,
                                 )
-                            if game_plan is None:
-                                logger.warning("V2 resolved %s but no targets compiled", resolved.fixture_id)
+                                _resolved_league = resolved.pending.league
+                                _resolved_provider = _primary_provider_for_league(
+                                    mapping.leagues.get(_resolved_league, {})
+                                ) or provider_name
+                                with open_database(runtime) as db:
+                                    game_plan = compile_for_resolved_game(
+                                        resolved=resolved, db=db, run_id=run_id,
+                                        provider=_resolved_provider, league=_resolved_league,
+                                        live_policy=live_policy,
+                                        plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                                        sport=sport_family,
+                                        sets_to_win=league_sets_to_win,
+                                    )
+                                if game_plan is None:
+                                    logger.warning("V2 resolved %s but no targets compiled", resolved.fixture_id)
+                                    continue
+                                n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
+                                if not rust_started:
+                                    hotpath.set_compiled_plan(game_plan)
+                                    _cumulative_provider_subs.setdefault(_resolved_provider, []).append(resolved.fixture_id)
+                                    for _g in game_plan.games:
+                                        for _ap, _aid in _g.alternate_provider_game_ids:
+                                            if str(_aid or "").strip():
+                                                _cumulative_provider_subs.setdefault(str(_ap), []).append(str(_aid))
+                                    hotpath.set_subscriptions(_cumulative_provider_subs)
+                                    if hasattr(hotpath, "set_runtime_timing_policy"):
+                                        hotpath.set_runtime_timing_policy(
+                                            subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
+                                            subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
+                                        )
+                                    template_orders = _build_hotpath_template_orders(
+                                        compiled_plan=game_plan, order_policies=order_policies,
+                                    )
+                                    if template_orders and hasattr(hotpath, "prewarm_presign"):
+                                        hotpath.prewarm_presign(template_orders)
+                                    retirement_templates = _build_retirement_template_orders(
+                                        compiled_plan=game_plan, order_policies=order_policies,
+                                    )
+                                    if retirement_templates and hasattr(hotpath, "prewarm_presign_retirement"):
+                                        hotpath.prewarm_presign_retirement(retirement_templates)
+                                    logger.info(
+                                        "hotpath starting (V2 first game): run_id=%d targets=%d fixture_id=%s",
+                                        run_id, n_tgt, resolved.fixture_id,
+                                    )
+                                    hotpath.start()
+                                    rust_started = True
+                                    # Start guardian for V2-only soccer leagues
+                                    if guardian is None and is_soccer and _guardian_mode_arg != "off":
+                                        try:
+                                            from polybot2.guardian.manager import GuardianManager
+    
+                                            _guardian_log = hotpath.log_path() if hotpath else None
+                                            logger.info("guardian: log_path=%s, is_soccer=%s, mode_arg=%s", _guardian_log, is_soccer, _guardian_mode_arg)
+                                            if not _guardian_log:
+                                                logger.warning("guardian: hotpath.log_path() returned None — skipping")
+                                            if _guardian_log:
+                                                _gm = _guardian_mode_arg
+                                                _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"
+                                                guardian = GuardianManager(
+                                                    log_path=_guardian_log,
+                                                    compiled_plan=game_plan,
+                                                    order_policy_config=order_policies,
+                                                    dry_run=_guardian_dry_run,
+                                                )
+                                                guardian.start()
+                                                guardian.add_game_id_alias(
+                                                    resolved.pending.prematch_event_id,
+                                                    resolved.fixture_id,
+                                                )
+                                                _guardian_mode_label = "dry-run" if _guardian_dry_run else "LIVE"
+                                                logger.info("guardian started (%s, V2): %s", _guardian_mode_label, _guardian_log)
+                                        except Exception as exc:
+                                            logger.warning("guardian start failed (continuing without): %s", exc)
+                                    resolved_prematch_ids.add(resolved.pending.prematch_event_id)
+                                else:
+                                    new_targets = tuple(
+                                        t for g in game_plan.games for m in g.markets for t in m.targets
+                                    )
+                                    _pre_patch_plan = hotpath._compiled_plan
+                                    refresh_result = IncrementalRefreshResult(
+                                        new_plan=game_plan,
+                                        new_targets=new_targets,
+                                        new_condition_ids=frozenset(
+                                            m.condition_id for g in game_plan.games for m in g.markets
+                                        ),
+                                        events_fetched=0,
+                                        markets_discovered=len(new_targets),
+                                        targets_inserted=len(new_targets),
+                                    )
+                                    count = hotpath.apply_incremental_refresh(refresh_result, order_policies)
+                                    # Merge into _compiled_plan so market refresh
+                                    # sees all games, not just the latest patch.
+                                    if _pre_patch_plan:
+                                        _merged = replace(_pre_patch_plan, games=tuple(_pre_patch_plan.games) + tuple(game_plan.games))
+                                        hotpath.set_compiled_plan(_merged)
+                                    _cumulative_provider_subs.setdefault(_resolved_provider, []).append(resolved.fixture_id)
+                                    for _g in game_plan.games:
+                                        for _ap, _aid in _g.alternate_provider_game_ids:
+                                            if str(_aid or "").strip():
+                                                _cumulative_provider_subs.setdefault(str(_ap), []).append(str(_aid))
+                                    hotpath.set_subscriptions(_cumulative_provider_subs)
+                                    logger.info(
+                                        "V2 game patched: fixture_id=%s targets=%d presigned=%d",
+                                        resolved.fixture_id, n_tgt, count,
+                                    )
+                                    if guardian is not None:
+                                        guardian.update_plan(game_plan)
+                                        guardian.add_game_id_alias(
+                                            resolved.pending.prematch_event_id,
+                                            resolved.fixture_id,
+                                        )
+                                    resolved_prematch_ids.add(resolved.pending.prematch_event_id)
+                            except (NameError, TypeError, AttributeError, KeyError):
+                                raise
+                            except Exception as exc:
+                                logger.warning(
+                                    "V2 game %s patch failed (will retry): %s: %s",
+                                    resolved.pending.prematch_event_id, type(exc).__name__, exc,
+                                )
                                 continue
-                            n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
-                            if not rust_started:
-                                hotpath.set_compiled_plan(game_plan)
-                                _cumulative_provider_subs.setdefault(_resolved_provider, []).append(resolved.fixture_id)
-                                for _g in game_plan.games:
-                                    for _ap, _aid in _g.alternate_provider_game_ids:
-                                        if str(_aid or "").strip():
-                                            _cumulative_provider_subs.setdefault(str(_ap), []).append(str(_aid))
-                                hotpath.set_subscriptions(_cumulative_provider_subs)
-                                if hasattr(hotpath, "set_runtime_timing_policy"):
-                                    hotpath.set_runtime_timing_policy(
-                                        subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
-                                        subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
-                                    )
-                                template_orders = _build_hotpath_template_orders(
-                                    compiled_plan=game_plan, order_policies=order_policies,
-                                )
-                                if template_orders and hasattr(hotpath, "prewarm_presign"):
-                                    hotpath.prewarm_presign(template_orders)
-                                retirement_templates = _build_retirement_template_orders(
-                                    compiled_plan=game_plan, order_policies=order_policies,
-                                )
-                                if retirement_templates and hasattr(hotpath, "prewarm_presign_retirement"):
-                                    hotpath.prewarm_presign_retirement(retirement_templates)
-                                logger.info(
-                                    "hotpath starting (V2 first game): run_id=%d targets=%d fixture_id=%s",
-                                    run_id, n_tgt, resolved.fixture_id,
-                                )
-                                hotpath.start()
-                                rust_started = True
-                                # Start guardian for V2-only soccer leagues
-                                if guardian is None and is_soccer and _guardian_mode_arg != "off":
-                                    try:
-                                        from polybot2.guardian.manager import GuardianManager
-
-                                        _guardian_log = hotpath.log_path() if hotpath else None
-                                        logger.info("guardian: log_path=%s, is_soccer=%s, mode_arg=%s", _guardian_log, is_soccer, _guardian_mode_arg)
-                                        if not _guardian_log:
-                                            logger.warning("guardian: hotpath.log_path() returned None — skipping")
-                                        if _guardian_log:
-                                            _gm = _guardian_mode_arg
-                                            _guardian_dry_run = (_gm or ("dry-run" if execution_mode != "live" else "live")) != "live"
-                                            guardian = GuardianManager(
-                                                log_path=_guardian_log,
-                                                compiled_plan=game_plan,
-                                                order_policy_config=order_policies,
-                                                dry_run=_guardian_dry_run,
-                                            )
-                                            guardian.start()
-                                            guardian.add_game_id_alias(
-                                                resolved.pending.prematch_event_id,
-                                                resolved.fixture_id,
-                                            )
-                                            _guardian_mode_label = "dry-run" if _guardian_dry_run else "LIVE"
-                                            logger.info("guardian started (%s, V2): %s", _guardian_mode_label, _guardian_log)
-                                    except Exception as exc:
-                                        logger.warning("guardian start failed (continuing without): %s", exc)
-                            else:
-                                new_targets = tuple(
-                                    t for g in game_plan.games for m in g.markets for t in m.targets
-                                )
-                                refresh_result = IncrementalRefreshResult(
-                                    new_plan=game_plan,
-                                    new_targets=new_targets,
-                                    new_condition_ids=frozenset(
-                                        m.condition_id for g in game_plan.games for m in g.markets
-                                    ),
-                                    events_fetched=0,
-                                    markets_discovered=len(new_targets),
-                                    targets_inserted=len(new_targets),
-                                )
-                                count = hotpath.apply_incremental_refresh(refresh_result, order_policies)
-                                _cumulative_provider_subs.setdefault(_resolved_provider, []).append(resolved.fixture_id)
-                                for _g in game_plan.games:
-                                    for _ap, _aid in _g.alternate_provider_game_ids:
-                                        if str(_aid or "").strip():
-                                            _cumulative_provider_subs.setdefault(str(_ap), []).append(str(_aid))
-                                hotpath.set_subscriptions(_cumulative_provider_subs)
-                                logger.info(
-                                    "V2 game patched: fixture_id=%s targets=%d presigned=%d",
-                                    resolved.fixture_id, n_tgt, count,
-                                )
-                                if guardian is not None:
-                                    guardian.update_plan(game_plan)
-                                    guardian.add_game_id_alias(
-                                        resolved.pending.prematch_event_id,
-                                        resolved.fixture_id,
-                                    )
                     elif pending and not rust_started:
                         due_times = [g.start_ts_utc for g in pending if g.start_ts_utc is not None]
                         if due_times:

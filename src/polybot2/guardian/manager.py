@@ -154,6 +154,9 @@ class GuardianManager:
         # All plan tokens are goal-sensitive in soccer — subscribe at startup
         all_startup_tokens = list(token_to_condition.keys())
 
+        # Primary provider: overturn detection only considers ticks from this source
+        primary_provider = str(getattr(compiled_plan, "provider", "") or "")
+
         # Build tracker with all dependencies
         self._tracker = OrderStateTracker(
             log_path=log_path,
@@ -167,6 +170,7 @@ class GuardianManager:
             startup_token_ids=all_startup_tokens,
             guardian_logger=glog,
             session_header=session_header,
+            primary_provider=primary_provider,
         )
         self._glog = glog
         self._clob = clob

@@ -49,6 +49,7 @@ class OrderStateTracker:
         startup_token_ids: list[str] | None = None,
         guardian_logger: Any = None,
         session_header: dict[str, Any] | None = None,
+        primary_provider: str = "",
     ):
         self.log_path = log_path
         self.clob = clob
@@ -70,6 +71,7 @@ class OrderStateTracker:
         self._on_overturn_callback: Any = None
         self._pending_ws_subscribe: set[str] = set()
         self._stop_requested = False
+        self._primary_provider = primary_provider
         # Map token_id → strategy_key for readable price dicts
         self._token_to_sk: dict[str, str] = {}
         if session_header:
@@ -150,6 +152,7 @@ class OrderStateTracker:
             return
         # Normalize alternate provider ID → canonical game ID (strategy key prefix)
         gid = self._game_id_map.get(gid, gid)
+        src = str(ev.get("src", ""))
         # V2: sport-specific score fields; V1 fallback: h/a
         home = ev.get("goals_home", ev.get("h"))
         away = ev.get("goals_away", ev.get("a"))
@@ -189,14 +192,17 @@ class OrderStateTracker:
                     half, var_type, var_subtype, self._get_prices(),
                 )
 
-            # Overturn detection: check for score reversal
-            if self.detector and prev is not None:
+            # Overturn detection: only from the primary provider to avoid
+            # stale ticks from slower providers causing false disarms.
+            is_primary = (not self._primary_provider) or (src == self._primary_provider)
+            if self.detector and prev is not None and is_primary:
                 self.detector.on_score_change(
                     game, prev_home, prev_away, home, away, ts,
                 )
 
         # Notify detector of VAR events (even without score change)
-        if var_type and self.detector:
+        is_primary = (not self._primary_provider) or (src == self._primary_provider)
+        if var_type and self.detector and is_primary:
             self.detector.on_var_action(game, var_type, var_subtype, ts)
         if var_type and self.glog:
             self.glog.log_var_action(gid, var_type, var_subtype)

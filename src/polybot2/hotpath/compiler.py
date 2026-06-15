@@ -467,10 +467,6 @@ def evaluate_hotpath_scope(
     if bool(include_inactive):
         scope_rows = scope_rows_all
     else:
-        policy = live_policy or load_live_trading_policy()
-        _rt_by_league = policy.hotpath_runtime_by_league or {}
-        runtime_cfg = dict(_rt_by_league.get(lk, _rt_by_league.get(sport_family, {})) or {})
-        max_age_seconds = int(runtime_cfg.get("provider_catalog_max_age_seconds", 600))
         effective_now_ts: int | None = None
         try:
             if run_row.get("run_ts") is not None:
@@ -483,7 +479,6 @@ def evaluate_hotpath_scope(
             db=db,
             provider=p,
             run_id=rid,
-            max_age_seconds=max_age_seconds,
             now_ts_utc=effective_now_ts,
             league=lk,
         )

@@ -186,7 +186,14 @@ def compile_for_resolved_game(
     single_game = None
     for g in plan.games:
         if g.provider_game_id == prematch_id:
-            single_game = replace(g, provider_game_id=resolved.fixture_id)
+            # Preserve the prematch_event_id in alternates so incremental
+            # market refresh can look it up in link_event_bindings.
+            _alts = g.alternate_provider_game_ids + ((provider, prematch_id),)
+            single_game = replace(
+                g,
+                provider_game_id=resolved.fixture_id,
+                alternate_provider_game_ids=_alts,
+            )
             break
     if single_game is None:
         return None
@@ -215,12 +222,12 @@ def _fetch_tournament_fixtures(
     try:
         resp = requests.get(url, headers=headers or {}, timeout=_REQUEST_TIMEOUT)
         if resp.status_code != 200:
-            logger.debug("V2 fixtures HTTP %d for %s/%s", resp.status_code, category_slug, tournament_slug)
+            logger.warning("V2 fixtures HTTP %d for %s/%s", resp.status_code, category_slug, tournament_slug)
             return []
         data = resp.json()
         return data.get("fixtures", []) if isinstance(data, dict) else []
     except Exception as exc:
-        logger.debug("V2 fixtures error for %s/%s: %s", category_slug, tournament_slug, exc)
+        logger.warning("V2 fixtures error for %s/%s: %s", category_slug, tournament_slug, exc)
         return []
 
 
@@ -229,7 +236,7 @@ def _resolve_fixture_id(event_id: str, headers: dict[str, str] | None = None, sp
     try:
         resp = requests.get(url, params={"sport": sport_slug}, headers=headers or {}, timeout=_REQUEST_TIMEOUT)
         if resp.status_code != 200:
-            logger.debug("V2 /providers HTTP %d for event_id=%s", resp.status_code, event_id)
+            logger.warning("V2 /providers HTTP %d for event_id=%s", resp.status_code, event_id)
             return None
         data = resp.json()
         bg = data.get("providers", {}).get("bet_genius", {})
@@ -239,7 +246,7 @@ def _resolve_fixture_id(event_id: str, headers: dict[str, str] | None = None, sp
             return None
         return bg
     except Exception as exc:
-        logger.debug("V2 /providers error for event_id=%s: %s", event_id, exc)
+        logger.warning("V2 /providers error for event_id=%s: %s", event_id, exc)
         return None
 
 
