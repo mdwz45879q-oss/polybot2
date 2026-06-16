@@ -69,6 +69,10 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
                               help="Guardian mode (default: follows --execution-mode; 'off' disables guardian)")
     hotpath_live.add_argument("--refresh-interval", type=int, default=None,
                               help="Seconds between plan refreshes (default: from config/live_trading.py, or 300)")
+    hotpath_live.add_argument("--ws-core", type=int, default=None,
+                              help="Override ws_core_idx from runtime policy")
+    hotpath_live.add_argument("--submitter-core", type=int, default=None,
+                              help="Override submitter_core_idx from runtime policy")
     hotpath_live.add_argument("--db", type=str, default="")
 
     hotpath_observe = hotpath_sub.add_parser("observe", help="Live terminal scoreboard (reads JSONL log file)")

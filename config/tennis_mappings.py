@@ -3078,7 +3078,7 @@ PLAYER_MAP_TENNIS = {
     "rolland de ravel, cosme": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Rolland de Ravel, Cosme"]},
-        "pm_aliases": ["Cosme Rolland de Ravel"],
+        "pm_aliases": ["Cosme Rolland de Ravel", "Cosme de Ravel"],
     },
     "ryser, valentina": {
         "polymarket_code": "ryser",

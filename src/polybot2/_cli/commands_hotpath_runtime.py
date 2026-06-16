@@ -292,8 +292,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             execution_mode=execution_mode, config=hp_cfg,
         )
         hotpath.set_order_policies(order_policies)
-        hotpath._ws_core_idx = runtime_policy.get("ws_core_idx")
-        hotpath._submitter_core_idx = runtime_policy.get("submitter_core_idx")
+        _cli_ws_core = getattr(args, "ws_core", None)
+        _cli_sub_core = getattr(args, "submitter_core", None)
+        hotpath._ws_core_idx = _cli_ws_core if _cli_ws_core is not None else runtime_policy.get("ws_core_idx")
+        hotpath._submitter_core_idx = _cli_sub_core if _cli_sub_core is not None else runtime_policy.get("submitter_core_idx")
 
         # Build multiplexed provider configs when the league uses multiple providers.
         if is_multiplexed:
