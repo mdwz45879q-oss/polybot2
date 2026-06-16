@@ -148,7 +148,7 @@ class ClobClient:
         """Submit a GTC sell order at the given price.
 
         Uses py_clob_client_v2 SDK for EIP-712 signing + submission.
-        Uses create_and_post_order (single call with version-retry).
+        Separates create_order + post_order for diagnostic visibility.
         Fetches neg_risk and tick_size from the CLOB per condition_id.
         Returns the response dict or None on failure.
         """
@@ -168,9 +168,26 @@ class ClobClient:
                 side=Side.SELL,
             )
             options = PartialCreateOrderOptions(neg_risk=neg_risk, tick_size=tick_size)
+
+            def _create_and_post() -> Any:
+                signed = self._sdk_client.create_order(order_args, options)
+                logger.info(
+                    "sell order signed: maker=%s signer=%s side=%s sigType=%s "
+                    "makerAmt=%s takerAmt=%s token=%s… ts=%s sig=%s…",
+                    getattr(signed, "maker", "?"),
+                    getattr(signed, "signer", "?"),
+                    getattr(signed, "side", "?"),
+                    getattr(signed, "signatureType", "?"),
+                    getattr(signed, "makerAmount", "?"),
+                    getattr(signed, "takerAmount", "?"),
+                    str(getattr(signed, "tokenId", ""))[:20],
+                    getattr(signed, "timestamp", "?"),
+                    str(getattr(signed, "signature", ""))[:40],
+                )
+                return self._sdk_client.post_order(signed, OrderType.GTC)
+
             resp = await asyncio.to_thread(
-                self._sdk_client.create_and_post_order,
-                order_args, options, OrderType.GTC,
+                self._sdk_client._retry_on_version_update, _create_and_post,
             )
             logger.info(
                 "sell order submitted: token=%s… size=%.4f price=%.4f neg_risk=%s tick_size=%s resp=%s",
