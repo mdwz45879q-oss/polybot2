@@ -258,7 +258,14 @@ class LinkService:
         home_team = team_alias_idx.get((canonical_league, home_raw), "")
         away_team = team_alias_idx.get((canonical_league, away_raw), "")
         if not home_team or not away_team:
-            return (None, "team_alias_unmapped")
+            # For providers where PM events carry a game_id that matches
+            # provider_game_id, allow linking without team aliases.
+            # Use raw names as fallback canonicals.
+            if provider in ("pandascore",):
+                home_team = home_team or home_raw
+                away_team = away_team or away_raw
+            else:
+                return (None, "team_alias_unmapped")
         if home_team == away_team:
             return (None, "identical_teams")
 
@@ -366,6 +373,28 @@ class LinkService:
         if not events:
             diagnostics["failure_reason"] = "no_event_candidates"
             return (None, "no_event_candidates", diagnostics)
+
+        # Fast path: direct game_id match (PM event carries the provider's match ID).
+        gid_str = str(resolved.provider_game_id).strip()
+        for ev in events:
+            ev_game_id = str(ev.get("game_id") or "").strip()
+            if ev_game_id and ev_game_id == gid_str:
+                ev_id = str(ev.get("event_id") or "")
+                slug_raw = _norm(str(ev.get("slug_raw") or ev.get("slug") or ""))
+                diagnostics["selected_event_id"] = ev_id
+                diagnostics["selected_slug"] = slug_raw
+                diagnostics["selected_kickoff_ts_utc"] = _int_or_none(ev.get("kickoff_ts_utc"))
+                diagnostics["game_id_direct_match"] = True
+                return (
+                    _EventChoice(
+                        event=ev,
+                        events=tuple(events),
+                        slug_prefix=slug_raw,
+                        diagnostics=diagnostics,
+                    ),
+                    "ok",
+                    diagnostics,
+                )
 
         event_ids = [str(e.get("event_id") or "") for e in events if str(e.get("event_id") or "")]
         team_rows = self._db.markets.load_event_teams_for_event_ids(event_ids)
