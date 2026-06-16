@@ -148,6 +148,7 @@ class ClobClient:
         """Submit a GTC sell order at the given price.
 
         Uses py_clob_client_v2 SDK for EIP-712 signing + submission.
+        Uses create_and_post_order (single call with version-retry).
         Fetches neg_risk and tick_size from the CLOB per condition_id.
         Returns the response dict or None on failure.
         """
@@ -167,11 +168,9 @@ class ClobClient:
                 side=Side.SELL,
             )
             options = PartialCreateOrderOptions(neg_risk=neg_risk, tick_size=tick_size)
-            signed_order = await asyncio.to_thread(
-                self._sdk_client.create_order, order_args, options,
-            )
             resp = await asyncio.to_thread(
-                self._sdk_client.post_order, signed_order, OrderType.GTC,
+                self._sdk_client.create_and_post_order,
+                order_args, options, OrderType.GTC,
             )
             logger.info(
                 "sell order submitted: token=%s… size=%.4f price=%.4f neg_risk=%s tick_size=%s resp=%s",
@@ -179,7 +178,10 @@ class ClobClient:
             )
             return resp if isinstance(resp, dict) else {"raw": str(resp)}
         except Exception as exc:
-            logger.warning("sell order failed: token=%s… size=%.4f price=%.4f error=%s", token_id[:20], size, price, exc)
+            err_msg = str(exc)
+            logger.warning("sell order failed: token=%s… size=%.4f price=%.4f error=%s", token_id[:20], size, price, err_msg)
+            if "signature does not match" in err_msg.lower():
+                raise
             return None
 
     async def cancel_order_by_id(self, order_id: str) -> bool:
