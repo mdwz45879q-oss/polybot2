@@ -174,8 +174,13 @@ class OrderStateTracker:
         game.current_half = half
         game.current_game_state = gs
 
+        is_primary = (not self._primary_provider) or (src == self._primary_provider)
+
+        # Score change detection and overturn tracking use primary-provider-only
+        # state so that stale ticks from slower providers don't consume the
+        # score change before the primary provider reports it.
         prev = self._prev_scores.get(gid)
-        if prev is None or prev != (home, away):
+        if is_primary and (prev is None or prev != (home, away)):
             prev_home, prev_away = prev if prev else (0, 0)
             score_event = ScoreEvent(
                 ts=ts, home=home, away=away, half=half, game_state=gs,
@@ -192,10 +197,8 @@ class OrderStateTracker:
                     half, var_type, var_subtype, self._get_prices(),
                 )
 
-            # Overturn detection: only from the primary provider to avoid
-            # stale ticks from slower providers causing false disarms.
-            is_primary = (not self._primary_provider) or (src == self._primary_provider)
-            if self.detector and prev is not None and is_primary:
+            # Overturn detection
+            if self.detector and prev is not None:
                 self.detector.on_score_change(
                     game, prev_home, prev_away, home, away, ts,
                 )
