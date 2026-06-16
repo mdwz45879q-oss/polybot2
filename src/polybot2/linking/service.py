@@ -382,14 +382,31 @@ class LinkService:
                 ev_id = str(ev.get("event_id") or "")
                 slug_raw = _norm(str(ev.get("slug_raw") or ev.get("slug") or ""))
                 diagnostics["selected_event_id"] = ev_id
+                diagnostics["selected_event_ids"] = [ev_id]
                 diagnostics["selected_slug"] = slug_raw
                 diagnostics["selected_kickoff_ts_utc"] = _int_or_none(ev.get("kickoff_ts_utc"))
                 diagnostics["game_id_direct_match"] = True
+                diagnostics["candidates"] = [
+                    {
+                        "candidate_rank": 1,
+                        "event_id": ev_id,
+                        "event_slug": slug_raw,
+                        "kickoff_ts_utc": _int_or_none(ev.get("kickoff_ts_utc")),
+                        "team_set_match": 1,
+                        "kickoff_within_tolerance": 1,
+                        "slug_hint_match": 0,
+                        "ordering_bonus": 0,
+                        "kickoff_delta_sec": None,
+                        "score_tuple": [],
+                        "is_selected": 1,
+                        "reject_reason": "",
+                    },
+                ]
                 return (
                     _EventChoice(
                         event=ev,
-                        events=tuple(events),
-                        slug_prefix=slug_raw,
+                        events=(ev,),
+                        slug_prefix=self._slug_prefix(slug_raw),
                         diagnostics=diagnostics,
                     ),
                     "ok",
