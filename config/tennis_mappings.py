@@ -2258,7 +2258,7 @@ PLAYER_MAP_TENNIS = {
     "tseng, chun hsin": {
         "polymarket_code": "tseng",
         "provider_aliases": {"kalstrop_v1": ["Tseng, Chun Hsin"]},
-        "pm_aliases": ["Chun Hsin Tseng"],
+        "pm_aliases": ["Chun Hsin Tseng", "Chun-Hsin Tseng"],
     },
     "tsitsipas, stefanos": {
         "polymarket_code": "tsitsip",
@@ -2668,7 +2668,7 @@ PLAYER_MAP_TENNIS = {
     "martin manzano, juan cruz": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Martin Manzano, Juan Cruz"]},
-        "pm_aliases": ["Juan Cruz Martin Manzano"],
+        "pm_aliases": ["Juan Cruz Martin Manzano", "Juan Martin"],
     },
     "mazzola, alessandra": {
         "polymarket_code": "mazzola",
@@ -2873,7 +2873,7 @@ PLAYER_MAP_TENNIS = {
     "escurra isnardi, hernando jose": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Escurra Isnardi, Hernando Jose"]},
-        "pm_aliases": ["Hernando Jose Escurra Isnardi"],
+        "pm_aliases": ["Hernando Jose Escurra Isnardi", "Hernando Escurra"],
     },
     "falei, aliona": {
         "polymarket_code": "falei",
@@ -3028,7 +3028,7 @@ PLAYER_MAP_TENNIS = {
     "nunez vera, alex santino": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Nunez Vera, Alex Santino"]},
-        "pm_aliases": ["Alex Santino Nunez Vera"],
+        "pm_aliases": ["Alex Santino Nunez Vera", "Alex Santino Nunez"],
     },
     "pace, francesca": {
         "polymarket_code": "pace",
@@ -3093,12 +3093,12 @@ PLAYER_MAP_TENNIS = {
     "santamarta roig, andres": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Santamarta Roig, Andres"]},
-        "pm_aliases": ["Andres Santamarta Roig"],
+        "pm_aliases": ["Andres Santamarta Roig", "Andres Santamarta"],
     },
     "saraiva dos santos, paulo andre": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Saraiva Dos Santos, Paulo Andre"]},
-        "pm_aliases": ["Paulo Andre Saraiva Dos Santos"],
+        "pm_aliases": ["Paulo Andre Saraiva Dos Santos", "Paulo Dos Santos"],
     },
     "seggerman, ryan": {
         "polymarket_code": "seggerm",
