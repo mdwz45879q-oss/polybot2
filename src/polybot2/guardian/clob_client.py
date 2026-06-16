@@ -18,6 +18,95 @@ import httpx
 logger = logging.getLogger("polybot2.guardian")
 
 
+def _verify_signature_locally(signed: object, neg_risk: bool, sdk_client: object) -> None:
+    """Recompute POLY_1271 hashes and verify the ECDSA signer matches the EOA.
+
+    Runs after create_order, before post_order. Logs all intermediate hashes
+    so that if the CLOB rejects the signature, we have full diagnostic data.
+    """
+    try:
+        from eth_abi import encode as abi_encode
+        from eth_utils import keccak as _keccak
+        from eth_account import Account
+        from py_clob_client_v2.config import get_contract_config
+
+        ORDER_TYPE_STRING = (
+            "Order(uint256 salt,address maker,address signer,uint256 tokenId,"
+            "uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,"
+            "uint256 timestamp,bytes32 metadata,bytes32 builder)"
+        )
+        DOMAIN_TYPE_STRING = (
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+        )
+        SOLADY_TYPE_STRING = (
+            "TypedDataSign(Order contents,string name,string version,uint256 chainId,"
+            "address verifyingContract,bytes32 salt)"
+            f"{ORDER_TYPE_STRING}"
+        )
+        ORDER_TYPE_HASH = _keccak(text=ORDER_TYPE_STRING)
+        DOMAIN_TYPE_HASH = _keccak(text=DOMAIN_TYPE_STRING)
+        SOLADY_TYPE_HASH = _keccak(text=SOLADY_TYPE_STRING)
+
+        def _hex32(h: str) -> bytes:
+            return bytes.fromhex(h.replace("0x", "").zfill(64))
+
+        contract_config = get_contract_config(137)
+        exchange = contract_config.neg_risk_exchange_v2 if neg_risk else contract_config.exchange_v2
+
+        contents_hash = _keccak(primitive=abi_encode(
+            ["bytes32", "uint256", "address", "address", "uint256", "uint256", "uint256",
+             "uint8", "uint8", "uint256", "bytes32", "bytes32"],
+            [ORDER_TYPE_HASH, int(signed.salt), signed.maker, signed.signer,
+             int(signed.tokenId), int(signed.makerAmount), int(signed.takerAmount),
+             int(signed.side), int(signed.signatureType), int(signed.timestamp),
+             _hex32(signed.metadata), _hex32(signed.builder)],
+        ))
+
+        app_domain_sep = _keccak(primitive=abi_encode(
+            ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+            [DOMAIN_TYPE_HASH, _keccak(text="Polymarket CTF Exchange"),
+             _keccak(text="2"), 137, exchange],
+        ))
+
+        tds_hash = _keccak(primitive=abi_encode(
+            ["bytes32", "bytes32", "bytes32", "bytes32", "uint256", "address", "bytes32"],
+            [SOLADY_TYPE_HASH, contents_hash, _keccak(text="DepositWallet"),
+             _keccak(text="1"), 137, signed.signer, bytes(32)],
+        ))
+
+        digest = _keccak(primitive=b"\x19\x01" + app_domain_sep + tds_hash)
+
+        sig_hex = signed.signature
+        if sig_hex.startswith("0x"):
+            sig_hex = sig_hex[2:]
+        inner_sig = bytes.fromhex(sig_hex[:130])
+        recovered = Account._recover_hash(digest, signature=inner_sig)
+        eoa = sdk_client.signer.address()
+
+        embedded_domain = sig_hex[130:194]
+        embedded_contents = sig_hex[194:258]
+
+        ok = recovered.lower() == eoa.lower()
+        domain_ok = embedded_domain == app_domain_sep.hex()
+        contents_ok = embedded_contents == contents_hash.hex()
+
+        logger.info(
+            "sell order verify: exchange=%s contents=%s… domain_sep=%s… digest=%s… "
+            "recovered=%s eoa=%s sig_ok=%s domain_ok=%s contents_ok=%s",
+            exchange, contents_hash.hex()[:16], app_domain_sep.hex()[:16],
+            digest.hex()[:16], recovered, eoa, ok, domain_ok, contents_ok,
+        )
+        if not ok or not domain_ok or not contents_ok:
+            logger.error(
+                "SIGNATURE VERIFICATION FAILED LOCALLY: sig_ok=%s domain_ok=%s contents_ok=%s "
+                "exchange=%s neg_risk=%s maker=%s signer=%s salt=%s",
+                ok, domain_ok, contents_ok, exchange, neg_risk,
+                signed.maker, signed.signer, signed.salt,
+            )
+    except Exception as exc:
+        logger.warning("sell order local verify failed: %s", exc)
+
+
 class ClobClient:
     """Authenticated client for Polymarket CLOB REST API.
 
@@ -126,8 +215,8 @@ class ClobClient:
             resp = await self._client.get(url)
             if resp.status_code == 200:
                 data = resp.json()
-                neg_risk = bool(data.get("neg_risk", True))
-                tick_size = str(data.get("minimum_tick_size", "0.01") or "0.01")
+                neg_risk = bool(data.get("nr", data.get("neg_risk", True)))
+                tick_size = str(data.get("mts", data.get("minimum_tick_size", "0.01")) or "0.01")
                 self._market_info_cache[condition_id] = (neg_risk, tick_size)
                 logger.info("market info: condition=%s… neg_risk=%s tick_size=%s", condition_id[:16], neg_risk, tick_size)
                 return (neg_risk, tick_size)
@@ -184,6 +273,7 @@ class ClobClient:
                     getattr(signed, "timestamp", "?"),
                     str(getattr(signed, "signature", ""))[:40],
                 )
+                _verify_signature_locally(signed, neg_risk, self._sdk_client)
                 return self._sdk_client.post_order(signed, OrderType.GTC)
 
             resp = await asyncio.to_thread(
