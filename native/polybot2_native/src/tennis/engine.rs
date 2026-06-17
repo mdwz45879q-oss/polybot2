@@ -1027,6 +1027,9 @@ impl NativeTennisEngine {
                             }
                             self.has_set_handicap[gi] = true;
                         }
+                        "tennis_match_totals" | "tennis_first_set_totals" => {
+                            // Retirement-only: handled by retirement presign pool, no evaluator.
+                        }
                         other => {
                             eprintln!("[polybot2] WARN: unhandled tennis market type '{}' for game {}", other, uid);
                         }

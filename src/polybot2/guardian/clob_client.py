@@ -236,9 +236,8 @@ class ClobClient:
     ) -> dict[str, Any] | None:
         """Submit a GTC sell order at the given price.
 
-        Uses py_clob_client_v2 SDK for EIP-712 signing + submission.
-        Separates create_order + post_order for diagnostic visibility.
-        Fetches neg_risk and tick_size from the CLOB per condition_id.
+        Uses py_clob_client_v2 SDK for EIP-712 signing, then posts
+        directly via our own httpx client (bypasses SDK HTTP layer).
         Returns the response dict or None on failure.
         """
         if not self._sdk_client:
@@ -246,49 +245,78 @@ class ClobClient:
             return None
         try:
             import asyncio
-            from py_clob_client_v2 import OrderArgs, OrderType, PartialCreateOrderOptions, Side
+            import json
+            from py_clob_client_v2 import OrderArgs, PartialCreateOrderOptions, Side
+            from py_clob_client_v2.order_utils.model.order_data_v2 import order_to_json_v2
 
             neg_risk, tick_size = await self.get_market_info(condition_id) if condition_id else (True, "0.01")
 
-            order_args = OrderArgs(
-                token_id=token_id,
-                price=price,
-                size=size,
-                side=Side.SELL,
-            )
-            options = PartialCreateOrderOptions(neg_risk=neg_risk, tick_size=tick_size)
-
-            def _create_and_post() -> Any:
-                signed = self._sdk_client.create_order(order_args, options)
-                logger.info(
-                    "sell order signed: maker=%s signer=%s side=%s sigType=%s "
-                    "makerAmt=%s takerAmt=%s token=%s… ts=%s sig=%s…",
-                    getattr(signed, "maker", "?"),
-                    getattr(signed, "signer", "?"),
-                    getattr(signed, "side", "?"),
-                    getattr(signed, "signatureType", "?"),
-                    getattr(signed, "makerAmount", "?"),
-                    getattr(signed, "takerAmount", "?"),
-                    str(getattr(signed, "tokenId", ""))[:20],
-                    getattr(signed, "timestamp", "?"),
-                    str(getattr(signed, "signature", ""))[:40],
+            def _sign_order():
+                return self._sdk_client.create_order(
+                    OrderArgs(token_id=token_id, price=price, size=size, side=Side.SELL),
+                    PartialCreateOrderOptions(neg_risk=neg_risk, tick_size=tick_size),
                 )
-                _verify_signature_locally(signed, neg_risk, self._sdk_client)
-                return self._sdk_client.post_order(signed, OrderType.GTC)
 
-            resp = await asyncio.to_thread(
-                self._sdk_client._retry_on_version_update, _create_and_post,
-            )
+            signed = await asyncio.to_thread(_sign_order)
+
             logger.info(
-                "sell order submitted: token=%s… size=%.4f price=%.4f neg_risk=%s tick_size=%s resp=%s",
-                token_id[:20], size, price, neg_risk, tick_size, str(resp)[:200],
+                "sell order signed: maker=%s signer=%s side=%s sigType=%s "
+                "makerAmt=%s takerAmt=%s token=%s… ts=%s salt=%s",
+                signed.maker, signed.signer, int(signed.side),
+                int(signed.signatureType), signed.makerAmount,
+                signed.takerAmount, str(signed.tokenId)[:20],
+                signed.timestamp, signed.salt,
             )
-            return resp if isinstance(resp, dict) else {"raw": str(resp)}
+            _verify_signature_locally(signed, neg_risk, self._sdk_client)
+
+            owner = self._sdk_client.creds.api_key or ""
+            order_payload = order_to_json_v2(signed, owner, "GTC")
+            serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
+
+            logger.info("sell order JSON body (%d chars): %s", len(serialized), serialized[:500])
+
+            eoa = self._sdk_client.signer.address()
+            ts = int(time.time())
+            hmac_message = f"{ts}POST/order{serialized}"
+            hmac_sig = base64.urlsafe_b64encode(
+                hmac.new(self._decoded_secret, hmac_message.encode(), hashlib.sha256).digest()
+            ).decode()
+            headers = {
+                "POLY_ADDRESS": eoa,
+                "POLY_API_KEY": self._api_key,
+                "POLY_PASSPHRASE": self._passphrase,
+                "POLY_SIGNATURE": hmac_sig,
+                "POLY_TIMESTAMP": str(ts),
+                "Content-Type": "application/json",
+            }
+
+            url = self._host + "order"
+            resp = await self._client.post(url, content=serialized.encode("utf-8"), headers=headers)
+
+            if resp.status_code == 200:
+                result = resp.json()
+                logger.info(
+                    "sell order accepted: token=%s… size=%.4f price=%.4f resp=%s",
+                    token_id[:20], size, price, str(result)[:200],
+                )
+                return result if isinstance(result, dict) else {"raw": str(result)}
+
+            body = resp.text[:500]
+            logger.warning(
+                "sell order rejected: status=%d token=%s… size=%.4f price=%.4f body=%s",
+                resp.status_code, token_id[:20], size, price, body,
+            )
+            if "signature does not match" in body.lower():
+                logger.error(
+                    "POLY_1271 SIGNATURE REJECTED by CLOB: %s\n"
+                    "  neg_risk=%s tick_size=%s condition=%s…\n"
+                    "  maker=%s signer=%s eoa=%s",
+                    body, neg_risk, tick_size, condition_id[:16] if condition_id else "?",
+                    signed.maker, signed.signer, eoa,
+                )
+            return None
         except Exception as exc:
-            err_msg = str(exc)
-            logger.warning("sell order failed: token=%s… size=%.4f price=%.4f error=%s", token_id[:20], size, price, err_msg)
-            if "signature does not match" in err_msg.lower():
-                raise
+            logger.warning("sell order failed: token=%s… size=%.4f price=%.4f error=%s", token_id[:20], size, price, str(exc))
             return None
 
     async def cancel_order_by_id(self, order_id: str) -> bool:
