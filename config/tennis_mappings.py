@@ -3185,6 +3185,16 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Zhu, Michael"]},
         "pm_aliases": ["Michael Zhu"],
     },
+    "hsu, yu hsiou": {
+        "polymarket_code": "hsu",
+        "provider_aliases": {"kalstrop_v1": ["Hsu, Yu Hsiou"]},
+        "pm_aliases": ["Yu-Hsiou Hsu"],
+    },
+    "pegula, jessica": {
+        "polymarket_code": "pegula",
+        "provider_aliases": {"kalstrop_v1": ["Pegula, Jessica"]},
+        "pm_aliases": ["Jessica Pegula"],
+    },
 }
 
 
