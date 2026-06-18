@@ -113,12 +113,98 @@ class MarketSync:
         params: dict[str, Any] = {
             "active": "true",
             "closed": "false",
+            "order": "updatedAt",
+            "ascending": "true",
             "limit": self._batch_size,
             "offset": page_offset,
         }
         if extra_params:
             params.update(extra_params)
         return await self._fetch_page_with_retry(client, params)
+
+    async def _fetch_keyset_page(
+        self, client: httpx.AsyncClient, cursor: str | None,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Fetch one page from /events/keyset. Returns (events, next_cursor)."""
+        params: dict[str, Any] = {
+            "active": "true",
+            "closed": "false",
+            "limit": self._batch_size,
+        }
+        if cursor:
+            params["after_cursor"] = cursor
+        payload = await request_json_with_retry(
+            client=client,
+            method="GET",
+            url=f"{self._gamma_api}/events/keyset",
+            params=params,
+            max_retries=self._fetch_max_retries,
+            before_request=self._wait_for_request_slot,
+            logger=log,
+            log_context=f"keyset cursor={'...' + cursor[-20:] if cursor else 'start'}",
+            metrics=self._http_metrics,
+        )
+        if not isinstance(payload, dict):
+            return ([], "")
+        events = payload.get("events", [])
+        if not isinstance(events, list):
+            return ([], "")
+        next_cursor = str(payload.get("next_cursor", "") or "")
+        return (events, next_cursor)
+
+    async def _run_keyset_pass(
+        self,
+        client: httpx.AsyncClient,
+        label: str,
+        now_ts: int,
+        max_pages: int | None = None,
+        stage_metrics: dict[str, float] | None = None,
+    ) -> tuple[int, int, int]:
+        """Page through /events/keyset until exhausted. Returns (markets, pages, rows)."""
+        total_markets = 0
+        total_pages = 0
+        total_rows = 0
+        cursor: str | None = None
+        limit_pages = None if max_pages is None else max(1, int(max_pages))
+        progress = tqdm(
+            desc=f"Markets [{label}]",
+            unit="page",
+            dynamic_ncols=True,
+            leave=True,
+            disable=not sys.stderr.isatty(),
+        )
+        try:
+            while True:
+                if limit_pages is not None and total_pages >= limit_pages:
+                    break
+                fetch_started = time.perf_counter()
+                events, next_cursor = await self._fetch_keyset_page(client, cursor)
+                if stage_metrics is not None:
+                    stage_metrics["fetch_s"] = float(stage_metrics.get("fetch_s", 0.0)) + float(
+                        time.perf_counter() - fetch_started
+                    )
+                if not events:
+                    break
+                total_pages += 1
+                total_rows += len(events)
+                db_started = time.perf_counter()
+                _, market_n, _, _ = self._db.markets.upsert_from_gamma_events(
+                    events_data=events,
+                    updated_ts=now_ts,
+                )
+                if stage_metrics is not None:
+                    stage_metrics["db_upsert_s"] = float(stage_metrics.get("db_upsert_s", 0.0)) + float(
+                        time.perf_counter() - db_started
+                    )
+                total_markets += int(market_n)
+                progress.update(1)
+                progress.set_postfix(markets=total_markets, events=total_rows, refresh=False)
+                if not next_cursor or len(events) < self._batch_size:
+                    break
+                cursor = next_cursor
+        finally:
+            progress.close()
+        return (int(total_markets), int(total_pages), int(total_rows))
 
     async def _run_pass(
         self,
@@ -268,16 +354,13 @@ class MarketSync:
                 else:
                     log.info("Resolved pass skipped (--open-only)")
 
-                log.info("Open pass offset=0")
+                log.info("Open pass (keyset pagination)")
                 (
                     open_markets,
                     open_pages,
                     open_rows,
-                ) = await self._run_pass(
+                ) = await self._run_keyset_pass(
                     client,
-                    fetch_fn=self._fetch_page_open,
-                    start_offset=0,
-                    save_offset_fn=None,
                     label="open",
                     now_ts=now_ts,
                     max_pages=self._open_max_pages,
