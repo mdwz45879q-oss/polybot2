@@ -42,6 +42,7 @@ class CompiledMarket:
     line: float | None
     question: str
     targets: tuple[CompiledTarget, ...] = field(default_factory=tuple)
+    minimum_tick_size: float = 0.01
 
 
 @dataclass(frozen=True, slots=True)

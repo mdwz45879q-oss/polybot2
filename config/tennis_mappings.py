@@ -915,6 +915,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Huesler, Marc-Andrea"]},
         "pm_aliases": ["Marc-Andrea Huesler"],
     },
+    "huertas del pino, conner": {
+        "polymarket_code": "pino",
+        "provider_aliases": {"kalstrop_v1": ["Huertas Del Pino, Conner"]},
+        "pm_aliases": ["Conner Huertas Del Pino"],
+    },
     "humbert, ugo": {
         "polymarket_code": "humbert",
         "provider_aliases": {"kalstrop_v1": ["Humbert, Ugo"]},

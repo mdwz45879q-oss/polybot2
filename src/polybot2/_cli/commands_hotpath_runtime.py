@@ -105,27 +105,7 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
         return 1
 
 
-def _load_dotenv(logger: logging.Logger) -> None:
-    """Load .env file if present. Does not override existing env vars."""
-    from pathlib import Path
-    env_file = Path(".env")
-    if not env_file.exists():
-        return
-    loaded = 0
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-            loaded += 1
-    if loaded:
-        logger.info("loaded %d env vars from .env", loaded)
+from polybot2._cli.common import _load_dotenv
 
 
 def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
@@ -937,8 +917,135 @@ def run_hotpath_compile(args: Any, *, logger: logging.Logger) -> int:
     return 0
 
 
+def run_hotpath_launch(args: Any, *, logger: logging.Logger) -> int:
+    """Sync + link + launch hotpath in one step.
+
+    Runs: market sync → provider sync → link build → (confirm) → hotpath live.
+    """
+    _load_dotenv(logger)
+    runtime = _runtime_from_args(args)
+
+    # Resolve leagues (same logic as run_hotpath_live).
+    from polybot2.linking import load_mapping as _load_mapping
+    mapping = _load_mapping()
+    live_policy = load_live_trading_policy()
+
+    sport_arg = str(getattr(args, "sport", "") or "").strip().lower()
+    raw_leagues = getattr(args, "league", None) or []
+    if sport_arg and raw_leagues:
+        logger.error("cannot specify both --sport and --league")
+        return 1
+    if not sport_arg and not raw_leagues:
+        logger.error("one of --sport or --league is required")
+        return 1
+
+    if sport_arg:
+        league_keys = sorted(
+            lk for lk, cfg in mapping.leagues.items()
+            if cfg.get("sport_family") == sport_arg
+            and lk in live_policy.live_betting_leagues
+        )
+        gender_arg = str(getattr(args, "gender", "") or "").strip().lower()
+        if gender_arg:
+            league_keys = [
+                lk for lk in league_keys
+                if mapping.leagues.get(lk, {}).get("polymarket_league_code") == gender_arg
+            ]
+        if not league_keys:
+            logger.error("no live leagues for sport=%s gender=%s", sport_arg, gender_arg or "all")
+            return 1
+        logger.info("sport=%s gender=%s resolved to %d leagues", sport_arg, gender_arg or "all", len(league_keys))
+    else:
+        league_keys = [str(l).strip().lower() for l in raw_leagues]
+
+    # Determine providers needed.
+    providers = sorted({
+        _primary_provider_for_league(mapping.leagues.get(lk, {}))
+        for lk in league_keys
+    } - {""})
+
+    # Step 1: Market sync.
+    logger.info("step 1/4: market sync")
+    try:
+        from polybot2.data import MarketSync, MarketSyncConfig
+        import asyncio
+        import concurrent.futures
+        with open_database(runtime) as db:
+            sync = MarketSync(db=db, config=MarketSyncConfig(gamma_api=runtime.gamma_api, open_only=True, fast_mode=True))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                count = pool.submit(asyncio.run, sync.run()).result()
+            logger.info("  market sync complete: %d markets", int(count))
+    except Exception as exc:
+        logger.error("market sync failed: %s: %s", type(exc).__name__, exc)
+        return 1
+
+    # Step 2: Provider sync (only relevant providers).
+    logger.info("step 2/4: provider sync (%s)", ", ".join(providers))
+    try:
+        from polybot2.providers import sync_provider_games
+        with open_database(runtime) as db:
+            for p in providers:
+                res = sync_provider_games(db=db, provider=p)
+                if res.status != "ok":
+                    logger.error("  %s: failed (%s)", p, res.reason)
+                    return 1
+                logger.info("  %s: %d games", p, int(res.n_rows))
+    except Exception as exc:
+        logger.error("provider sync failed: %s: %s", type(exc).__name__, exc)
+        return 1
+
+    # Step 3: Link build.
+    logger.info("step 3/4: link build")
+    try:
+        from polybot2.linking import LinkService
+        pairs: list[tuple[str, str]] = []
+        for lk in league_keys:
+            league_cfg = mapping.leagues.get(lk, {})
+            raw_p = league_cfg.get("provider", "")
+            prov_list = list(raw_p) if isinstance(raw_p, list) else [raw_p] if raw_p else []
+            for p in prov_list:
+                p = str(p).strip()
+                if p:
+                    pairs.append((lk, p))
+        with open_database(runtime) as db:
+            svc = LinkService(db=db)
+            result = svc.build_links_multi(
+                league_provider_pairs=pairs,
+                mapping=mapping,
+                live_policy=live_policy,
+                league_scope="live",
+            )
+        logger.info(
+            "  linked %d games, %d targets (run_id=%d)",
+            int(result.n_games_linked), int(result.n_targets), int(result.run_id),
+        )
+        if result.n_games_linked == 0:
+            logger.warning("  no games linked — nothing to trade")
+    except Exception as exc:
+        logger.error("link build failed: %s: %s", type(exc).__name__, exc)
+        return 1
+
+    # Step 4: Confirm + start.
+    if not getattr(args, "yes", False):
+        try:
+            response = input(
+                f"\nStart hotpath with {result.n_games_linked} games, "
+                f"{result.n_targets} targets? [Y/n] "
+            ).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            logger.info("aborted")
+            return 0
+        if response and response != "y":
+            logger.info("aborted")
+            return 0
+
+    logger.info("step 4/4: starting hotpath")
+    return run_hotpath_live(args, logger=logger)
+
+
 __all__ = [
     "run_hotpath_compile",
+    "run_hotpath_launch",
     "run_hotpath_live",
     "run_hotpath_observe",
     "FastExecutionService",

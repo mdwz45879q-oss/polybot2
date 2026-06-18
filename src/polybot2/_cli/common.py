@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from typing import Any
 
 from polybot2.data import DataRuntimeConfig
@@ -41,6 +42,29 @@ def _int_or_none(value: Any) -> int | None:
 
 
 _VALID_PROVIDERS = {"boltodds", "kalstrop_v1", "kalstrop_v2", "kalstrop_opta", "pandascore"}
+
+
+def _load_dotenv(logger: logging.Logger) -> None:
+    """Load .env file if present. Does not override existing env vars."""
+    from pathlib import Path
+    env_file = Path(".env")
+    if not env_file.exists():
+        return
+    loaded = 0
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded += 1
+    if loaded:
+        logger.info("loaded %d env vars from .env", loaded)
 
 
 def _resolve_provider_name(
@@ -132,6 +156,8 @@ def _build_hotpath_template_orders(
                 token_id = str(target.token_id or "").strip()
                 if not token_id:
                     continue
+                cid = str(target.condition_id or "").strip()
+                ts = float(getattr(market, "minimum_tick_size", 0.01) or 0.01)
                 # Primary order
                 key = (
                     token_id,
@@ -152,8 +178,9 @@ def _build_hotpath_template_orders(
                             limit_price=float(policy.limit_price),
                             time_in_force=str(policy.time_in_force),
                             client_order_id=f"hp_template_{len(out) + 1}",
-                            condition_id=str(target.condition_id or ""),
+                            condition_id=cid,
                             size_shares=float(policy.size_shares),
+                            tick_size=ts,
                         )
                     )
                 # Secondary order (optional)
@@ -177,8 +204,9 @@ def _build_hotpath_template_orders(
                                 limit_price=float(policy.secondary_limit_price),
                                 time_in_force=str(policy.secondary_time_in_force),
                                 client_order_id=f"hp_template_{len(out) + 1}",
-                                condition_id=str(target.condition_id or ""),
+                                condition_id=cid,
                                 size_shares=float(policy.secondary_size_shares),
+                                tick_size=ts,
                             )
                         )
                 # Tertiary order (optional)
@@ -202,8 +230,9 @@ def _build_hotpath_template_orders(
                                 limit_price=float(policy.tertiary_limit_price),
                                 time_in_force=str(policy.tertiary_time_in_force),
                                 client_order_id=f"hp_template_{len(out) + 1}",
-                                condition_id=str(target.condition_id or ""),
+                                condition_id=cid,
                                 size_shares=float(policy.tertiary_size_shares),
+                                tick_size=ts,
                             )
                         )
     return out

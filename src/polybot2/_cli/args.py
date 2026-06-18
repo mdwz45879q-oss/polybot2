@@ -75,6 +75,30 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
                               help="Override submitter_core_idx from runtime policy")
     hotpath_live.add_argument("--db", type=str, default="")
 
+    hotpath_launch = hotpath_sub.add_parser("launch", help="Sync + link + launch hotpath in one step")
+    hotpath_launch.add_argument("--league", type=str, nargs="+", default=None,
+                                help="One or more league keys (e.g., epl laliga ucl)")
+    hotpath_launch.add_argument("--sport", type=str, default=None,
+                                choices=["soccer", "baseball", "tennis", "cs2", "moba"],
+                                help="Run all live leagues for a sport")
+    hotpath_launch.add_argument("--gender", type=str, default=None,
+                                choices=["atp", "wta"],
+                                help="Filter --sport tennis by gender (atp=men, wta=women)")
+    hotpath_launch.add_argument("--link-run-id", type=int, default=None,
+                                help="Link run ID (default: latest for the league)")
+    hotpath_launch.add_argument("--execution-mode", type=str, choices=["live", "paper"], required=True)
+    hotpath_launch.add_argument("--guardian-mode", type=str, choices=["live", "dry-run", "off"], default=None,
+                                help="Guardian mode (default: follows --execution-mode; 'off' disables guardian)")
+    hotpath_launch.add_argument("--refresh-interval", type=int, default=None,
+                                help="Seconds between plan refreshes (default: from config/live_trading.py, or 300)")
+    hotpath_launch.add_argument("--ws-core", type=int, default=None,
+                                help="Override ws_core_idx from runtime policy")
+    hotpath_launch.add_argument("--submitter-core", type=int, default=None,
+                                help="Override submitter_core_idx from runtime policy")
+    hotpath_launch.add_argument("--yes", "-y", action="store_true", default=False,
+                                help="Skip confirmation prompt")
+    hotpath_launch.add_argument("--db", type=str, default="")
+
     hotpath_observe = hotpath_sub.add_parser("observe", help="Live terminal scoreboard (reads JSONL log file)")
     hotpath_observe.add_argument("--log-file", type=str, default="", help="Path to hotpath JSONL log file (auto-discovers latest if omitted)")
     hotpath_observe.add_argument("--log-dir", type=str, default="", help="Directory to search for log files")

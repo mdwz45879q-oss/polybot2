@@ -8,6 +8,7 @@ pub(super) type CachedSigner = alloy::signers::local::PrivateKeySigner;
 use polymarket_client_sdk_v2::clob::types::{
     Amount as SdkAmount, OrderType as SdkOrderType, Side as SdkSide,
     SignatureType as SdkSignatureType, SignedOrder as SdkSignedOrder,
+    TickSize as SdkTickSize,
 };
 use polymarket_client_sdk_v2::clob::{Client as SdkClient, Config as SdkConfig};
 use polymarket_client_sdk_v2::types::{

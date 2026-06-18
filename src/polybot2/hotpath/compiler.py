@@ -641,7 +641,8 @@ def compile_hotpath_plan(
             m.question,
             m.line,
             m.slug,
-            tok.outcome_label
+            tok.outcome_label,
+            m.minimum_tick_size
         FROM link_run_market_targets t
         LEFT JOIN link_run_game_reviews gr
           ON gr.run_id = t.run_id
@@ -888,6 +889,8 @@ def compile_hotpath_plan(
             continue
 
         game_bucket = by_game.setdefault(gid, {"markets": {}, "meta": scope_meta[gid]})
+        mts_raw = row["minimum_tick_size"]
+        mts = float(mts_raw) if mts_raw is not None else 0.01
         market_bucket = game_bucket["markets"].setdefault(
             condition_id,
             {
@@ -897,6 +900,7 @@ def compile_hotpath_plan(
                 "sports_market_type": sports_market_type,
                 "line": line_val,
                 "question": question,
+                "minimum_tick_size": mts,
                 "targets": [],
             },
         )
@@ -983,6 +987,7 @@ def compile_hotpath_plan(
                     line=(None if market["line"] is None else float(market["line"])),
                     question=str(market["question"]),
                     targets=targets,
+                    minimum_tick_size=float(market.get("minimum_tick_size") or 0.01),
                 )
             )
 

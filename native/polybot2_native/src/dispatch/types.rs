@@ -19,6 +19,7 @@ pub(crate) struct OrderRequestData {
     pub(super) limit_price: f64,
     pub(super) time_in_force: OrderTimeInForce,
     pub(super) size_shares: f64,
+    pub(crate) tick_size: f64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -30,6 +31,8 @@ pub(crate) struct PresignTemplateData {
     pub(super) size_shares: Option<f64>,
     pub(super) limit_price: Option<f64>,
     pub(super) time_in_force: Option<String>,
+    #[serde(default)]
+    pub(super) tick_size: Option<f64>,
 }
 
 /// Inline-friendly batch of `(TargetIdx, PreparedOrderPayload)` pairs. With

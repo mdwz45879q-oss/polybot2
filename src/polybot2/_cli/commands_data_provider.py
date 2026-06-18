@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from polybot2._cli.common import _int_or_none
+from polybot2._cli.common import _load_dotenv
 from polybot2._cli.common import _runtime_from_args
 from polybot2.data import MarketSync as _MarketSync
 from polybot2.data import MarketSyncConfig
@@ -16,6 +17,7 @@ from polybot2.providers import sync_provider_games
 MarketSync = _MarketSync
 
 async def run_market_sync(args: Any, *, logger: logging.Logger) -> int:
+    _load_dotenv(logger)
     runtime = _runtime_from_args(args)
     batch_size = _int_or_none(getattr(args, "batch_size", None))
     concurrency = _int_or_none(getattr(args, "concurrency", None))
@@ -58,6 +60,7 @@ async def run_market_sync(args: Any, *, logger: logging.Logger) -> int:
 
 
 def run_provider_sync(args: Any, *, logger: logging.Logger) -> int:
+    _load_dotenv(logger)
     runtime = _runtime_from_args(args)
     explicit_list = getattr(args, "provider", []) or []
     explicit = [str(p).strip().lower() for p in explicit_list if str(p).strip()]

@@ -94,6 +94,7 @@ class OrderRequest:
     expire_ts: int | None = None
     condition_id: str = ""
     size_shares: float | None = None
+    tick_size: float = 0.01
 
     def __post_init__(self) -> None:
         if not str(self.token_id or "").strip():

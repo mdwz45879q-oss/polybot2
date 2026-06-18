@@ -226,17 +226,18 @@ def test_upsert_event_teams_replaces_rows_for_touched_event_only(tmp_path: Path)
 
 
 def test_schema_version_mismatch_still_requires_fresh_bootstrap(tmp_path: Path) -> None:
+    """A DB with a NEWER version than expected raises RuntimeError."""
     db_path = tmp_path / "db.sqlite"
     conn = sqlite3.connect(str(db_path))
     try:
         conn.execute("CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER PRIMARY KEY)")
         conn.execute("DELETE FROM _schema_version")
-        conn.execute("INSERT INTO _schema_version(version) VALUES (?)", (2,))
+        conn.execute("INSERT INTO _schema_version(version) VALUES (?)", (9999,))
         conn.commit()
     finally:
         conn.close()
 
     runtime = DataRuntimeConfig(db_path=str(db_path))
-    with pytest.raises(RuntimeError, match="Delete DB and re-bootstrap"):
+    with pytest.raises(RuntimeError, match="newer than expected"):
         with open_database(runtime) as db:
             db.execute("SELECT 1").fetchone()

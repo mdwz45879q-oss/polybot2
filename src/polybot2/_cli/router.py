@@ -9,7 +9,7 @@ from polybot2._cli.commands_data_provider import (
     run_market_sync,
     run_provider_sync,
 )
-from polybot2._cli.commands_hotpath_runtime import run_hotpath_compile, run_hotpath_live, run_hotpath_observe
+from polybot2._cli.commands_hotpath_runtime import run_hotpath_compile, run_hotpath_launch, run_hotpath_live, run_hotpath_observe
 from polybot2._cli.commands_link import run_link_build, run_link_review
 
 
@@ -23,6 +23,8 @@ async def dispatch(args: Any, *, logger: logging.Logger) -> int:
         return run_link_build(args, logger=logger)
     if cmd == "link" and str(getattr(args, "link_command", "")).strip().lower() == "review":
         return run_link_review(args, logger=logger)
+    if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "launch":
+        return run_hotpath_launch(args, logger=logger)
     if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "live":
         return run_hotpath_live(args, logger=logger)
     if cmd == "hotpath" and str(getattr(args, "hotpath_command", "")).strip().lower() == "observe":

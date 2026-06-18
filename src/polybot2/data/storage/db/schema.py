@@ -1,6 +1,6 @@
 """SQLite schema for polybot2."""
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS _schema_version (
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS pm_markets (
     volume                  REAL NOT NULL DEFAULT 0,
     end_date                TEXT NOT NULL DEFAULT '',
     end_ts_utc              INTEGER,
+    minimum_tick_size       REAL,
     updated_at              INTEGER NOT NULL DEFAULT 0
 );
 

@@ -817,6 +817,7 @@ fn live_fast_submit_single_min_notional_rejection() {
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::FAK,
             size_shares: 1.0,
+            tick_size: 0.01,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
@@ -859,6 +860,7 @@ fn live_fast_submit_single_fok_min_notional_rejection() {
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::FOK,
             size_shares: 1.0,
+            tick_size: 0.01,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
@@ -901,6 +903,7 @@ fn live_fast_submit_single_gtc_min_size_rejection() {
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::GTC,
             size_shares: 0.5,
+            tick_size: 0.01,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
@@ -945,6 +948,7 @@ fn live_order_to_wire_latency_estimate() {
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::FAK,
             size_shares: 1.0,
+            tick_size: 0.01,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
@@ -1052,6 +1056,7 @@ fn live_concurrent_submit_latency_estimate() {
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::FAK,
             size_shares: 1.0,
+            tick_size: 0.01,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");
@@ -1118,6 +1123,7 @@ fn live_fast_submit_batch_rejection() {
             limit_price: 0.5,
             time_in_force: OrderTimeInForce::FAK,
             size_shares: 1.0,
+            tick_size: 0.01,
         };
         let client_ref = sub.sdk_client_ref().expect("sdk client");
         let signer = sub.signer_ref().expect("signer");

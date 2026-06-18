@@ -215,6 +215,12 @@ class MarketsAdapter:
                 game_start_ts = self._parse_iso_ts(
                     str(market.get("gameStartTime") or market.get("game_start_time") or "")
                 )
+                mts_raw = (market.get("orderPriceMinTickSize")
+                           or market.get("minimumTickSize")
+                           or market.get("minimum_tick_size")
+                           or market.get("mts"))
+                mts_val = self._to_optional_float(mts_raw)
+
                 market_rows.append(
                     (
                         condition_id,
@@ -232,6 +238,7 @@ class MarketsAdapter:
                         self._to_float(market.get("volume")),
                         end_date,
                         self._parse_iso_ts(end_date),
+                        mts_val,
                         int(updated_ts),
                     )
                 )
@@ -331,27 +338,16 @@ class MarketsAdapter:
         normalized_rows: list[tuple[Any, ...]] = []
         for row in rows:
             vals = tuple(row)
-            if len(vals) == 16:
+            if len(vals) == 17:
                 normalized_rows.append(vals)
                 continue
+            if len(vals) == 16:
+                # Pre-v8 format without minimum_tick_size
+                normalized_rows.append(vals[:15] + (None, vals[15]))
+                continue
             if len(vals) == 19:
-                # Old format with payload columns — strip them
-                normalized_rows.append(vals[:15] + (vals[18],))
-                continue
-            if len(vals) == 17:
-                # Old test format without event_start/game_start but with payload cols:
-                # (cid, mid, eid, q, qid, slug, smt, line, resolved, res_val, vol, end_date, end_ts, sha, ref, size, ts)
-                normalized_rows.append(
-                    (vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7],
-                     None, None, vals[8], vals[9], vals[10], vals[11], vals[12], vals[16])
-                )
-                continue
-            if len(vals) == 14:
-                # Minimal test format: (cid, mid, eid, q, qid, slug, smt, line, resolved, res_val, vol, end_date, end_ts, ts)
-                normalized_rows.append(
-                    (vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7],
-                     None, None, vals[8], vals[9], vals[10], vals[11], vals[12], vals[13])
-                )
+                # Old test format with extra payload columns — strip to 17
+                normalized_rows.append(vals[:15] + (None, vals[18]))
                 continue
             raise ValueError(f"pm_markets row has unsupported length: {len(vals)}")
         bs = max(1, int(self._db._infra.db_batch_size))
@@ -361,8 +357,8 @@ class MarketsAdapter:
                 INSERT OR REPLACE INTO pm_markets
                 (condition_id, market_id, event_id, question, question_id, slug, sports_market_type, line,
                  event_start_ts_utc, game_start_ts_utc, resolved, resolution_value,
-                 volume, end_date, end_ts_utc, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 volume, end_date, end_ts_utc, minimum_tick_size, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 normalized_rows[i : i + bs],
             )

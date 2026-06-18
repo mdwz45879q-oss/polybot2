@@ -62,6 +62,7 @@ impl DispatchHandle {
                 .size_shares
                 .filter(|v| *v > 0.0)
                 .unwrap_or_else(|| if amount_usdc > 0.0 { amount_usdc / price } else { 0.0 }),
+            tick_size: template.tick_size.unwrap_or(0.01),
         })
     }
 
@@ -232,84 +233,44 @@ pub(crate) async fn warm_presign_startup_into(
     let warmup_start = std::time::Instant::now();
     let n_orders = key_work.len();
 
-    // ── Phase 1: Prime SDK caches (GET /tick-size + GET /version) ──
+    // ── Phase 1: Prime SDK tick-size cache from template data ──
     //
-    // The SDK's .build() calls GET /tick-size per unique token_id and
-    // GET /version once. These are cached after the first call, but the
-    // first call per token hits the network. With 700+ tokens, concurrent
-    // requests trigger Cloudflare 429s regardless of semaphore tuning.
-    //
-    // Fix: sequential rate-limited fetching. One request every
-    // TICK_SIZE_INTERVAL_MS milliseconds. At 15 req/s, 700 tokens = ~47s,
-    // 1000 tokens = ~67s. Predictable, never triggers 429s, scales linearly.
+    // Tick sizes are fetched by Python from /clob-markets/{condition_id}
+    // (fast, ~37ms each) and passed through in the template JSON.
+    // We just insert them into the SDK cache so .build() never hits
+    // the degraded /tick-size endpoint (~9s per call).
     {
-        let mut unique_tokens: Vec<SdkU256> = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for (_, tpl) in &key_work {
-            if seen.insert(tpl.token_id.clone()) {
-                if let Ok(tid) = parse_sdk_token_id(tpl.token_id.as_str()) {
-                    unique_tokens.push(tid);
-                }
-            }
-        }
-
-        const TICK_SIZE_RATE_PER_SEC: u64 = 15;
-        const TICK_SIZE_INTERVAL_MS: u64 = 1000 / TICK_SIZE_RATE_PER_SEC;
-        const MAX_RETRIES: usize = 3;
-
+        let mut cache_ok = 0usize;
         let mut cache_errs = 0usize;
-        let n_tokens = unique_tokens.len();
 
-        for (i, tid) in unique_tokens.into_iter().enumerate() {
-            if i > 0 {
-                tokio::time::sleep(Duration::from_millis(TICK_SIZE_INTERVAL_MS)).await;
+        for (_, tpl) in &key_work {
+            if !seen.insert(tpl.token_id.clone()) {
+                continue;
             }
-
-            let mut last_err = None;
-            for attempt in 0..=MAX_RETRIES {
-                if attempt > 0 {
-                    tokio::time::sleep(Duration::from_millis(500 * (1u64 << attempt))).await;
+            let tid = match parse_sdk_token_id(tpl.token_id.as_str()) {
+                Ok(t) => t,
+                Err(_) => {
+                    cache_errs += 1;
+                    continue;
                 }
-                match client.tick_size(tid).await {
-                    Ok(_) => {
-                        last_err = None;
-                        break;
-                    }
-                    Err(e) => {
-                        let msg = format!("{}", e);
-                        if msg.contains("429") {
-                            last_err = Some(msg);
-                            continue;
-                        }
-                        eprintln!(
-                            "[presign] tick-size error for token {}/{}: {}",
-                            i + 1,
-                            n_tokens,
-                            e
-                        );
-                        cache_errs += 1;
-                        last_err = None;
-                        break;
-                    }
+            };
+            let dec = SdkDecimal::try_from(tpl.tick_size).unwrap_or(SdkDecimal::new(1, 2));
+            match SdkTickSize::try_from(dec) {
+                Ok(ts) => {
+                    client.set_tick_size(tid, ts);
+                    cache_ok += 1;
                 }
-            }
-            if let Some(err) = last_err {
-                eprintln!(
-                    "[presign] tick-size retries exhausted for token {}/{}: {}",
-                    i + 1,
-                    n_tokens,
-                    err
-                );
-                cache_errs += 1;
-            }
-
-            if (i + 1) % 100 == 0 || i + 1 == n_tokens {
-                eprintln!(
-                    "[presign] tick-size progress: {}/{} ({}ms elapsed)",
-                    i + 1,
-                    n_tokens,
-                    warmup_start.elapsed().as_millis()
-                );
+                Err(_) => {
+                    eprintln!(
+                        "[presign] unknown tick_size {} for token {}…, defaulting to 0.01",
+                        tpl.tick_size,
+                        &tpl.token_id[..tpl.token_id.len().min(20)],
+                    );
+                    let fallback = SdkTickSize::try_from(SdkDecimal::new(1, 2)).unwrap();
+                    client.set_tick_size(tid, fallback);
+                    cache_ok += 1;
+                }
             }
         }
 
@@ -320,7 +281,7 @@ pub(crate) async fn warm_presign_startup_into(
             cache_ms,
             cache_errs,
         );
-        if cache_errs > 0 {
+        if cache_errs > 0 && cache_ok == 0 {
             return Err(format!(
                 "presign_cache_warm_failed:{}_of_{}_tokens_failed",
                 cache_errs,
