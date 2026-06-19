@@ -917,7 +917,7 @@ PLAYER_MAP_TENNIS = {
     },
     "huertas del pino, conner": {
         "polymarket_code": "pino",
-        "provider_aliases": {"kalstrop_v1": ["Huertas Del Pino, Conner"]},
+        "provider_aliases": {"kalstrop_v1": ["Huertas Del Pino, Conner", "Huertas Del Pino, Connor"]},
         "pm_aliases": ["Conner Huertas Del Pino"],
     },
     "humbert, ugo": {

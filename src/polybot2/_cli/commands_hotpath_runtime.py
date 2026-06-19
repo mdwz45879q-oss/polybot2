@@ -958,11 +958,17 @@ def run_hotpath_launch(args: Any, *, logger: logging.Logger) -> int:
     else:
         league_keys = [str(l).strip().lower() for l in raw_leagues]
 
-    # Determine providers needed.
+    # Determine providers needed (all providers, not just primary).
     providers = sorted({
-        _primary_provider_for_league(mapping.leagues.get(lk, {}))
+        str(p).strip().lower()
         for lk in league_keys
-    } - {""})
+        for p in (
+            mapping.leagues.get(lk, {}).get("provider", [])
+            if isinstance(mapping.leagues.get(lk, {}).get("provider"), list)
+            else [mapping.leagues.get(lk, {}).get("provider", "")]
+        )
+        if str(p).strip()
+    })
 
     # Step 1: Market sync.
     logger.info("step 1/4: market sync")
