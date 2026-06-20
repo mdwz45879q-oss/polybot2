@@ -268,6 +268,7 @@ LEAGUE_MATCH_RULES = {
     "default":{
         "date_tolerance_days": 0,
         "kickoff_tolerance_minutes": 240,
+        "wide_kickoff_tolerance_minutes": 2880,
         "provider_order_reliable": False,
         "pm_order_reliable": True,
     },

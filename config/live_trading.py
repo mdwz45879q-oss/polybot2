@@ -193,11 +193,11 @@ HOTPATH_EXECUTION_POLICY = {
                     },
     },
     "tennis": {
-        "size_shares": 3750.0,
+        "size_shares": 4250.0,
         "time_in_force": "GTC",
         "require_presign": True,
         "limit_price": 0.99,
-        "secondary_amount_usdc": 3750.0,
+        "secondary_amount_usdc": 4250.0,
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "market_overrides": {

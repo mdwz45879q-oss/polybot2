@@ -55,6 +55,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Anisimova, Amanda"]},
         "pm_aliases": ["Amanda Anisimova"],
     },
+    "appleton, emily": {
+        "polymarket_code": "appleto",
+        "provider_aliases": {"kalstrop_v1": ["Appleton, Emily"]},
+        "pm_aliases": ["Emily Appleton"],
+    },
     "arango, emiliana": {
         "polymarket_code": "arango",
         "provider_aliases": {"kalstrop_v1": ["Arango, Emiliana"]},
@@ -159,6 +164,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "bax",
         "provider_aliases": {"kalstrop_v1": ["Bax, Florent"]},
         "pm_aliases": ["Florent Bax"],
+    },
+    "begu, irina-camelia": {
+        "polymarket_code": "begu",
+        "provider_aliases": {"kalstrop_v1": ["Begu, Irina-Camelia"]},
+        "pm_aliases": ["Irina-Camelia Begu"],
     },
     "bejlek, sara": {
         "polymarket_code": "bejlek",
@@ -379,6 +389,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "casanov",
         "provider_aliases": {"kalstrop_v1": ["Casanova, Hernan"]},
         "pm_aliases": ["Hernan Casanova"],
+    },
+    "cassone, murphy": {
+        "polymarket_code": "cassone",
+        "provider_aliases": {"kalstrop_v1": ["Cassone, Murphy"]},
+        "pm_aliases": ["Murphy Cassone"],
     },
     "ceban, mark": {
         "polymarket_code": "_unknown",
@@ -775,6 +790,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Gentzsch, Tom"]},
         "pm_aliases": ["Tom Gentzsch"],
     },
+    "ghibaudo, antoine": {
+        "polymarket_code": "ghibaud",
+        "provider_aliases": {"kalstrop_v1": ["Ghibaudo, Antoine"]},
+        "pm_aliases": ["Antoine Ghibaudo"],
+    },
     "gibson, talia": {
         "polymarket_code": "gibson",
         "provider_aliases": {"kalstrop_v1": ["Gibson, Talia"]},
@@ -979,6 +999,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "jodar",
         "provider_aliases": {"kalstrop_v1": ["Jodar, Rafael"]},
         "pm_aliases": ["Rafael Jodar"],
+    },
+    "johnson, sofia": {
+        "polymarket_code": "johnson",
+        "provider_aliases": {"kalstrop_v1": ["Johnson, Sofia"]},
+        "pm_aliases": ["Sofia Johnson"],
     },
     "joint, maya": {
         "polymarket_code": "joint",
@@ -2002,7 +2027,7 @@ PLAYER_MAP_TENNIS = {
     },
     "shevchenko, alexander": {
         "polymarket_code": "shevche",
-        "provider_aliases": {"kalstrop_v1": ["Shevchenko, Alexander"]},
+        "provider_aliases": {"kalstrop_v1": ["Shevchenko, Alexander", "Shevchenko, Aleksandr"]},
         "pm_aliases": ["Alexander Shevchenko"],
     },
     "shick, braden": {
@@ -2175,6 +2200,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Tabur, Clement"]},
         "pm_aliases": ["Clement Tabur"],
     },
+    "tagger, lilli": {
+        "polymarket_code": "tagger",
+        "provider_aliases": {"kalstrop_v1": ["Tagger, Lilli"]},
+        "pm_aliases": ["Lilli Tagger"],
+    },
     "tan, harmony": {
         "polymarket_code": "tan",
         "provider_aliases": {"kalstrop_v1": ["Tan, Harmony"]},
@@ -2199,6 +2229,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "teichma",
         "provider_aliases": {"kalstrop_v1": ["Teichmann, Jil"]},
         "pm_aliases": ["Jil Teichmann"],
+    },
+    "thamm, mariella": {
+        "polymarket_code": "thamm",
+        "provider_aliases": {"kalstrop_v1": ["Thamm, Mariella"]},
+        "pm_aliases": ["Mariella Thamm"],
     },
     "tiafoe, frances": {
         "polymarket_code": "tiafoe",
@@ -2249,6 +2284,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "torres",
         "provider_aliases": {"kalstrop_v1": ["Torres, Juan Bautista"]},
         "pm_aliases": ["Juan Bautista Torres"],
+    },
+    "townsend, taylor": {
+        "polymarket_code": "townsen",
+        "provider_aliases": {"kalstrop_v1": ["Townsend, Taylor"]},
+        "pm_aliases": ["Taylor Townsend"],
     },
     "trevisan, martina": {
         "polymarket_code": "trevisa",
@@ -2422,7 +2462,7 @@ PLAYER_MAP_TENNIS = {
     },
     "xu, mingge": {
         "polymarket_code": "xu",
-        "provider_aliases": {"kalstrop_v1": ["Xu, Mingge"]},
+        "provider_aliases": {"kalstrop_v1": ["Xu, Mingge", "Xu, Mimi"]},
         "pm_aliases": ["Mingge Xu"],
     },
     "yastremska, dayana": {
@@ -2444,6 +2484,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "yuan",
         "provider_aliases": {"kalstrop_v1": ["Yuan, Yue"]},
         "pm_aliases": ["Yue Yuan"],
+    },
+    "zakharova, anastasia": {
+        "polymarket_code": "zakharo",
+        "provider_aliases": {"kalstrop_v1": ["Zakharova, Anastasia"]},
+        "pm_aliases": ["Anastasia Zakharova"],
     },
     "zarate, carlos maria": {
         "polymarket_code": "zarate",
@@ -2745,6 +2790,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Serban, Raluca Georgiana"]},
         "pm_aliases": ["Raluca Serban"],
     },
+    "sesko, ziga": {
+        "polymarket_code": "sesko",
+        "provider_aliases": {"kalstrop_v1": ["Sesko, Ziga"]},
+        "pm_aliases": ["Ziga Sesko"],
+    },
     "smith, colton": {
         "polymarket_code": "smith",
         "provider_aliases": {"kalstrop_v1": ["Smith, Colton"]},
@@ -2774,6 +2824,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Wallin, Olle"]},
         "pm_aliases": ["Olle Wallin"],
+    },
+    "waltert, simona": {
+        "polymarket_code": "waltert",
+        "provider_aliases": {"kalstrop_v1": ["Waltert, Simona"]},
+        "pm_aliases": ["Simona Waltert"],
     },
     "yaneva, elizara": {
         "polymarket_code": "yaneva",
@@ -3120,6 +3175,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Soto, Matias"]},
         "pm_aliases": ["Matias Soto"],
     },
+    "spink, indianna": {
+        "polymarket_code": "spink",
+        "provider_aliases": {"kalstrop_v1": ["Spink, Indianna"]},
+        "pm_aliases": ["Indianna Spink"],
+    },
     "squire, henri": {
         "polymarket_code": "squire",
         "provider_aliases": {"kalstrop_v1": ["Squire, Henri"]},
@@ -3374,5 +3434,25 @@ TENNIS_LEAGUES = {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp challenger dublin"],
         "boltodds_aliases": ["challenger dublin - tennis"],
+    },
+    "mallorca_m": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp mallorca"],
+        "boltodds_aliases": ["atp mallorca - tennis"],
+    },
+    "eastbourne_m": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp eastbourne"],
+        "boltodds_aliases": ["atp eastbourne - tennis"],
+    },
+    "eastbourne_w": {
+        "polymarket_league_code": "wta",
+        "v1_aliases": ["wta eastbourne"],
+        "boltodds_aliases": ["wta eastbourne - tennis"],
+    },
+    "bad_homburg_w": {
+        "polymarket_league_code": "wta",
+        "v1_aliases": ["wta bad homburg"],
+        "boltodds_aliases": ["wta bad homburg - tennis"],
     },
 }
