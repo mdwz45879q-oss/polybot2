@@ -3280,11 +3280,6 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp challenger birmingham"],
         "boltodds_aliases": ["challenger birmingham - tennis"],
     },
-    "birmw": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k birmingham"],
-        "boltodds_aliases": ["wta birmingham - tennis"],
-    },
     "tyler": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp challenger tyler"],
@@ -3310,21 +3305,6 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp challenger prostejov"],
         "boltodds_aliases": ["challenger prostejov - tennis"],
     },
-    "foggia": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k foggia"],
-        "boltodds_aliases": ["wta foggia - tennis"],
-    },
-    "makarska": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k makarska"],
-        "boltodds_aliases": ["wta makarska - tennis"],
-    },
-    "queen": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta london"],
-        "boltodds_aliases": ["wta london - tennis"],
-    },
     "stuttgart": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp stuttgart"],
@@ -3335,25 +3315,10 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp s-hertogenbosch"],
         "boltodds_aliases": ["atp s-hertogenbosch - tennis", "atp hertogenbosch - tennis"],
     },
-    "libema_w": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta s-hertogenbosch"],
-        "boltodds_aliases": ["wta s-hertogenbosch - tennis"],
-    },
-    "modena": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k modena"],
-        "boltodds_aliases": ["wta modena - tennis"],
-    },
     "bratislava": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp challenger bratislava"],
         "boltodds_aliases": ["challenger bratislava - tennis"],
-    },
-    "ilkley_w": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k ilkley"],
-        "boltodds_aliases": ["wta ilkley - tennis"],
     },
     "cattolica": {
         "polymarket_league_code": "atp",
@@ -3385,16 +3350,6 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp london"],
         "boltodds_aliases": ["atp london - tennis"],
     },
-    "berlin_w": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["berlin"],
-        "boltodds_aliases": ["berlin - tennis", "wta berlin - tennis"],
-    },
-    "nott_w": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta nottingham"],
-        "boltodds_aliases": ["wta nottingham - tennis"],
-    },
     "nott_m": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp challenger nottingham 2"],
@@ -3420,16 +3375,6 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp challenger poznan"],
         "boltodds_aliases": ["challenger poznan - tennis"],
     },
-    "brescia": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k brescia"],
-        "boltodds_aliases": ["wta brescia - tennis"],
-    },
-    "foz": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta 125k figueira da foz"],
-        "boltodds_aliases": ["wta figueira da foz - tennis"],
-    },
     "dublin": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp challenger dublin"],
@@ -3444,15 +3389,5 @@ TENNIS_LEAGUES = {
         "polymarket_league_code": "atp",
         "v1_aliases": ["atp eastbourne"],
         "boltodds_aliases": ["atp eastbourne - tennis"],
-    },
-    "eastbourne_w": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta eastbourne"],
-        "boltodds_aliases": ["wta eastbourne - tennis"],
-    },
-    "bad_homburg_w": {
-        "polymarket_league_code": "wta",
-        "v1_aliases": ["wta bad homburg"],
-        "boltodds_aliases": ["wta bad homburg - tennis"],
     },
 }

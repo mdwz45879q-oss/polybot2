@@ -10,7 +10,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "ari",
             "provider_aliases": {
                 "kalstrop_v1": ['arizona diamondbacks',],
-                "boltodds": ['ari diamondbacks', 'arizona diamondbacks'],
+                "boltodds": ['ari diamondbacks',],
             },
     },
     # Atlanta Braves
@@ -18,7 +18,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "atl",
             "provider_aliases": {
                 "kalstrop_v1": ['atlanta braves',],
-                "boltodds": ['atl braves', 'atlanta braves'],
+                "boltodds": ['atl braves',],
             },
     },
     # Baltimore Orioles
@@ -26,7 +26,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "bal",
             "provider_aliases": {
                 "kalstrop_v1": ['baltimore orioles',],
-                "boltodds": ['bal orioles', 'baltimore orioles'],
+                "boltodds": ['bal orioles',],
             },
     },
     # Boston Red Sox
@@ -34,7 +34,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "bos",
             "provider_aliases": {
                 "kalstrop_v1": ['boston red sox',],
-                "boltodds": ['bos red sox', 'boston red sox',],
+                "boltodds": ['bos red sox',],
             },
     },
     # Chicago Cubs
@@ -42,7 +42,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "chc",
             "provider_aliases": {
                 "kalstrop_v1": ['chicago cubs',],
-                "boltodds": ['chi cubs', 'chicago cubs',],
+                "boltodds": ['chi cubs',],
             },
     },
     # Chicago White Sox
@@ -50,7 +50,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "cws",
             "provider_aliases": {
                 "kalstrop_v1": ['chicago white sox',],
-                "boltodds": ['chi white sox', 'chicago white sox',],
+                "boltodds": ['chi white sox',],
             },
     },
     # Cincinnati Reds
@@ -58,7 +58,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "cin",
             "provider_aliases": {
                 "kalstrop_v1": ['cincinnati reds',],
-                "boltodds": ['cin reds', 'cincinnati reds',],
+                "boltodds": ['cin reds',],
             },
     },
     # Cleveland Guardians
@@ -66,7 +66,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "cle",
             "provider_aliases": {
                 "kalstrop_v1": ['cleveland guardians'],
-                "boltodds": ['cle guardians', 'cleveland guardians',],
+                "boltodds": ['cle guardians',],
             },
     },
     # Colorado Rockies
@@ -74,7 +74,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "col",
             "provider_aliases": {
                 "kalstrop_v1": ['colorado rockies',],
-                "boltodds": ['col rockies', 'colorado rockies',],
+                "boltodds": ['col rockies',],
             },
     },
     # Detroit Tigers
@@ -82,7 +82,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "det",
             "provider_aliases": {
                 "kalstrop_v1": ['detroit tigers',],
-                "boltodds": ['det tigers', 'detroit tigers',],
+                "boltodds": ['det tigers',],
             },
     },
     # Houston Astros
@@ -90,7 +90,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "hou",
             "provider_aliases": {
                 "kalstrop_v1": ['houston astros',],
-                "boltodds": ['hou astros', 'houston astros',],
+                "boltodds": ['hou astros',],
             },
     },
     # Kansas City Royals
@@ -98,7 +98,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "kc",
             "provider_aliases": {
                 "kalstrop_v1": ['kansas city royals',],
-                "boltodds": ['kansas city royals', 'kc royals',],
+                "boltodds": ['kc royals',],
             },
     },
     # Los Angeles Angels
@@ -106,7 +106,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "laa",
             "provider_aliases": {
                 "kalstrop_v1": ['los angeles angels',],
-                "boltodds": ['la angels', 'los angeles angels',],
+                "boltodds": ['la angels',],
             },
     },
     # Los Angeles Dodgers
@@ -114,7 +114,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "lad",
             "provider_aliases": {
                 "kalstrop_v1": ['los angeles dodgers',],
-                "boltodds": ['la dodgers', 'los angeles dodgers',],
+                "boltodds": ['la dodgers',],
             },
     },
     # Miami Marlins
@@ -122,7 +122,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "mia",
             "provider_aliases": {
                 "kalstrop_v1": ['miami marlins',],
-                "boltodds": ['mia marlins', 'miami marlins',],
+                "boltodds": ['mia marlins',],
             },
     },
     # Milwaukee Brewers
@@ -130,7 +130,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "mil",
             "provider_aliases": {
                 "kalstrop_v1": ['milwaukee brewers',],
-                "boltodds": ['mil brewers', 'milwaukee brewers',],
+                "boltodds": ['mil brewers',],
             },
     },
     # Minnesota Twins
@@ -138,7 +138,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "min",
             "provider_aliases": {
                 "kalstrop_v1": ['minnesota twins',],
-                "boltodds": ['min twins', 'minnesota twins',],
+                "boltodds": ['min twins',],
             },
     },
     # New York Mets
@@ -146,7 +146,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "nym",
             "provider_aliases": {
                 "kalstrop_v1": ['new york mets',],
-                "boltodds": [ 'new york mets', 'ny mets',],
+                "boltodds": ['ny mets',],
             },
     },
     # New York Yankees
@@ -154,7 +154,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "nyy",
             "provider_aliases": {
                 "kalstrop_v1": ['new york yankees',],
-                "boltodds": ['new york yankees', 'ny yankees',],
+                "boltodds": ['ny yankees',],
             },
     },
     # Oakland Athletics (Kalshi uses "ATH" not "OAK")
@@ -162,7 +162,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "oak",
             "provider_aliases": {
                 "kalstrop_v1": ['athletics',],
-                "boltodds": ['oakland athletics', 'athletics'],
+                "boltodds": ['athletics'],
             },
     },
     # Philadelphia Phillies
@@ -170,7 +170,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "phi",
             "provider_aliases": {
                 "kalstrop_v1": ['philadelphia phillies',],
-                "boltodds": ['phi phillies', 'philadelphia phillies',],
+                "boltodds": ['phi phillies',],
             },
     },
     # Pittsburgh Pirates
@@ -178,7 +178,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "pit",
             "provider_aliases": {
                 "kalstrop_v1": ['pittsburgh pirates',],
-                "boltodds": ['pit pirates', 'pittsburgh pirates',],
+                "boltodds": ['pit pirates',],
             },
     },
     # San Diego Padres (Kalshi uses "SD" not "SDP")
@@ -186,7 +186,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "sd",
             "provider_aliases": {
                 "kalstrop_v1": ['san diego padres',],
-                "boltodds": ['san diego padres', 'sd padres',],
+                "boltodds": ['sd padres',],
             },
     },
     # San Francisco Giants (Kalshi uses "SF" not "SFG")
@@ -194,7 +194,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "sf",
             "provider_aliases": {
                 "kalstrop_v1": ['san francisco giants',],
-                "boltodds": ['san francisco giants', 'sf giants',],
+                "boltodds": ['sf giants',],
             },
     },
     # Seattle Mariners
@@ -202,7 +202,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "sea",
             "provider_aliases": {
                 "kalstrop_v1": ['seattle mariners',],
-                "boltodds": ['sea mariners', 'seattle mariners',],
+                "boltodds": ['sea mariners',],
             },
     },
     # St. Louis Cardinals
@@ -210,7 +210,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "stl",
             "provider_aliases": {
                 "kalstrop_v1": ['st. louis cardinals',],
-                "boltodds": ['st louis cardinals', 'stl cardinals',],
+                "boltodds": ['stl cardinals',],
             },
     },
     # Tampa Bay Rays
@@ -218,7 +218,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "tb",
             "provider_aliases": {
                 "kalstrop_v1": ['tampa bay rays',],
-                "boltodds": ['tampa bay rays', 'tb rays',],
+                "boltodds": ['tb rays',],
             },
     },
     # Texas Rangers
@@ -226,7 +226,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "tex",
             "provider_aliases": {
                 "kalstrop_v1": ['texas rangers',],
-                "boltodds": ['tex rangers', 'texas rangers',],
+                "boltodds": ['tex rangers',],
             },
     },
     # Toronto Blue Jays
@@ -234,7 +234,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "tor",
             "provider_aliases": {
                 "kalstrop_v1": ['toronto blue jays',],
-                "boltodds": ['tor blue jays', 'toronto blue jays',],
+                "boltodds": ['tor blue jays',],
             },
     },
     # Washington Nationals
@@ -242,7 +242,7 @@ TEAM_MAP_MLB = {
             "polymarket_code": "wsh",
             "provider_aliases": {
                 "kalstrop_v1": ['washington nationals',],
-                "boltodds": ['was nationals', 'washington nationals'],
+                "boltodds": ['was nationals',],
             },
     },
 }
