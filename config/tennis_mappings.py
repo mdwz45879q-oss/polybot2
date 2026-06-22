@@ -2510,11 +2510,6 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Vidmanova, Darja"]},
         "pm_aliases": ["Darja Vidmanova"],
     },
-    "villalon, nicolas": {
-        "polymarket_code": "villalo",
-        "provider_aliases": {"kalstrop_v1": ["Villalon, Nicolas"]},
-        "pm_aliases": ["Nicolas Villalon"],
-    },
     "virtanen, otto": {
         "polymarket_code": "virtane",
         "provider_aliases": {"kalstrop_v1": ["Virtanen, Otto"]},
