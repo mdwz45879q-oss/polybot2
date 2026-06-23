@@ -216,6 +216,30 @@ HOTPATH_EXECUTION_POLICY = {
         },
 
     },
+    "wimbledon_qual_w": {
+        "size_shares": 1500.0,
+        "time_in_force": "GTC",
+        "require_presign": True,
+        "limit_price": 0.99,
+        "secondary_amount_usdc": 1500.0,
+        "secondary_time_in_force": "FAK",
+        "secondary_limit_price": 0.99,
+        "market_overrides": {
+	    # "tennis_set_totals": {"size_shares": 5.0, "limit_price": 0.99,
+        #                "secondary_amount_usdc": 5.0, "secondary_limit_price": 0.99,},
+        "tennis_set_handicap": {"size_shares": 500.0, "limit_price": 0.99,
+                       "secondary_amount_usdc": 500.0, "secondary_limit_price": 0.99,},
+        },
+        "retirement": {
+            "size_shares": 100.0,
+            "time_in_force": "GTC",
+            "limit_price": 0.49,
+            "secondary_amount_usdc": 100.0,
+            "secondary_time_in_force": "FAK",
+            "secondary_limit_price": 0.49,
+        },
+
+    },
     "cs2":{
         "size_shares": 5.0,
         "time_in_force": "GTC",
