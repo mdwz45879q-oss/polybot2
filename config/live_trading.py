@@ -108,10 +108,10 @@ HOTPATH_EXECUTION_POLICY = {
         "baseball_game_extra_innings":{"size_shares": 100.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 100.0, "secondary_limit_price": 0.99,},
         # F5 TOTALS SIMILAR TO REGULAR TOTALS
-        "baseball_team_first_five_total:over": {"size_shares": 5.0, "limit_price": 0.99,
-                    "secondary_amount_usdc": 5.0, "secondary_limit_price": 0.99,},
-        "baseball_team_first_five_total:under": {"size_shares": 100.0, "limit_price": 0.99,
-                    "secondary_amount_usdc": 100.0, "secondary_limit_price": 0.99,},
+        "baseball_team_first_five_total:over": {"size_shares": 25.0, "limit_price": 0.99,
+                    "secondary_amount_usdc": 1000.0, "secondary_limit_price": 0.99,},
+        "baseball_team_first_five_total:under": {"size_shares": 1000.0, "limit_price": 0.99,
+                    "secondary_amount_usdc": 1000.0, "secondary_limit_price": 0.99,},
         },
     },
     "fifwc": {
