@@ -166,7 +166,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Nishesh Basavareddy"],
     },
     "basilashvili, nikoloz": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "basilas",
         "provider_aliases": {"kalstrop_v1": ["Basilashvili, Nikoloz"]},
         "pm_aliases": ["Nikoloz Basilashvili"],
     },
@@ -181,7 +181,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Noemi Basiletti"],
     },
     "basing, max": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "basing",
         "provider_aliases": {"kalstrop_v1": ["Basing, Max"]},
         "pm_aliases": ["Max Basing"],
     },
@@ -476,7 +476,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Luca Castelnuovo"],
     },
     "ceban, mark": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "ceban",
         "provider_aliases": {"kalstrop_v1": ["Ceban, Mark"]},
         "pm_aliases": ["Mark Ceban"],
     },
@@ -536,7 +536,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Sorana Cirstea"],
     },
     "clarke, jay": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "clarke",
         "provider_aliases": {"kalstrop_v1": ["Clarke, Jay"]},
         "pm_aliases": ["Jay Clarke"],
     },
@@ -991,7 +991,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Alastair Gray"],
     },
     "grenier, hugo": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "grenier",
         "provider_aliases": {"kalstrop_v1": ["Grenier, Hugo"]},
         "pm_aliases": ["Hugo Grenier"],
     },
@@ -1126,7 +1126,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Hubert Hurkacz"],
     },
     "hussey, giles": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "hussey",
         "provider_aliases": {"kalstrop_v1": ["Hussey, Giles"]},
         "pm_aliases": ["Giles Hussey"],
     },
@@ -1406,9 +1406,9 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Mikhail Kukushkin"],
     },
     "kwon, soonwoo": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "kwon",
         "provider_aliases": {"kalstrop_v1": ["Kwon, Soonwoo"]},
-        "pm_aliases": ["Soonwoo Kwon"],
+        "pm_aliases": ["Soon-Woo Kwon"],
     },
     "kypson, patrick": {
         "polymarket_code": "kypson",
@@ -1566,7 +1566,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Daniel Masur"],
     },
     "matusevich, anton": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "matusev",
         "provider_aliases": {"kalstrop_v1": ["Matusevich, Anton"]},
         "pm_aliases": ["Anton Matusevich"],
     },
@@ -2936,7 +2936,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Susan Bandecchi"],
     },
     "basel, valentin": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "basel",
         "provider_aliases": {"kalstrop_v1": ["Basel, Valentin"]},
         "pm_aliases": ["Valentin Basel"],
     },
@@ -2956,7 +2956,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Deborah Chiesa"],
     },
     "compagnucci, tommaso": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "compagn",
         "provider_aliases": {"kalstrop_v1": ["Compagnucci, Tommaso"]},
         "pm_aliases": ["Tommaso Compagnucci"],
     },
@@ -2966,7 +2966,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Joao Victor Couto Loureiro"],
     },
     "crawford, oliver": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "crawfor",
         "provider_aliases": {"kalstrop_v1": ["Crawford, Oliver"]},
         "pm_aliases": ["Oliver Crawford"],
     },
@@ -2991,7 +2991,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Pierre Delage"],
     },
     "erhard, mathys": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "erhard",
         "provider_aliases": {"kalstrop_v1": ["Erhard, Mathys"]},
         "pm_aliases": ["Mathys Erhard"],
     },
@@ -3096,7 +3096,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Laurent Lokoli"],
     },
     "lopez morillo, imanol": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "morillo",
         "provider_aliases": {"kalstrop_v1": ["Lopez Morillo, Imanol"]},
         "pm_aliases": ["Imanol Lopez Morillo"],
     },
@@ -3141,7 +3141,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Elmer Moeller"],
     },
     "monzon, ignacio": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "monzon",
         "provider_aliases": {"kalstrop_v1": ["Monzon, Ignacio"]},
         "pm_aliases": ["Ignacio Monzon"],
     },
@@ -3156,7 +3156,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Stefano Napolitano"],
     },
     "osuigwe, whitney": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "osuigwe",
         "provider_aliases": {"kalstrop_v1": ["Osuigwe, Whitney"]},
         "pm_aliases": ["Whitney Osuigwe"],
     },
@@ -3246,7 +3246,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Vera Zvonareva"],
     },
     "alcala gurri, max": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "gurri",
         "provider_aliases": {"kalstrop_v1": ["Alcala Gurri, Max"]},
         "pm_aliases": ["Max Alcala Gurri"],
     },
@@ -3516,7 +3516,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Rio Noguchi"],
     },
     "noskova, linda": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "noskova",
         "provider_aliases": {"kalstrop_v1": ["Noskova, Linda"]},
         "pm_aliases": ["Linda Noskova"],
     },
@@ -3591,7 +3591,7 @@ PLAYER_MAP_TENNIS = {
         "pm_aliases": ["Andres Santamarta Roig", "Andres Santamarta"],
     },
     "saraiva dos santos, paulo andre": {
-        "polymarket_code": "_unknown",
+        "polymarket_code": "santos",
         "provider_aliases": {"kalstrop_v1": ["Saraiva Dos Santos, Paulo Andre"]},
         "pm_aliases": ["Paulo Andre Saraiva Dos Santos", "Paulo Dos Santos"],
     },
@@ -3699,6 +3699,51 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "pegula",
         "provider_aliases": {"kalstrop_v1": ["Pegula, Jessica"]},
         "pm_aliases": ["Jessica Pegula"],
+    },
+    "bullamah, filipe": {
+        "polymarket_code": "bullama",
+        "provider_aliases": {"kalstrop_v1": ["Bullamah, Filipe"]},
+        "pm_aliases": ["Filipe Bullamah"],
+    },
+    "cretu, cezar": {
+        "polymarket_code": "cretu",
+        "provider_aliases": {"kalstrop_v1": ["Cretu, Cezar (2001)"]},
+        "pm_aliases": ["Cezar Cretu"],
+    },
+    "gima, sebastian": {
+        "polymarket_code": "gima",
+        "provider_aliases": {"kalstrop_v1": ["Gima, Sebastian"]},
+        "pm_aliases": ["Sebastian Gima"],
+    },
+    "gojo, borna": {
+        "polymarket_code": "gojo",
+        "provider_aliases": {"kalstrop_v1": ["Gojo, Borna"]},
+        "pm_aliases": ["Borna Gojo"],
+    },
+    "leite, wilson": {
+        "polymarket_code": "leite",
+        "provider_aliases": {"kalstrop_v1": ["Leite, Wilson"]},
+        "pm_aliases": ["Wilson Leite"],
+    },
+    "mayot, harold": {
+        "polymarket_code": "mayot",
+        "provider_aliases": {"kalstrop_v1": ["Mayot, Harold"]},
+        "pm_aliases": ["Harold Mayot"],
+    },
+    "oliveira, nicolas": {
+        "polymarket_code": "oliveir",
+        "provider_aliases": {"kalstrop_v1": ["Oliveira, Nicolas"]},
+        "pm_aliases": ["Nicolas Oliveira"],
+    },
+    "sebov, katherine": {
+        "polymarket_code": "sebov",
+        "provider_aliases": {"kalstrop_v1": ["Sebov, Katherine"]},
+        "pm_aliases": ["Katherine Sebov"],
+    },
+    "zanellato, nicolas": {
+        "polymarket_code": "zanella",
+        "provider_aliases": {"kalstrop_v1": ["Zanellato, Nicolas"]},
+        "pm_aliases": ["Nicolas Zanellato"],
     },
 }
 
