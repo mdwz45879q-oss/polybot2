@@ -631,6 +631,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                     in_plan_provider_game_ids.add((prov, str(g.provider_game_id)))
                     for ap, aid in g.alternate_provider_game_ids:
                         in_plan_provider_game_ids.add((str(ap), str(aid)))
+                    logger.info(
+                        "[startup]   + %s | %s vs %s | %s",
+                        lk, g.canonical_home_team, g.canonical_away_team, prov,
+                    )
             merged = replace(initial_ready[0][3], games=tuple(all_games))
             _cold_start(merged)
         else:
