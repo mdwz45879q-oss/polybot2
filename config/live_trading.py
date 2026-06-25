@@ -311,6 +311,7 @@ HOTPATH_RUNTIME_POLICY = {
         "subscribe_lead_minutes": 30,
         "reload_interval_seconds": 120,
         "refresh_interval_seconds": 1800,
+        "readiness_check_interval_seconds": 300, 
         # "game_refresh_interval_seconds": 3600,
         # "ws_core_idx": 3,
         # "submitter_core_idx": 4,
