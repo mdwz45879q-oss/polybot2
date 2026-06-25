@@ -3878,6 +3878,7 @@ TENNIS_LEAGUES = {
     "wimbledon_qual_m": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["wimbledon men singles"],
+        "sets_to_win": 3,
         "boltodds_aliases": ["wimbledon quals (m) - tennis"],
     },
     "piracicaba": {
