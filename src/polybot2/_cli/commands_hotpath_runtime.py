@@ -756,8 +756,8 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             if _l2_fires or _l1_fires:
                 last_readiness = now
                 try:
-                    # Refresh V1 catalog if Layer 1 is disabled and there are pending V1 games
-                    if _no_discovery and _has_v1:
+                    # Refresh V1 catalog for fresh stream_exists values
+                    if _has_v1:
                         try:
                             with open_database(runtime) as db:
                                 v1_rows = load_provider_catalog(provider="kalstrop_v1")
