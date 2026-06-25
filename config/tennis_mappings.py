@@ -3878,7 +3878,7 @@ TENNIS_LEAGUES = {
     "wimbledon_qual_m": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["wimbledon men singles"],
-        "boltodds_aliases": ["Wimbledon Quals (M) - Tennis"],
+        "boltodds_aliases": ["wimbledon quals (m) - tennis"],
     },
     "piracicaba": {
         "polymarket_league_code": "atp",
@@ -3898,6 +3898,6 @@ TENNIS_LEAGUES = {
     "wimbledon_qual_w": {
         "polymarket_league_code": "wta",
         "v1_aliases": ["wimbledon women singles"],
-        "boltodds_aliases": ["Wimbledon Quals (W) - Tennis"],
+        "boltodds_aliases": ["wimbledon quals (w) - tennis"],
     },
 }

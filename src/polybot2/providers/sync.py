@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 import os
 from typing import Any
 
@@ -181,6 +182,8 @@ def sync_provider_games(
             provider_start_ts_utc=(None if rec.start_ts_utc is None else int(rec.start_ts_utc)),
             when_raw=str(rec.when_raw or ""),
         )
+        stream_exists_raw = rec.raw_payload.get("streamExists") if rec.raw_payload else None
+        stream_exists = 1 if stream_exists_raw is True else (0 if stream_exists_raw is False else None)
         rows.append(
             (
                 p,
@@ -199,6 +202,7 @@ def sync_provider_games(
                 str(rec.parse_status or ""),
                 str(rec.parse_reason or ""),
                 str(rec.extra_json or ""),
+                stream_exists,
                 now_ts,
             )
         )
@@ -259,6 +263,8 @@ def load_provider_catalog(*, provider: str) -> list[tuple[Any, ...]]:
             provider_start_ts_utc=(None if rec.start_ts_utc is None else int(rec.start_ts_utc)),
             when_raw=str(rec.when_raw or ""),
         )
+        stream_exists_raw = rec.raw_payload.get("streamExists") if rec.raw_payload else None
+        stream_exists = 1 if stream_exists_raw is True else (0 if stream_exists_raw is False else None)
         rows.append(
             (
                 p,
@@ -277,6 +283,7 @@ def load_provider_catalog(*, provider: str) -> list[tuple[Any, ...]]:
                 str(rec.parse_status or ""),
                 str(rec.parse_reason or ""),
                 str(rec.extra_json or ""),
+                stream_exists,
                 now_ts,
             )
         )

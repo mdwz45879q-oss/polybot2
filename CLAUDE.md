@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball), soccer (EPL, La Liga, Bundesliga, UCL), tennis (ATP, WTA — 34+ tournaments via consolidated registry), CS2 esports (full Rust hotpath with closed-form map winner detection), and MOBA esports (LoL + Dota2 — shared `NativeMobaEngine`, BoltOdds-only, maps-won evaluation). Five sports, four score data providers: Kalstrop V1 (Sportradar, WS, baseball + soccer + tennis + CS2), Kalstrop V2 (BetGenius, Socket.IO, soccer + tennis), BoltOdds (WS, broad coverage including esports — primary for MOBA), Kalstrop Opta (REST catalog, football + baseball — streaming pending for non-World-Cup). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
+polybot2 is a sports-trading bot for Polymarket. Hybrid architecture: Python control plane for CLI, data sync, linking, and orchestration; Rust native hotpath via PyO3/maturin for low-latency score ingest → decision → order dispatch. Supports MLB (baseball), soccer (EPL, La Liga, Bundesliga, UCL, FIFA World Cup), tennis (ATP, WTA — 34+ tournaments via consolidated registry), CS2 esports (full Rust hotpath with closed-form map winner detection), and MOBA esports (LoL + Dota2 — shared `NativeMobaEngine`, BoltOdds-only, maps-won evaluation). Five sports, four score data providers: Kalstrop V1 (Sportradar, WS, baseball + soccer + tennis + CS2), Kalstrop V2 (BetGenius, Socket.IO, soccer + tennis), BoltOdds (WS, broad coverage including esports — primary for MOBA), Kalstrop Opta (REST catalog, football + baseball + tennis — streaming pending). Multiplexed concurrent providers per league — configured in `LEAGUES[league]["provider"]` (string or list). For multiplexed V2 leagues, the **first provider in the list determines the startup flow**: if `kalstrop_v2` is first, the orchestrator uses the deferred-start V2 resolution path. Deployment: Linux EC2 (eu-west-1, c8gn.4xlarge).
 
 ## Build & Test
 
@@ -42,7 +42,7 @@ Tests in `tests/live/` require real API credentials and `POLYBOT2_ENABLE_LIVE_*`
 polybot2 market sync         → SQLite (pm_events, pm_markets, pm_market_tokens)
 polybot2 provider sync       → SQLite (provider_games) — syncs all configured providers
 polybot2 link build          → SQLite (link_runs, link_*_bindings) — one run_id across all leagues
-polybot2 link review         → SQLite (link_review_decisions) — opt-out: reject bad matches
+polybot2 link review         → SQLite (link_review_decisions) — opt-out: reject bad matches; opt-in: approve pending-review matches
 polybot2 hotpath live        → Compiled plan → Rust runtime → WS → engine → DispatchHandle → channel → submitter → CLOB
                                Start once → incremental Gamma API fetch → hot-patch new targets into running engine
 ```
@@ -198,7 +198,7 @@ In **noop mode** no submitter thread is spawned; `DispatchHandle::submit_tx` sta
 Signs 1-2 orders per unique token at startup, serializes to JSON bytes, and stores `PreparedOrderPayload`s so the WS thread can pop in ~100ns instead of ECDSA-signing in ~10–50ms. Pool depth is 1-2 per token (primary + optional secondary order). Pool ownership lives on `DispatchHandle` (WS thread) as `Vec<SmallVec<[Box<PreparedOrderPayload>; 2]>>` indexed by `TokenIdx` (`std::mem::take()` drains all orders at once). When `secondary_time_in_force` is configured, each intent fires two pre-signed orders with different parameters (e.g., FAK for immediate fill + GTC for resting liquidity). The SDK client used to sign warmup orders lives on `OrderSubmitter` (submitter thread). At startup:
 
 1. `OrderSubmitter::ensure_sdk_runtime_async` initializes the SDK client.
-2. `warm_presign_startup_into(&cfg, &client, &signer, &templates_slice, &mut pool_slice)` signs one order per token in parallel (`tokio::spawn` per token) and writes results into the handle's pool by `TokenIdx`.
+2. `warm_presign_startup_into` pre-populates the SDK's tick-size cache from `tick_size` values in the template JSON (sourced from `pm_markets.minimum_tick_size` in the DB, originally from the Gamma API's `orderPriceMinTickSize` field). This avoids calling the degraded `GET /tick-size` endpoint (~9s/call). Then signs all orders in parallel via `tokio::spawn` per token.
 3. `DispatchHandle::install_submit_tx(submit_tx)` wires the channel.
 4. Submitter thread is spawned with `OrderSubmitter` (and channel rx); WS thread is spawned with `DispatchHandle` (and channel tx).
 
@@ -266,11 +266,13 @@ GTD is not supported (presigned GTD orders cannot carry runtime-computed expirat
 
 ## Critical Invariants
 
-1. **Hotpath ordering:** Match update → decision → channel send → tick log. The WS thread does no HTTP work and acquires no log locks before the channel send on the success path.
+1. **`streamExists` gate (V1):** Kalstrop V1 fixtures carry a `streamExists` boolean. When `true`, the fixture has a real live data stream (Sportradar tracker). When `false`, match updates are **deduced from the odds stream** — unreliable, delayed, and can produce wrong scores. The linker **drops all games with `stream_exists=0`** during `link build`. This is stored as a dedicated `stream_exists INTEGER` column in `provider_games` (not in `extra_json`). Other providers (V2, BoltOdds, Opta) do not expose an equivalent field — `stream_exists` is NULL for their fixtures (not filtered). **Never trade on V1 fixtures without a real stream.**
 
-2. **Fail-closed:** Presign pool miss → error logged on the WS thread (no fallback to unsigned submit). Startup warmup failure → process won't trade. Empty `order_id` with `success: true` from the CLOB → treated as `Err` (not a phantom fill).
+2. **Hotpath ordering:** Match update → decision → channel send → tick log. The WS thread does no HTTP work and acquires no log locks before the channel send on the success path.
 
-3. **Spread evaluation:** Each spread line has a `SpreadSlot { side, line, covers_idx, not_covers_idx }`. At game end: `(margin as f64) + slot.line > 0` → fire `covers_idx`, else fire `not_covers_idx`. Four distinct semantics per line: `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers`. `margin = home - away` for HOME, `-margin` for AWAY.
+3. **Fail-closed:** Presign pool miss → error logged on the WS thread (no fallback to unsigned submit). Startup warmup failure → process won't trade. Empty `order_id` with `success: true` from the CLOB → treated as `Err` (not a phantom fill).
+
+4. **Spread evaluation:** Each spread line has a `SpreadSlot { side, line, covers_idx, not_covers_idx }`. At game end: `(margin as f64) + slot.line > 0` → fire `covers_idx`, else fire `not_covers_idx`. Four distinct semantics per line: `home_covers`, `home_not_covers`, `away_covers`, `away_not_covers`. `margin = home - away` for HOME, `-margin` for AWAY.
 
 4. **Totals over crossing:** For a score change from `prev` to `now`, iterate `over_lines` and fire any with `half_int in [prev, now)`. Direct array indexing — no string keys, no HashMap.
 
@@ -370,7 +372,9 @@ polybot2 hotpath live --sport soccer --execution-mode live  # all soccer in one 
 
 Review is opt-out: all linked games enter the plan unless explicitly rejected via `link review`. Link build applies a default `--horizon-hours` per league (MLB: 12h, EPL/UCL: 24h from `HOTPATH_RUNTIME_POLICY`) to scope to games starting soon. Soccer linking enforces strict home/away ordering against Polymarket event team order — rejects provider games with flipped designation.
 
-**Postponed games:** The linker uses a supplementary `kickoff_ts_utc` range query alongside the `game_date_et` query, catching games whose Polymarket events retain the original date but have updated kickoff timestamps. Both query results are merged and deduped by `event_id`.
+**Postponed games and pending review:** The linker runs two-pass matching. Pass 1 uses strict `kickoff_tolerance_minutes` (per-league, e.g., 45min for MLB, 240min default). Pass 2 uses `wide_kickoff_tolerance_minutes` (default 2880 = 48h) on unmatched leftovers. Pass 2 matches get `resolution_state = "PENDING_KICKOFF_REVIEW"` — they exist in the DB but are **excluded from the plan** until manually approved via `link review`. This handles postponed/suspended games where only one side updated the kickoff time. The review UI shows these in yellow with both provider and PM kickoff times.
+
+**Supplementary kickoff query:** The linker uses a supplementary `kickoff_ts_utc` range query alongside the `game_date_et` query, catching games whose Polymarket events retain the original date but have updated kickoff timestamps. Both query results are merged and deduped by `event_id`.
 
 **Alternate provider game IDs:** The compiled plan carries `alternate_provider_game_ids` per game — other providers' IDs for the same canonical game. The Rust engine inserts these into `game_id_to_idx` at plan load so frames from any provider resolve to the same `GameIdx`.
 
@@ -419,13 +423,13 @@ V1 and V2 are treated as **separate providers** with distinct names (`kalstrop_v
 - **Duplicate entries:** BoltOdds sometimes publishes two entries for the same game with flipped home/away (e.g., "Sunderland vs Man Utd" and "Man Utd vs Sunderland"). The linker's strict home/away ordering check (soccer only) rejects the flipped duplicate by comparing against the Polymarket event's team ordering.
 - **Esports support:** `_ESPORTS_SPORTS` frozenset in `boltodds.py` identifies esports titles (CS2, Dota, LoL, Valorant). Esports use different labels from `/api/playbyplay/esports` (not `/api/get_games`). WS frames use `"event"` field instead of `"game"` for the game label. The Python provider's `load_game_catalog()` replaces standard esports labels with PBP labels automatically.
 
-**Kalstrop Opta** — `stats.kalstropservice.com/api/v2/opta`. Same HMAC auth. Opta/Sportradar-backed. Covers football (EPL, La Liga, Bundesliga, UCL, MLS, World Cup) + baseball (MLB, NPB, KBO). Currently catalog-only for live streaming (pending World Cup activation).
+**Kalstrop Opta** — `stats.kalstropservice.com/api/v2/opta`. Same HMAC auth. Opta/Sportradar-backed. Covers football (EPL, La Liga, Bundesliga, UCL, MLS, World Cup) + baseball (MLB, NPB, KBO) + tennis. Catalog syncs `("football", "baseball", "tennis")` by default. Tennis fixtures use dash-separated names (`"Player A (CC) - Player B (CC)"`) instead of `" vs "` or `" at "`.
 - **REST catalog:** `/sports` → `/sports/{sport}/competitions` (numeric IDs) → `/sports/{sport}/competitions/{category_id}/{tournament_id}/fixtures`
 - **Fixture IDs:** Colon-prefixed format (e.g., `2:7799988`). Must URL-encode the colon.
 - **Provider resolution:** `/fixtures/{event_id}/providers?sport={sport}` → `providers.opta.running_ball.fixture_id` (required for Socket.IO streaming). `running_ball` only present for top-tier football; absent for baseball and lower-tier leagues.
-- **Socket.IO streaming:** Product slug `opta-stats`. Events: `opta_subscribe`/`opta_unsubscribe`/`opta_message`. Subscribe payload: `{fixtureId, room: "stats"}`. Score format: `stats.score[].{contestantId, value}` (no home/away label — resolve via `/match` REST call).
+- **Socket.IO streaming:** Product slug `opta-stats`. Events: `opta_subscribe`/`opta_unsubscribe`/`opta_message`. Subscribe payload: `{fixtureId, room: "stats"}`. Score format: `stats.score[].{contestantId, value}` (no home/away label — resolve via `/match` REST call). Four rooms: `stats`, `matchEvent`, `xGoals`, `insights`.
 - **Composite encoding:** `category_name` stores `"England|14"`, `league_raw` stores `"Premier League|102841"`. Parsing: `rsplit("|", 1)` → `(name, id)`.
-- **Currently inactive for streaming** — Kalstrop confirmed Opta streaming only supports World Cup games for now.
+- **Streaming status (June 2026):** REST catalog and provider resolution work. Live Socket.IO streaming returns `OPTA_FEED_DEGRADED` — Kalstrop reports an ongoing upstream incident. Provider resolution succeeds (fixture IDs resolve), but the live feed is not yet functional.
 
 Documentation: `docs/providers/kalstrop_v2/` covers auth, genius, and opta APIs. V1 docs: `docs/kalstrop_odds_v1.md`.
 
@@ -457,6 +461,7 @@ Log directory: `POLYBOT2_LOG_DIR` (default: current working directory). Logs are
 - Python ≥ 3.11, Rust edition 2021, PyO3 0.22 with ABI3.
 - `polymarket_client_sdk_v2` 0.6.0-canary.1 (CLOB V2). Supports `SignatureType::Poly1271` (value 3) for deposit wallet accounts with ERC-7739 wrapped signatures. Pins `alloy` at 1.6.3 — do not add a different alloy version or traits will mismatch.
 - `smallvec` is a hot-path dependency (`SubmitBatch` payload). Don't replace with `Vec` without measuring — the inline `[T; 32]` capacity covers the common dual-order case without heap allocation.
+- **Polymarket API deprecations (May 2026):** The offset-based `GET /events` endpoint is deprecated (`sunset: Fri, 01 May 2026`, `warning: "use /events/keyset"`). Market sync uses the keyset pagination endpoint `GET /events/keyset` with `after_cursor`/`next_cursor`. The `GET /tick-size` endpoint is severely degraded (~9s/call). Tick sizes are stored in `pm_markets.minimum_tick_size` during sync (from `orderPriceMinTickSize` in Gamma API) and passed through to Rust presign via template JSON — the SDK's `set_tick_size()` pre-populates the cache, bypassing the degraded endpoint. The `/clob-markets/{condition_id}` endpoint returns abbreviated field names (`mts` for tick size, `t` for tokens, `c` for condition_id).
 - Gamma API caps results at 100 per request regardless of `limit` parameter. `batch_size` in `sync_config.py` is set to 100 to match.
 - Prefer deletion over compatibility shims. No backwards-compat wrappers for removed features.
 - The field name is `amount_usdc` everywhere (not `notional_usdc` — that was the legacy name, fully removed).

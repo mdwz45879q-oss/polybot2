@@ -1,6 +1,6 @@
 """SQLite schema for polybot2."""
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS _schema_version (
@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS provider_games (
     parse_status            TEXT NOT NULL DEFAULT '',
     parse_reason            TEXT NOT NULL DEFAULT '',
     extra_json              TEXT NOT NULL DEFAULT '',
+    stream_exists           INTEGER,
     updated_at              INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (provider, provider_game_id)
 );

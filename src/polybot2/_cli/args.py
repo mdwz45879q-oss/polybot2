@@ -73,6 +73,10 @@ def add_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
                               help="Override ws_core_idx from runtime policy")
     hotpath_live.add_argument("--submitter-core", type=int, default=None,
                               help="Override submitter_core_idx from runtime policy")
+    hotpath_live.add_argument("--no-market-refresh", action="store_true", default=False,
+                              help="Disable periodic market refresh (Layer 3)")
+    hotpath_live.add_argument("--no-discovery", action="store_true", default=False,
+                              help="Disable periodic game discovery (Layer 1)")
     hotpath_live.add_argument("--db", type=str, default="")
 
     hotpath_launch = hotpath_sub.add_parser("launch", help="Sync + link + launch hotpath in one step")

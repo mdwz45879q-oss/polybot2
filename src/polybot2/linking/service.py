@@ -49,6 +49,7 @@ def _date_add_days(date_text: str, days: int) -> str:
 class _LeagueMatchRules:
     date_tolerance_days: int
     kickoff_tolerance_minutes: int
+    wide_kickoff_tolerance_minutes: int
     provider_order_reliable: bool
     pm_order_reliable: bool
 
@@ -106,9 +107,12 @@ class LinkService:
             cfg = mapping.league_match_rules.get(sf, mapping.league_match_rules.get("default", {}))
         if not isinstance(cfg, dict):
             cfg = {}
+        strict_tol = max(0, int(cfg.get("kickoff_tolerance_minutes", 180) or 180))
+        wide_tol = max(strict_tol, int(cfg.get("wide_kickoff_tolerance_minutes", 2880) or 2880))
         return _LeagueMatchRules(
             date_tolerance_days=max(0, int(cfg.get("date_tolerance_days", 0) or 0)),
-            kickoff_tolerance_minutes=max(0, int(cfg.get("kickoff_tolerance_minutes", 180) or 180)),
+            kickoff_tolerance_minutes=strict_tol,
+            wide_kickoff_tolerance_minutes=wide_tol,
             provider_order_reliable=bool(cfg.get("provider_order_reliable", False)),
             pm_order_reliable=bool(cfg.get("pm_order_reliable", False)),
         )
@@ -529,18 +533,29 @@ class LinkService:
                 for ev in with_kickoff
                 if abs(int(_int_or_none(ev.get("kickoff_ts_utc")) or 0) - int(provider_ts)) <= tol_sec
             ]
+            wide_tol_sec = int(rules.wide_kickoff_tolerance_minutes) * 60
             if within:
                 matched_events = within
             else:
-                for ev in matched_events:
-                    ev_id = str(ev.get("event_id") or "")
-                    if ev_id in candidate_map and not candidate_map[ev_id]["reject_reason"]:
-                        candidate_map[ev_id]["reject_reason"] = "kickoff_out_of_tolerance"
-                diagnostics["used_slug_fallback"] = bool(used_slug_fallback)
-                diagnostics["failure_reason"] = "kickoff_out_of_tolerance"
-                diagnostics["n_team_matched"] = len(matched_events)
-                diagnostics["candidates"] = sorted(candidate_map.values(), key=lambda x: (str(x["event_id"]),))
-                return (None, "kickoff_out_of_tolerance", diagnostics)
+                # Strict tolerance failed — try wide window for pending-review matches
+                within_wide = [
+                    ev
+                    for ev in with_kickoff
+                    if abs(int(_int_or_none(ev.get("kickoff_ts_utc")) or 0) - int(provider_ts)) <= wide_tol_sec
+                ]
+                if within_wide:
+                    matched_events = within_wide
+                    diagnostics["kickoff_exceeded_pending_review"] = True
+                else:
+                    for ev in matched_events:
+                        ev_id = str(ev.get("event_id") or "")
+                        if ev_id in candidate_map and not candidate_map[ev_id]["reject_reason"]:
+                            candidate_map[ev_id]["reject_reason"] = "kickoff_out_of_tolerance"
+                    diagnostics["used_slug_fallback"] = bool(used_slug_fallback)
+                    diagnostics["failure_reason"] = "kickoff_out_of_tolerance"
+                    diagnostics["n_team_matched"] = len(matched_events)
+                    diagnostics["candidates"] = sorted(candidate_map.values(), key=lambda x: (str(x["event_id"]),))
+                    return (None, "kickoff_out_of_tolerance", diagnostics)
 
         pm_ordering = _norm(str(mapping.pm_league_orderings.get(resolved.canonical_league, "home")))
         expected_order = (
@@ -739,10 +754,13 @@ class LinkService:
         reason_code: str,
         is_tradeable: bool,
         has_target_warnings: bool,
+        kickoff_exceeded_pending_review: bool = False,
     ) -> str:
         bs = _norm(binding_status)
         rc = _norm(reason_code)
         if bs == "exact" and is_tradeable:
+            if kickoff_exceeded_pending_review:
+                return "PENDING_KICKOFF_REVIEW"
             return "MATCHED_WITH_WARNINGS" if has_target_warnings else "MATCHED_CLEAN"
         if rc == "ambiguous_event_match":
             return "AMBIGUOUS_EVENT_MATCH"
@@ -1277,6 +1295,7 @@ class LinkService:
                         reason_code=game_reason_code,
                         is_tradeable=game_is_tradeable,
                         has_target_warnings=game_has_target_warnings,
+                        kickoff_exceeded_pending_review=bool(selection_diag.get("kickoff_exceeded_pending_review")),
                     ),
                     "reason_code": game_reason_code,
                     "selected_event_id": event_id,

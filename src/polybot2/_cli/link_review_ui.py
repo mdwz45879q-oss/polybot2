@@ -185,6 +185,8 @@ def _resolution_style(state: str) -> str:
         return "bold black on green"
     if s in {"MATCHED_WITH_WARNINGS", "NO_TRADEABLE_TARGETS"}:
         return "bold black on yellow"
+    if s == "PENDING_KICKOFF_REVIEW":
+        return "bold black on yellow"
     if s in {"AMBIGUOUS_EVENT_MATCH", "TEAM_SET_NOT_FOUND", "NO_EVENT_CANDIDATES"}:
         return "bold white on red"
     return "bold white on blue"
@@ -574,7 +576,13 @@ def _build_game_card_renderable(
         rich_kickoff_iv = _int_or_none(rich_kickoff_ts)
         if rich_kickoff_iv is not None:
             rich_kickoff_str = datetime.fromtimestamp(rich_kickoff_iv, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            canon_parts.append(f"Kickoff: {rich_kickoff_str}")
+            canon_parts.append(f"Provider Kickoff: {rich_kickoff_str}")
+    pm_kickoff_ts = event_resolution.get("selected_event_kickoff_ts_utc") if event_resolution else None
+    if pm_kickoff_ts:
+        pm_kickoff_iv = _int_or_none(pm_kickoff_ts)
+        if pm_kickoff_iv is not None:
+            pm_kickoff_str = datetime.fromtimestamp(pm_kickoff_iv, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            canon_parts.append(f"PM Kickoff: {pm_kickoff_str}")
     rich_delta_sec = event_resolution.get("kickoff_delta_sec") if event_resolution else None
     if rich_delta_sec is not None:
         rich_delta_iv = _int_or_none(rich_delta_sec)
@@ -589,7 +597,7 @@ def _build_game_card_renderable(
     # Event Resolution panel with unresolved warning
     rich_resolution_state = str(event_resolution.get("resolution_state") or "")
     rich_reason_code = str(event_resolution.get("reason_code") or "")
-    _rich_resolved_states = {"MATCHED_CLEAN", "MATCHED_WITH_WARNINGS"}
+    _rich_resolved_states = {"MATCHED_CLEAN", "MATCHED_WITH_WARNINGS", "PENDING_KICKOFF_REVIEW"}
 
     event_kv_rows: list[tuple[str, Any]] = []
     if rich_resolution_state and rich_resolution_state.upper() not in _rich_resolved_states:

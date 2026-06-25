@@ -411,28 +411,35 @@ async def _fetch_events_by_tags(
     seen_ids: set[str] = set()
     async with httpx.AsyncClient(timeout=timeout, headers={"Accept-Encoding": "gzip, deflate"}) as client:
         for tag in sorted(tags):
-            offset = 0
+            cursor: str | None = None
             while True:
+                params: dict[str, Any] = {"tag": tag, "active": "true", "closed": "false", "limit": 100}
+                if cursor:
+                    params["after_cursor"] = cursor
                 payload = await request_json_with_retry(
                     client=client,
                     method="GET",
-                    url=f"{gamma_api}/events",
-                    params={"tag": tag, "active": "true", "closed": "false", "limit": 100, "offset": offset},
+                    url=f"{gamma_api}/events/keyset",
+                    params=params,
                     max_retries=3,
                     logger=log,
                     log_context=f"game_discovery_tag={tag}",
                 )
-                if not isinstance(payload, list) or not payload:
+                if not isinstance(payload, dict):
                     break
-                for ev in payload:
+                events = payload.get("events", [])
+                if not isinstance(events, list) or not events:
+                    break
+                for ev in events:
                     if isinstance(ev, dict):
                         eid = str(ev.get("id", ""))
                         if eid and eid not in seen_ids:
                             seen_ids.add(eid)
                             all_events.append(ev)
-                if len(payload) < 100:
+                next_cursor = str(payload.get("next_cursor", "") or "")
+                if not next_cursor or len(events) < 100:
                     break
-                offset += 100
+                cursor = next_cursor
     return all_events
 
 

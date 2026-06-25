@@ -23,7 +23,19 @@ class LinkingAdapter:
         if not rows:
             return
         n_cols = len(rows[0]) if rows else 0
-        if n_cols == 17:
+        if n_cols == 18:
+            self._batched_executemany(
+                """
+                INSERT OR REPLACE INTO provider_games
+                (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
+                 category_name, category_country_code,
+                 when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+                 parse_reason, extra_json, stream_exists, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                rows,
+            )
+        elif n_cols == 17:
             self._batched_executemany(
                 """
                 INSERT OR REPLACE INTO provider_games
@@ -56,18 +68,26 @@ class LinkingAdapter:
             if rows:
                 bs = max(1, int(getattr(self._db._infra, "db_batch_size", 500) or 500))
                 filtered = [r for r in rows if str((r[0] if len(r) > 0 else "") or "").strip().lower() == p]
+                n_cols = len(filtered[0]) if filtered else 0
+                sql_18 = """
+                    INSERT OR REPLACE INTO provider_games
+                    (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
+                     category_name, category_country_code,
+                     when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+                     parse_reason, extra_json, stream_exists, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """
+                sql_17 = """
+                    INSERT OR REPLACE INTO provider_games
+                    (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
+                     category_name, category_country_code,
+                     when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
+                     parse_reason, extra_json, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """
+                sql = sql_18 if n_cols == 18 else sql_17
                 for i in range(0, len(filtered), bs):
-                    self._db.executemany(
-                        """
-                        INSERT OR REPLACE INTO provider_games
-                        (provider, provider_game_id, game_label, orig_teams, sport_raw, league_raw,
-                         category_name, category_country_code,
-                         when_raw, start_ts_utc, game_date_et, home_raw, away_raw, parse_status,
-                         parse_reason, extra_json, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                        """,
-                        filtered[i : i + bs],
-                    )
+                    self._db.executemany(sql, filtered[i : i + bs])
             self._db.commit()
         except Exception:
             self._db.rollback()

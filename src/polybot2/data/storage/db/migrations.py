@@ -23,6 +23,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             # v7 → v8: add minimum_tick_size to pm_markets
             if version <= 7 and not _column_exists(conn, "pm_markets", "minimum_tick_size"):
                 conn.execute("ALTER TABLE pm_markets ADD COLUMN minimum_tick_size REAL")
+            # v8 → v9: add stream_exists to provider_games
+            if version <= 8 and not _column_exists(conn, "provider_games", "stream_exists"):
+                conn.execute("ALTER TABLE provider_games ADD COLUMN stream_exists INTEGER")
             conn.execute("UPDATE _schema_version SET version = ?", (int(SCHEMA_VERSION),))
         elif version > int(SCHEMA_VERSION):
             raise RuntimeError(

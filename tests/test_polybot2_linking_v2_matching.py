@@ -401,8 +401,13 @@ def test_kickoff_out_of_tolerance_is_unresolved(tmp_path: Path) -> None:
             "SELECT binding_status, reason_code FROM link_game_bindings WHERE provider = ? AND provider_game_id = ?",
             ("kalstrop_v1", "gid_kickoff"),
         ).fetchone()
+        review_row = db.execute(
+            "SELECT resolution_state FROM link_run_game_reviews WHERE provider = ? AND provider_game_id = ?",
+            ("kalstrop_v1", "gid_kickoff"),
+        ).fetchone()
     assert res.n_games_seen == 1
-    assert res.n_games_linked == 0
+    assert res.n_games_linked == 1
     assert row is not None
-    assert row["binding_status"] == "unresolved"
-    assert row["reason_code"] == "kickoff_out_of_tolerance"
+    assert row["binding_status"] == "exact"
+    assert review_row is not None
+    assert review_row["resolution_state"] == "PENDING_KICKOFF_REVIEW"

@@ -359,6 +359,7 @@ class ScopeGameRow:
     canonical_away_team: str
     kickoff_ts_utc: int | None
     decision: str
+    resolution_state: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,12 +439,17 @@ def evaluate_hotpath_scope(
             pg.canonical_home_team,
             pg.canonical_away_team,
             pg.start_ts_utc,
-            COALESCE(ld.decision, '') AS decision
+            COALESCE(ld.decision, '') AS decision,
+            COALESCE(gr.resolution_state, '') AS resolution_state
         FROM link_run_provider_games pg
         LEFT JOIN latest_decisions ld
           ON ld.run_id = pg.run_id
          AND ld.provider = pg.provider
          AND ld.provider_game_id = pg.provider_game_id
+        LEFT JOIN link_run_game_reviews gr
+          ON gr.run_id = pg.run_id
+         AND gr.provider = pg.provider
+         AND gr.provider_game_id = pg.provider_game_id
         WHERE pg.run_id = ?
           AND pg.provider = ?
           AND pg.parse_status = 'ok'
@@ -461,6 +467,7 @@ def evaluate_hotpath_scope(
             canonical_away_team=str(r["canonical_away_team"] or ""),
             kickoff_ts_utc=(None if r["start_ts_utc"] is None else int(r["start_ts_utc"])),
             decision=str(r["decision"] or "").strip().lower(),
+            resolution_state=str(r["resolution_state"] or "").strip().upper(),
         )
         for r in rows
     )
@@ -490,7 +497,12 @@ def evaluate_hotpath_scope(
     pending = sum(1 for r in scope_rows if r.decision not in {"approve", "reject", "skip"})
 
     tradeable_targets = 0
-    eligible_ids = [r.provider_game_id for r in scope_rows if r.provider_game_id and r.decision != "reject"]
+    eligible_ids = [
+        r.provider_game_id for r in scope_rows
+        if r.provider_game_id
+        and r.decision != "reject"
+        and not (r.resolution_state == "PENDING_KICKOFF_REVIEW" and r.decision != "approve")
+    ]
     if eligible_ids:
         placeholders = ",".join("?" for _ in eligible_ids)
         status_closed = ("closed", "resolved", "ended", "finished", "final", "complete", "completed", "cancelled", "canceled")
