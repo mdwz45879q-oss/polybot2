@@ -90,10 +90,10 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "market_overrides": {
-        "moneyline": {"size_shares": 2500.0, "limit_price": 0.99,
-                    "secondary_amount_usdc": 2500.0, "secondary_limit_price": 0.99,},
+        "moneyline": {"size_shares": 3000.0, "limit_price": 0.99,
+                    "secondary_amount_usdc": 3000.0, "secondary_limit_price": 0.99,},
         # TOTALS SAFETY
-        "totals:over":  {"size_shares": 500.0, "limit_price": 0.99,
+        "totals:over":  {"size_shares": 250.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 2500.0, "secondary_limit_price": 0.99,}, 
         "totals:under": {"size_shares": 2000.0, "limit_price": 0.99,
                     "secondary_amount_usdc": 1000.0, "secondary_limit_price": 0.99,}, 
