@@ -813,7 +813,7 @@ class LinkService:
                     n_dropped_horizon += 1
             provider_rows = filtered
             if n_dropped_horizon > 0:
-                log.info(
+                log.debug(
                     "link build: %s/%s: dropped %d games outside horizon window [-%dh, +%dh]",
                     p, league_filter, n_dropped_horizon, 6, int(horizon_hours),
                 )

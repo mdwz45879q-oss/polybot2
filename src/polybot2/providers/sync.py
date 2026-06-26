@@ -99,6 +99,7 @@ def sync_provider_games(
     db: Database,
     provider: str,
     full_catalog: bool = False,
+    additive: bool = False,
 ) -> ProviderSyncResult:
     p = str(provider or "").strip().lower()
     now_ts = int(datetime.now(tz=_UTC).timestamp())
@@ -207,7 +208,10 @@ def sync_provider_games(
             )
         )
 
-    db.linking.replace_provider_games_snapshot(provider=p, rows=rows)
+    if additive:
+        db.linking.upsert_provider_games(rows)
+    else:
+        db.linking.replace_provider_games_snapshot(provider=p, rows=rows)
     return ProviderSyncResult(provider=p, n_rows=len(rows), status="ok")
 
 

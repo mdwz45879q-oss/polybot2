@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 import logging
 import os
@@ -106,6 +106,28 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
 
 
 from polybot2._cli.common import _load_dotenv
+
+_READINESS_DISPLAY_ORDER = (
+    "in_plan", "promoted", "pending_stream", "pending_v2",
+    "catalog_missing", "compile_excluded", "excluded",
+)
+
+
+@dataclass
+class ReadinessResult:
+    promoted: list[tuple[str, str, str, Any]] = field(default_factory=list)
+    counts: dict[str, int] = field(default_factory=dict)
+    new_subscriptions: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _format_readiness_summary(result: ReadinessResult, *, prefix: str = "[ready]") -> str:
+    total = sum(result.counts.values())
+    parts = [
+        f"{result.counts[k]} {k}"
+        for k in _READINESS_DISPLAY_ORDER
+        if result.counts.get(k, 0) > 0
+    ]
+    return f"{prefix} {total} evaluated: {', '.join(parts)}"
 
 
 def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
@@ -332,8 +354,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         in_plan_provider_game_ids: set[tuple[str, str]] = set()  # (provider, provider_game_id)
         pending_v2_ids: set[str] = set()  # resolved/finished V2 prematch IDs
         _cumulative_provider_subs: dict[str, list[str]] = {}
-        readiness_check_interval = float(runtime_policy.get("readiness_check_interval_seconds", 30))
-        market_refresh_interval = float(refresh_interval)
+        _seen_catalog_missing: set[tuple[str, str]] = set()  # (provider, gid) — log once
+        _seen_compile_excluded: set[tuple[str, str]] = set()  # (provider, gid) — log once
+        _seen_alt_subscribed: set[tuple[str, str]] = set()  # (provider, gid) — log once
+        cycle_interval = float(refresh_interval)
 
         _stw_by_league = {
             lk: int(mapping.leagues.get(lk, {}).get("sets_to_win", 2))
@@ -354,19 +378,11 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             ).fetchone()
             return str(row["event_slug_prefix"] or "") if row else ""
 
-        def _add_game_subs(game_plan: Any) -> None:
+        def _add_game_subs(game_plan: Any, provider: str) -> None:
             for g in game_plan.games:
                 gid = str(g.provider_game_id or "").strip()
-                if not gid:
-                    continue
-                _lk = g.canonical_league
-                _prov = _primary_provider_for_league(mapping.leagues.get(_lk, {}))
-                if gid not in _cumulative_provider_subs.get(_prov, []):
-                    _cumulative_provider_subs.setdefault(_prov, []).append(gid)
-                for alt_prov, alt_id in (g.alternate_provider_game_ids or []):
-                    alt_id_s = str(alt_id or "").strip()
-                    if alt_id_s and alt_id_s not in _cumulative_provider_subs.get(str(alt_prov), []):
-                        _cumulative_provider_subs.setdefault(str(alt_prov), []).append(alt_id_s)
+                if gid and gid not in _cumulative_provider_subs.get(provider, []):
+                    _cumulative_provider_subs.setdefault(provider, []).append(gid)
 
         def _merge_into_compiled_plan(game_plan: Any) -> None:
             existing = hotpath._compiled_plan
@@ -376,21 +392,24 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             else:
                 hotpath.set_compiled_plan(game_plan)
 
-        def _cold_start(plan: Any) -> None:
+        def _cold_start(plan: Any, promoted: list[tuple[str, str, str, Any]] | None = None) -> None:
             nonlocal rust_started
             hotpath.set_compiled_plan(plan)
             subs: dict[str, list[str]] = {}
-            for g in plan.games:
-                gid = str(g.provider_game_id or "").strip()
-                if not gid:
-                    continue
-                lk = g.canonical_league
-                prov = _primary_provider_for_league(mapping.leagues.get(lk, {}))
-                subs.setdefault(prov, []).append(gid)
-                for ap, aid in g.alternate_provider_game_ids:
-                    aid_s = str(aid or "").strip()
-                    if aid_s:
-                        subs.setdefault(str(ap), []).append(aid_s)
+            if promoted:
+                for prov, _lk, _slug, gp in promoted:
+                    for g in gp.games:
+                        gid = str(g.provider_game_id or "").strip()
+                        if gid:
+                            subs.setdefault(prov, []).append(gid)
+            else:
+                for g in plan.games:
+                    gid = str(g.provider_game_id or "").strip()
+                    if not gid:
+                        continue
+                    lk = g.canonical_league
+                    prov = _primary_provider_for_league(mapping.leagues.get(lk, {}))
+                    subs.setdefault(prov, []).append(gid)
             if hasattr(hotpath, "set_runtime_timing_policy"):
                 hotpath.set_runtime_timing_policy(
                     subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
@@ -410,7 +429,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             rust_started = True
             logger.info("[startup] hotpath started")
 
-        def _hot_patch_game(game_plan: Any) -> int:
+        def _hot_patch_game(game_plan: Any, provider: str) -> int:
             new_targets = tuple(t for g in game_plan.games for m in g.markets for t in m.targets)
             refresh_result = IncrementalRefreshResult(
                 new_plan=game_plan,
@@ -422,20 +441,18 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             )
             count = hotpath.apply_incremental_refresh(refresh_result, order_policies)
             _merge_into_compiled_plan(game_plan)
-            _add_game_subs(game_plan)
+            _add_game_subs(game_plan, provider=provider)
             hotpath.set_subscriptions(_cumulative_provider_subs)
             return count
 
         # ── Readiness evaluation ──
 
-        def _run_readiness_layer(db: Any) -> tuple[list[tuple[str, str, str, Any]], int, int, int]:
-            """Evaluate pending games.
-            Returns (newly_ready, n_pending_total, n_pending_v2, n_pending_stream).
-            newly_ready: [(provider, league, slug, game_plan), ...]
-            """
+        def _run_readiness_layer(db: Any) -> ReadinessResult:
+            """Evaluate all linked games and categorize each into exactly one bucket."""
+            counts: dict[str, int] = {k: 0 for k in _READINESS_DISPLAY_ORDER}
             newly_ready: list[tuple[str, str, str, Any]] = []
-            n_pending_v2 = 0
-            n_pending_stream = 0
+            new_subscriptions: list[tuple[str, str]] = []
+            _promoted_this_pass: set[tuple[str, str]] = set()
             now_ts = int(time.time())
 
             # ── Batch V2 resolution (one call per league, not per game) ──
@@ -459,11 +476,15 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                         for fg in resolution.finished:
                             pending_v2_ids.add(fg.prematch_event_id)
                             v2_finished.add(fg.prematch_event_id)
+                            logger.info("[ready]   - %s | %s | kalstrop_v2 | finished", lk, fg.prematch_event_id)
                         for r in resolution.resolved:
                             v2_resolved[r.pending.prematch_event_id] = r
                             pending_v2_ids.add(r.pending.prematch_event_id)
                 except Exception as exc:
                     logger.warning("[ready] V2 batch resolution failed for %s: %s", lk, exc)
+
+            # Cache compiled plans per (provider, league) to avoid recompiling for each game
+            compiled_cache: dict[tuple[str, str], Any] = {}
 
             # Collect all linked+approved games per (provider, league) across all leagues
             for lk in league_keys:
@@ -507,33 +528,47 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                         home = str(r["canonical_home_team"] or "")
                         away = str(r["canonical_away_team"] or "")
 
-                        # Skip rejected, non-tradeable, and pending-kickoff-review without approval
+                        # Excluded: rejected, pending-kickoff-review without approval, unresolvable
                         if decision == "reject":
+                            counts["excluded"] += 1
                             continue
                         if res_state == "PENDING_KICKOFF_REVIEW" and decision != "approve":
+                            counts["excluded"] += 1
                             continue
                         if not res_state or res_state in ("TEAM_SET_NOT_FOUND", "NO_EVENT_CANDIDATES", "AMBIGUOUS_EVENT_MATCH"):
+                            counts["excluded"] += 1
                             continue
 
-                        # Already in plan?
+                        # Already in plan (primary dedup by slug)?
                         key = (prov, slug)
                         if key in in_plan_keys:
+                            counts["in_plan"] += 1
                             continue
-                        if (prov, gid) in in_plan_provider_game_ids:
-                            continue
+
+                        # Covered by another provider's entry via alternate IDs?
+                        # Still run the readiness check so counts reflect true status
+                        # (e.g., V1 game shows pending_stream even if BoltOdds is in plan).
+                        _covered_by_alt = (prov, gid) in in_plan_provider_game_ids
 
                         # Provider-specific readiness check
                         if prov == "kalstrop_v2":
                             if gid in pending_v2_ids and gid not in v2_resolved:
+                                counts["excluded"] += 1
                                 continue
-                            # V2: look up batch resolution result
                             resolved = v2_resolved.get(gid)
                             if resolved is None:
-                                n_pending_v2 += 1
+                                counts["pending_v2"] += 1
+                                continue
+                            if _covered_by_alt or (prov, gid) in _promoted_this_pass:
+                                new_subscriptions.append((prov, gid))
+                                counts["in_plan"] += 1
+                                if (prov, gid) not in _seen_alt_subscribed:
+                                    _seen_alt_subscribed.add((prov, gid))
+                                    logger.info("[ready]   ~ %s | %s vs %s | %s | subscribed", lk, home, away, prov)
                                 continue
                             delta_s = resolution_time_delta_seconds(resolved)
                             logger.info(
-                                "V2 resolved: %s → fixture_id=%s (%s vs %s, status=%s, Δ=%ds)",
+                                "V2 resolved: %s -> fixture_id=%s (%s vs %s, status=%s, delta=%ds)",
                                 resolved.pending.prematch_event_id, resolved.fixture_id,
                                 resolved.resolved_home, resolved.resolved_away,
                                 resolved.match_status, delta_s,
@@ -547,9 +582,17 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 sets_to_win=_stw_by_league.get(lk, 2),
                             )
                             if game_plan is None:
-                                logger.warning("V2 resolved %s but no targets compiled", resolved.fixture_id)
+                                counts["compile_excluded"] += 1
+                                if (prov, gid) not in _seen_compile_excluded:
+                                    _seen_compile_excluded.add((prov, gid))
+                                    logger.info("[ready]   - %s | %s vs %s | %s | compile_excluded", lk, home, away, prov)
                                 continue
+                            for g in game_plan.games:
+                                _promoted_this_pass.add((prov, str(g.provider_game_id)))
+                                for ap, aid in g.alternate_provider_game_ids:
+                                    _promoted_this_pass.add((str(ap), str(aid)))
                             newly_ready.append((prov, lk, slug, game_plan))
+                            new_subscriptions.append((prov, gid))
 
                         elif prov in ("kalstrop_v1", "kalstrop"):
                             # V1: check stream_exists
@@ -557,43 +600,102 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 "SELECT stream_exists FROM provider_games WHERE provider = ? AND provider_game_id = ?",
                                 (prov, gid),
                             ).fetchone()
-                            se = se_row["stream_exists"] if se_row else None
+                            if se_row is None:
+                                counts["catalog_missing"] += 1
+                                if (prov, gid) not in _seen_catalog_missing:
+                                    _seen_catalog_missing.add((prov, gid))
+                                    logger.info("[ready]   - %s | %s vs %s | %s | catalog_missing", lk, home, away, prov)
+                                continue
+                            se = se_row["stream_exists"]
                             if se is None or int(se) != 1:
-                                n_pending_stream += 1
+                                counts["pending_stream"] += 1
                                 continue
-                            game_plan = compile_hotpath_plan(
-                                db=db, provider=prov, league=lk, run_id=run_id,
-                                sport=sport_family, sets_to_win=_stw_by_league.get(lk, 2),
-                                live_policy=live_policy,
-                                now_ts_utc=now_ts,
-                                plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
-                                include_inactive=True,
-                            )
-                            # Extract just this game from the compiled plan
-                            matching = [g for g in game_plan.games if g.provider_game_id == gid]
+                            if _covered_by_alt or (prov, gid) in _promoted_this_pass:
+                                new_subscriptions.append((prov, gid))
+                                counts["in_plan"] += 1
+                                if (prov, gid) not in _seen_alt_subscribed:
+                                    _seen_alt_subscribed.add((prov, gid))
+                                    logger.info("[ready]   ~ %s | %s vs %s | %s | subscribed", lk, home, away, prov)
+                                continue
+                            _cache_key = (prov, lk)
+                            if _cache_key not in compiled_cache:
+                                compiled_cache[_cache_key] = compile_hotpath_plan(
+                                    db=db, provider=prov, league=lk, run_id=run_id,
+                                    sport=sport_family, sets_to_win=_stw_by_league.get(lk, 2),
+                                    live_policy=live_policy,
+                                    now_ts_utc=now_ts,
+                                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                                    include_inactive=True,
+                                )
+                            matching = [g for g in compiled_cache[_cache_key].games if g.provider_game_id == gid]
                             if not matching:
+                                counts["compile_excluded"] += 1
+                                if (prov, gid) not in _seen_compile_excluded:
+                                    _seen_compile_excluded.add((prov, gid))
+                                    logger.info("[ready]   - %s | %s vs %s | %s | compile_excluded", lk, home, away, prov)
                                 continue
-                            game_plan = replace(game_plan, games=tuple(matching))
+                            game_plan = replace(compiled_cache[_cache_key], games=tuple(matching))
+                            for g in matching:
+                                _promoted_this_pass.add((prov, str(g.provider_game_id)))
+                                for ap, aid in g.alternate_provider_game_ids:
+                                    _promoted_this_pass.add((str(ap), str(aid)))
                             newly_ready.append((prov, lk, slug, game_plan))
+                            new_subscriptions.append((prov, gid))
 
                         else:
                             # BoltOdds / other: immediately ready
-                            game_plan = compile_hotpath_plan(
-                                db=db, provider=prov, league=lk, run_id=run_id,
-                                sport=sport_family, sets_to_win=_stw_by_league.get(lk, 2),
-                                live_policy=live_policy,
-                                now_ts_utc=now_ts,
-                                plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
-                                include_inactive=True,
-                            )
-                            matching = [g for g in game_plan.games if g.provider_game_id == gid]
-                            if not matching:
+                            if _covered_by_alt or (prov, gid) in _promoted_this_pass:
+                                new_subscriptions.append((prov, gid))
+                                counts["in_plan"] += 1
+                                if (prov, gid) not in _seen_alt_subscribed:
+                                    _seen_alt_subscribed.add((prov, gid))
+                                    logger.info("[ready]   ~ %s | %s vs %s | %s | subscribed", lk, home, away, prov)
                                 continue
-                            game_plan = replace(game_plan, games=tuple(matching))
+                            _cache_key = (prov, lk)
+                            if _cache_key not in compiled_cache:
+                                compiled_cache[_cache_key] = compile_hotpath_plan(
+                                    db=db, provider=prov, league=lk, run_id=run_id,
+                                    sport=sport_family, sets_to_win=_stw_by_league.get(lk, 2),
+                                    live_policy=live_policy,
+                                    now_ts_utc=now_ts,
+                                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
+                                    include_inactive=True,
+                                )
+                            matching = [g for g in compiled_cache[_cache_key].games if g.provider_game_id == gid]
+                            if not matching:
+                                counts["compile_excluded"] += 1
+                                if (prov, gid) not in _seen_compile_excluded:
+                                    _seen_compile_excluded.add((prov, gid))
+                                    logger.info("[ready]   - %s | %s vs %s | %s | compile_excluded", lk, home, away, prov)
+                                continue
+                            _primary_prov = _primary_provider_for_league(mapping.leagues.get(lk, {}))
+                            if prov != _primary_prov:
+                                _swapped = []
+                                for g in matching:
+                                    _primary_alt = None
+                                    for ap, aid in g.alternate_provider_game_ids:
+                                        if str(ap) == _primary_prov:
+                                            _primary_alt = str(aid)
+                                            break
+                                    if _primary_alt:
+                                        _new_alts = tuple(
+                                            (ap, aid) for ap, aid in g.alternate_provider_game_ids
+                                            if str(ap) != _primary_prov
+                                        ) + ((prov, str(g.provider_game_id)),)
+                                        _swapped.append(replace(g, provider_game_id=_primary_alt, alternate_provider_game_ids=_new_alts))
+                                    else:
+                                        _swapped.append(g)
+                                matching = _swapped
+                            game_plan = replace(compiled_cache[_cache_key], games=tuple(matching))
+                            for g in matching:
+                                _promoted_this_pass.add((prov, str(g.provider_game_id)))
+                                for ap, aid in g.alternate_provider_game_ids:
+                                    _promoted_this_pass.add((str(ap), str(aid)))
                             newly_ready.append((prov, lk, slug, game_plan))
+                            new_subscriptions.append((prov, gid))
 
-            n_pending_total = n_pending_v2 + n_pending_stream
-            return (newly_ready, n_pending_total, n_pending_v2, n_pending_stream)
+            counts["promoted"] = len(newly_ready)
+            return ReadinessResult(promoted=newly_ready, counts=counts, new_subscriptions=new_subscriptions)
 
         # ── Initial readiness evaluation at startup ──
 
@@ -611,20 +713,13 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                 logger.warning("V1 catalog refresh failed at startup: %s", exc)
 
         with open_database(runtime) as db:
-            initial_ready, n_pending, n_pv2, n_pstream = _run_readiness_layer(db)
+            initial_result = _run_readiness_layer(db)
 
-        n_ready = len(initial_ready)
-        n_linked = n_ready + n_pending
-        parts = [f"{n_ready} ready"]
-        if n_pv2 > 0:
-            parts.append(f"{n_pv2} pending_v2")
-        if n_pstream > 0:
-            parts.append(f"{n_pstream} pending_stream")
-        logger.info("[startup] %d linked: %s", n_linked, ", ".join(parts))
+        logger.info(_format_readiness_summary(initial_result, prefix="[startup]"))
 
-        if n_ready > 0:
+        if initial_result.promoted:
             all_games = []
-            for prov, lk, slug, gp in initial_ready:
+            for prov, lk, slug, gp in initial_result.promoted:
                 all_games.extend(gp.games)
                 in_plan_keys.add((prov, slug))
                 for g in gp.games:
@@ -635,29 +730,30 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                         "[startup]   + %s | %s vs %s | %s",
                         lk, g.canonical_home_team, g.canonical_away_team, prov,
                     )
-            merged = replace(initial_ready[0][3], games=tuple(all_games))
-            _cold_start(merged)
+            merged = replace(initial_result.promoted[0][3], games=tuple(all_games))
+            _cold_start(merged, promoted=initial_result.promoted)
+            for sub_prov, sub_gid in initial_result.new_subscriptions:
+                if sub_gid not in _cumulative_provider_subs.get(sub_prov, []):
+                    _cumulative_provider_subs.setdefault(sub_prov, []).append(sub_gid)
+            hotpath.set_subscriptions(_cumulative_provider_subs)
         else:
             logger.info("[startup] waiting for first game to become ready...")
 
         # ── Main loop ──
 
-        last_readiness = 0.0
-        last_market_refresh = 0.0
-        last_linking = 0.0
-        game_refresh_interval = float(runtime_policy.get("game_refresh_interval_seconds", 0))
+        last_cycle = 0.0
         _no_discovery = bool(getattr(args, "no_discovery", False))
         _no_market_refresh = bool(getattr(args, "no_market_refresh", False))
 
         def _run_linking_layer() -> None:
             """Layer 1: Refresh catalogs, PM events, and run incremental linking."""
-            # Step 1: Refresh provider catalogs (updates stream_exists for V1)
+            # Step 1: Refresh provider catalogs (additive upsert — preserves existing rows)
             from polybot2.providers.sync import sync_provider_games as _sync_prov
             prov_counts: list[str] = []
             with open_database(runtime) as db:
                 for prov_name in provider_names:
                     try:
-                        res = _sync_prov(db=db, provider=prov_name)
+                        res = _sync_prov(db=db, provider=prov_name, additive=True)
                         prov_counts.append(f"{prov_name}={res.n_rows}")
                     except Exception as exc:
                         logger.warning("[linking] catalog refresh failed for %s: %s", prov_name, exc)
@@ -716,9 +812,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 new_ids = result.report.get("new_game_ids", []) if isinstance(result.report, dict) else []
                                 for gid in new_ids:
                                     existing_game_ids.add(gid)
-                                    slug = _get_slug_prefix(db, prov_name, gid)
-                                    if slug:
-                                        in_plan_keys.add((prov_name, slug))
                         except Exception as exc:
                             logger.warning("[linking] incremental link failed for %s/%s: %s", lk, prov_name, exc)
                 if n_new_total > 0:
@@ -731,94 +824,91 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             if stop_requested:
                 break
             now = time.time()
+            if (now - last_cycle) < cycle_interval:
+                continue
+            last_cycle = now
+            iteration += 1
+            logger.info("--- cycle %d at %s ---", iteration, datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
 
-            # Check if any layer will fire this tick
-            _l1_fires = not _no_discovery and game_refresh_interval > 0 and (now - last_linking) >= game_refresh_interval
-            _l2_fires = (now - last_readiness) >= readiness_check_interval
-            _l3_fires = not _no_market_refresh and rust_started and (now - last_market_refresh) >= market_refresh_interval
-            if _l1_fires or _l2_fires or _l3_fires:
-                iteration += 1
-                logger.info("--- cycle %d at %s ---", iteration, datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-
-            # Layer 1: Linking (every game_refresh_interval, if enabled)
-            if _l1_fires:
-                last_linking = now
+            # Layer 1: Linking (if enabled)
+            if not _no_discovery:
                 try:
                     _run_linking_layer()
                 except (NameError, TypeError, AttributeError, KeyError):
                     raise
                 except Exception as exc:
                     logger.warning("[linking] failed: %s: %s", type(exc).__name__, exc)
-                # Force Layer 2 to run in the same cycle
-                last_readiness = 0.0
 
-            # Layer 2: Readiness (every readiness_check_interval)
-            if _l2_fires or _l1_fires:
-                last_readiness = now
-                try:
-                    # Refresh V1 catalog for fresh stream_exists values
-                    if _has_v1:
+            # Layer 2: Readiness (always)
+            try:
+                # Refresh V1 catalog for fresh stream_exists values
+                if _has_v1 and _no_discovery:
+                    try:
+                        with open_database(runtime) as db:
+                            v1_rows = load_provider_catalog(provider="kalstrop_v1")
+                            db.linking.upsert_provider_games(v1_rows)
+                    except Exception as exc:
+                        logger.warning("V1 catalog refresh failed: %s", exc)
+
+                with open_database(runtime) as db:
+                    result = _run_readiness_layer(db)
+
+                n_promoted = 0
+                if result.promoted:
+                    # Batch cold-start: merge all ready games if hotpath not yet started
+                    if not rust_started:
+                        all_cold_games = []
+                        for _, _, _, gp in result.promoted:
+                            all_cold_games.extend(gp.games)
+                        merged = replace(result.promoted[0][3], games=tuple(all_cold_games))
                         try:
-                            with open_database(runtime) as db:
-                                v1_rows = load_provider_catalog(provider="kalstrop_v1")
-                                db.linking.upsert_provider_games(v1_rows)
+                            _cold_start(merged, promoted=result.promoted)
                         except Exception as exc:
-                            logger.warning("V1 catalog refresh failed: %s", exc)
+                            logger.error("[ready] cold-start failed: %s: %s", type(exc).__name__, exc)
+                            result = ReadinessResult(promoted=[], counts=result.counts)
+                            result.counts["promoted"] = 0
 
-                    with open_database(runtime) as db:
-                        newly_ready, n_pending, n_pv2, n_pstream = _run_readiness_layer(db)
-
-                    n_promoted = 0
-                    if newly_ready:
-                        # Batch cold-start: merge all ready games if hotpath not yet started
-                        if not rust_started:
-                            all_cold_games = []
-                            for _, _, _, gp in newly_ready:
-                                all_cold_games.extend(gp.games)
-                            merged = replace(newly_ready[0][3], games=tuple(all_cold_games))
-                            try:
-                                _cold_start(merged)
-                            except Exception as exc:
-                                logger.error("[ready] cold-start failed: %s: %s", type(exc).__name__, exc)
-                                newly_ready = []  # skip promotion tracking
-
-                        for prov, lk, slug, game_plan in newly_ready:
-                            try:
-                                if rust_started and (prov, slug) not in in_plan_keys:
-                                    n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
-                                    _hot_patch_game(game_plan)
-                                    for g in game_plan.games:
-                                        reason = "fixture_id resolved" if prov == "kalstrop_v2" else (
-                                            "stream_exists=true" if prov in ("kalstrop_v1", "kalstrop") else "ready"
-                                        )
-                                        logger.info(
-                                            "[ready]   + %s | %s vs %s | %s | %s | %d targets",
-                                            lk, g.canonical_home_team, g.canonical_away_team, prov, reason, n_tgt,
-                                        )
-                                in_plan_keys.add((prov, slug))
+                    for prov, lk, slug, game_plan in result.promoted:
+                        try:
+                            if rust_started and (prov, slug) not in in_plan_keys:
+                                n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
+                                _hot_patch_game(game_plan, provider=prov)
                                 for g in game_plan.games:
-                                    in_plan_provider_game_ids.add((prov, str(g.provider_game_id)))
-                                    for ap, aid in g.alternate_provider_game_ids:
-                                        in_plan_provider_game_ids.add((str(ap), str(aid)))
-                                n_promoted += 1
-                            except Exception as exc:
-                                logger.warning(
-                                    "[ready] patch failed for %s/%s: %s: %s",
-                                    prov, slug, type(exc).__name__, exc,
-                                )
-                    n_still_pending = n_pending - n_promoted
-                    if n_promoted > 0 or n_still_pending > 0:
-                        logger.info("[ready] %d promoted, %d still pending", n_promoted, max(0, n_still_pending))
-                    if n_promoted > 0:
-                        last_market_refresh = 0.0  # force Layer 3 to enrich new games
-                except (NameError, TypeError, AttributeError, KeyError):
-                    raise
-                except Exception as exc:
-                    logger.warning("[ready] readiness check failed: %s: %s", type(exc).__name__, exc)
+                                    reason = "fixture_id resolved" if prov == "kalstrop_v2" else (
+                                        "stream_exists=true" if prov in ("kalstrop_v1", "kalstrop") else "ready"
+                                    )
+                                    logger.info(
+                                        "[ready]   + %s | %s vs %s | %s | %s | %d targets",
+                                        lk, g.canonical_home_team, g.canonical_away_team, prov, reason, n_tgt,
+                                    )
+                            in_plan_keys.add((prov, slug))
+                            for g in game_plan.games:
+                                in_plan_provider_game_ids.add((prov, str(g.provider_game_id)))
+                                for ap, aid in g.alternate_provider_game_ids:
+                                    in_plan_provider_game_ids.add((str(ap), str(aid)))
+                            n_promoted += 1
+                        except Exception as exc:
+                            result.counts["promoted"] = max(0, result.counts.get("promoted", 0) - 1)
+                            logger.warning(
+                                "[ready] patch failed for %s/%s: %s: %s",
+                                prov, slug, type(exc).__name__, exc,
+                            )
+                if result.new_subscriptions and rust_started:
+                    _subs_changed = False
+                    for sub_prov, sub_gid in result.new_subscriptions:
+                        if sub_gid not in _cumulative_provider_subs.get(sub_prov, []):
+                            _cumulative_provider_subs.setdefault(sub_prov, []).append(sub_gid)
+                            _subs_changed = True
+                    if _subs_changed:
+                        hotpath.set_subscriptions(_cumulative_provider_subs)
+                logger.info(_format_readiness_summary(result))
+            except (NameError, TypeError, AttributeError, KeyError):
+                raise
+            except Exception as exc:
+                logger.warning("[ready] readiness check failed: %s: %s", type(exc).__name__, exc)
 
-            # Layer 3: Market refresh (every market_refresh_interval, only if Rust running)
-            if not _no_market_refresh and rust_started and (now - last_market_refresh) >= market_refresh_interval:
-                last_market_refresh = now
+            # Layer 3: Market refresh (if enabled and Rust running)
+            if not _no_market_refresh and rust_started:
                 try:
                     with open_database(runtime) as db:
                         result = discover_new_markets_sync(
