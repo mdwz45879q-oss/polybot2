@@ -47,6 +47,20 @@ def _safe_dir_name(name: str) -> str:
     return name.replace(" ", "_").replace("/", "_").replace(".", "")
 
 
+# Allow imports from the config/ directory
+_root = Path(__file__).resolve().parent.parent
+_config = _root / "config"
+if str(_config) not in sys.path:
+    sys.path.insert(0, str(_config))
+
+
+def _primary_provider(league_cfg: dict) -> str:
+    raw = league_cfg.get("provider", "")
+    if isinstance(raw, list):
+        return str(raw[0]).strip().lower() if raw else ""
+    return str(raw).strip().lower()
+
+
 def _resolve_run_id(db_path: str, league: str, explicit_run_id: int | None) -> int:
     if explicit_run_id is not None:
         return explicit_run_id
@@ -70,109 +84,127 @@ def _resolve_run_id(db_path: str, league: str, explicit_run_id: int | None) -> i
 def _extract_tokens(
     db_path: str, leagues: list[str], run_id: int, market_types: list[str] | None,
 ) -> tuple[dict[str, dict], set[str], int]:
-    """Extract token_id → metadata and condition_ids from DB."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    """Compile plan per league and extract token_id → metadata with strategy keys."""
+    from mappings import LEAGUES
+    from polybot2.data.storage.database import open_database, DataRuntimeConfig
+    from polybot2.hotpath.compiler import compile_hotpath_plan, HotPathPlanError
+    from polybot2.linking.mapping_loader import load_live_trading_policy
+
+    policy = load_live_trading_policy()
     token_lookup: dict[str, dict] = {}
     condition_ids: set[str] = set()
-    game_set: set[str] = set()
+    total_games = 0
 
-    for lk in leagues:
-        rows = conn.execute(
-            """
-            SELECT
-                t.token_id, t.outcome_label, t.outcome_index,
-                m.condition_id, m.sports_market_type, m.question, m.line,
-                pe.title AS event_title, pe.event_id,
-                pg.provider_game_id, pg.canonical_league
-            FROM link_run_provider_games pg
-            INNER JOIN link_event_bindings eb
-                ON eb.run_id = pg.run_id AND eb.provider_game_id = pg.provider_game_id
-            INNER JOIN pm_events pe ON pe.event_id = eb.event_id
-            INNER JOIN pm_markets m ON m.event_id = pe.event_id
-            INNER JOIN pm_market_tokens t ON t.condition_id = m.condition_id
-            WHERE pg.run_id = ? AND pg.canonical_league = ?
-            """,
-            (run_id, lk),
-        ).fetchall()
-
-        for row in rows:
-            mt = str(row["sports_market_type"] or "").strip().lower()
-            if market_types and mt not in market_types:
+    cfg = DataRuntimeConfig(db_path=db_path)
+    with open_database(cfg) as db:
+        for lk in leagues:
+            lcfg = LEAGUES.get(lk, {})
+            provider = _primary_provider(lcfg)
+            sport = lcfg.get("sport_family", "soccer")
+            stw = int(lcfg.get("sets_to_win", 2))
+            if not provider:
+                print(f"[!] No provider for league={lk}, skipping")
                 continue
-            tok = str(row["token_id"] or "").strip()
-            cid = str(row["condition_id"] or "").strip()
-            if not tok:
+            try:
+                plan = compile_hotpath_plan(
+                    db=db, provider=provider, league=lk, run_id=run_id,
+                    sport=sport, sets_to_win=stw, live_policy=policy,
+                    now_ts_utc=int(time.time()), plan_horizon_hours=8760,
+                    include_inactive=True,
+                )
+            except HotPathPlanError as exc:
+                print(f"[!] compile failed for league={lk}: {exc} — skipping")
                 continue
-            game_set.add(str(row["event_id"]))
-            if cid:
-                condition_ids.add(cid)
-            token_lookup[tok] = {
-                "sk": "",
-                "game": str(row["event_title"] or ""),
-                "league": str(row["canonical_league"] or lk),
-                "market_type": mt,
-                "label": str(row["outcome_label"] or ""),
-            }
 
-    conn.close()
-    return token_lookup, condition_ids, len(game_set)
+            for game in plan.games:
+                total_games += 1
+                game_label = f"{game.canonical_home_team} vs {game.canonical_away_team}"
+                for market in game.markets:
+                    mt = market.sports_market_type
+                    if market_types and mt not in market_types:
+                        continue
+                    cid = str(market.condition_id or "").strip()
+                    if cid:
+                        condition_ids.add(cid)
+                    for target in market.targets:
+                        tok = str(target.token_id or "").strip()
+                        if not tok:
+                            continue
+                        token_lookup[tok] = {
+                            "sk": target.strategy_key,
+                            "game": game_label,
+                            "league": game.canonical_league,
+                            "market_type": mt,
+                            "label": target.outcome_label,
+                        }
+
+    return token_lookup, condition_ids, total_games
 
 
 class GameFiles:
-    """Manages per-game output files."""
+    """Manages per-game, per-market-type output files (created lazily)."""
 
     def __init__(self, out_path: Path, game_names: list[str], has_user_channel: bool):
-        self._files: dict[str, dict[str, any]] = {}
+        self._out_path = out_path
+        self._has_user_channel = has_user_channel
+        self._game_dirs: dict[str, Path] = {}
         for gn in game_names:
-            game_dir = out_path / _safe_dir_name(gn)
-            game_dir.mkdir(parents=True, exist_ok=True)
-            fmap = {
-                "trades": (game_dir / "trades.jsonl").open("a"),
-                "bba": (game_dir / "best_bid_ask.jsonl").open("a"),
-            }
-            if has_user_channel:
-                fmap["fills"] = (game_dir / "my_fills.jsonl").open("a")
-            self._files[gn] = fmap
+            gd = out_path / _safe_dir_name(gn)
+            gd.mkdir(parents=True, exist_ok=True)
+            self._game_dirs[gn] = gd
+        self._open_files: dict[str, any] = {}
         self.trade_count = 0
         self.bba_count = 0
         self.fill_count = 0
 
-    def write_trade(self, game: str, entry: dict) -> None:
-        fmap = self._files.get(game)
-        if not fmap:
+    def _get_file(self, game: str, key: str) -> any:
+        """Get or lazily open a file handle keyed by 'game::key'."""
+        fk = f"{game}::{key}"
+        f = self._open_files.get(fk)
+        if f is None:
+            gd = self._game_dirs.get(game)
+            if gd is None:
+                return None
+            f = (gd / f"{key}.jsonl").open("a")
+            self._open_files[fk] = f
+        return f
+
+    def write_trade(self, game: str, market_type: str, entry: dict) -> None:
+        f = self._get_file(game, f"trades_{market_type}")
+        if not f:
             return
-        fmap["trades"].write(json.dumps(entry) + "\n")
+        f.write(json.dumps(entry) + "\n")
         self.trade_count += 1
         if self.trade_count % 50 == 0:
-            fmap["trades"].flush()
+            f.flush()
             print(f"  [{self.trade_count} trades, {self.bba_count} bba, {self.fill_count} fills]")
 
-    def write_bba(self, game: str, entry: dict) -> None:
-        fmap = self._files.get(game)
-        if not fmap:
+    def write_bba(self, game: str, market_type: str, entry: dict) -> None:
+        f = self._get_file(game, f"bba_{market_type}")
+        if not f:
             return
-        fmap["bba"].write(json.dumps(entry) + "\n")
+        f.write(json.dumps(entry) + "\n")
         self.bba_count += 1
         if self.bba_count % 200 == 0:
-            fmap["bba"].flush()
+            f.flush()
 
-    def write_fill(self, game: str, entry: dict) -> None:
-        fmap = self._files.get(game)
-        if not fmap or "fills" not in fmap:
+    def write_fill(self, game: str, market_type: str, entry: dict) -> None:
+        if not self._has_user_channel:
             return
-        fmap["fills"].write(json.dumps(entry) + "\n")
-        fmap["fills"].flush()
+        f = self._get_file(game, f"fills_{market_type}")
+        if not f:
+            return
+        f.write(json.dumps(entry) + "\n")
+        f.flush()
         self.fill_count += 1
-        print(f"  [FILL] {entry.get('game', '')} {entry.get('label', '')} "
+        print(f"  [FILL] {entry.get('game', '')} {entry.get('sk', '')} "
               f"price={entry.get('price', '')} size={entry.get('size', '')} "
               f"eid={entry.get('taker_order_id', '')[:16]}...")
 
     def close(self) -> None:
-        for gn, fmap in self._files.items():
-            for f in fmap.values():
-                f.flush()
-                f.close()
+        for f in self._open_files.values():
+            f.flush()
+            f.close()
 
 
 async def _run_market_ws(
@@ -218,16 +250,17 @@ async def _run_market_ws(
                             continue
                         now_ms = int(time.time() * 1000)
                         game = meta.get("game", "")
+                        mt = meta.get("market_type", "unknown")
 
                         if et == "last_trade_price":
-                            gf.write_trade(game, {
+                            gf.write_trade(game, mt, {
                                 "ts": now_ms, "token_id": asset_id, **meta,
                                 "price": data.get("price", ""),
                                 "side": data.get("side", ""),
                                 "size": data.get("size", ""),
                             })
                         elif et == "best_bid_ask":
-                            gf.write_bba(game, {
+                            gf.write_bba(game, mt, {
                                 "ts": now_ms, "token_id": asset_id, **meta,
                                 "best_bid": data.get("best_bid", ""),
                                 "best_ask": data.get("best_ask", ""),
@@ -296,7 +329,8 @@ async def _run_user_ws(
                             continue
                         now_ms = int(time.time() * 1000)
                         game = meta.get("game", "")
-                        gf.write_fill(game, {
+                        mt = meta.get("market_type", "unknown")
+                        gf.write_fill(game, mt, {
                             "ts": now_ms,
                             "token_id": asset_id,
                             "taker_order_id": str(data.get("taker_order_id", "")),
