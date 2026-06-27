@@ -272,6 +272,9 @@ async def _run_market_ws(
                         await hb
                     except asyncio.CancelledError:
                         pass
+                # Clean exit from async for (server closed gracefully)
+                if not stop.is_set():
+                    print(f"[market] connection closed, reconnecting...")
         except (websockets.exceptions.ConnectionClosed, Exception) as exc:
             if stop.is_set():
                 break
@@ -346,6 +349,8 @@ async def _run_user_ws(
                         await hb
                     except asyncio.CancelledError:
                         pass
+                if not stop.is_set():
+                    print(f"[user] connection closed, reconnecting...")
         except (websockets.exceptions.ConnectionClosed, Exception) as exc:
             if stop.is_set():
                 break
