@@ -201,12 +201,12 @@ HOTPATH_EXECUTION_POLICY = {
         "secondary_time_in_force": "FAK",
         "secondary_limit_price": 0.99,
         "market_overrides": {
-	    "tennis_set_totals": {"size_shares": 5.0, "limit_price": 0.99,
-                       "secondary_amount_usdc": 5.0, "secondary_limit_price": 0.99,},
-        "tennis_set_handicap": {"size_shares": 5.0, "limit_price": 0.99,
-                       "secondary_amount_usdc": 5.0, "secondary_limit_price": 0.99,},
-        "tennis_first_set_winner": {"size_shares": 5.0, "limit_price": 0.99,
-                       "secondary_amount_usdc": 5.0, "secondary_limit_price": 0.99,},
+        "moneyline": {"size_shares": 5000.0, "limit_price": 0.99,
+                       "secondary_amount_usdc": 5000.0, "secondary_limit_price": 0.99,},
+        "tennis_set_handicap": {"size_shares": 1000.0, "limit_price": 0.99,
+                       "secondary_amount_usdc": 1000.0, "secondary_limit_price": 0.99,},
+        "tennis_first_set_winner": {"size_shares": 1000.0, "limit_price": 0.99,
+                       "secondary_amount_usdc": 1000.0, "secondary_limit_price": 0.99,},
         },
         "retirement": {
             "size_shares": 100.0,
