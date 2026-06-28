@@ -378,12 +378,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             ).fetchone()
             return str(row["event_slug_prefix"] or "") if row else ""
 
-        def _add_game_subs(game_plan: Any, provider: str) -> None:
-            for g in game_plan.games:
-                gid = str(g.provider_game_id or "").strip()
-                if gid and gid not in _cumulative_provider_subs.get(provider, []):
-                    _cumulative_provider_subs.setdefault(provider, []).append(gid)
-
         def _merge_into_compiled_plan(game_plan: Any) -> None:
             existing = hotpath._compiled_plan
             if existing:
@@ -392,31 +386,15 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             else:
                 hotpath.set_compiled_plan(game_plan)
 
-        def _cold_start(plan: Any, promoted: list[tuple[str, str, str, Any]] | None = None) -> None:
+        def _cold_start(plan: Any) -> None:
             nonlocal rust_started
             hotpath.set_compiled_plan(plan)
-            subs: dict[str, list[str]] = {}
-            if promoted:
-                for prov, _lk, _slug, gp in promoted:
-                    for g in gp.games:
-                        gid = str(g.provider_game_id or "").strip()
-                        if gid:
-                            subs.setdefault(prov, []).append(gid)
-            else:
-                for g in plan.games:
-                    gid = str(g.provider_game_id or "").strip()
-                    if not gid:
-                        continue
-                    lk = g.canonical_league
-                    prov = _primary_provider_for_league(mapping.leagues.get(lk, {}))
-                    subs.setdefault(prov, []).append(gid)
             if hasattr(hotpath, "set_runtime_timing_policy"):
                 hotpath.set_runtime_timing_policy(
                     subscribe_lead_minutes=int(runtime_policy.get("subscribe_lead_minutes", 90)),
                     subscription_refresh_seconds=int(runtime_policy.get("subscription_refresh_seconds", 120)),
                 )
-            hotpath.set_subscriptions(subs)
-            _cumulative_provider_subs.update({p: list(ids) for p, ids in subs.items()})
+            hotpath.set_subscriptions(_cumulative_provider_subs)
             templates = _build_hotpath_template_orders(compiled_plan=plan, order_policies=order_policies)
             if templates and hasattr(hotpath, "prewarm_presign"):
                 hotpath.prewarm_presign(templates)
@@ -429,7 +407,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             rust_started = True
             logger.info("[startup] hotpath started")
 
-        def _hot_patch_game(game_plan: Any, provider: str) -> int:
+        def _hot_patch_game(game_plan: Any) -> int:
             new_targets = tuple(t for g in game_plan.games for m in g.markets for t in m.targets)
             refresh_result = IncrementalRefreshResult(
                 new_plan=game_plan,
@@ -441,8 +419,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             )
             count = hotpath.apply_incremental_refresh(refresh_result, order_policies)
             _merge_into_compiled_plan(game_plan)
-            _add_game_subs(game_plan, provider=provider)
-            hotpath.set_subscriptions(_cumulative_provider_subs)
             return count
 
         # ── Readiness evaluation ──
@@ -688,7 +664,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 matching = _swapped
                             game_plan = replace(compiled_cache[_cache_key], games=tuple(matching))
                             for g in matching:
-                                _promoted_this_pass.add((prov, str(g.provider_game_id)))
+                                _promoted_this_pass.add((_primary_prov, str(g.provider_game_id)))
                                 for ap, aid in g.alternate_provider_game_ids:
                                     _promoted_this_pass.add((str(ap), str(aid)))
                             newly_ready.append((prov, lk, slug, game_plan))
@@ -722,8 +698,9 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
             for prov, lk, slug, gp in initial_result.promoted:
                 all_games.extend(gp.games)
                 in_plan_keys.add((prov, slug))
+                _id_prov = _primary_provider_for_league(mapping.leagues.get(lk, {}))
                 for g in gp.games:
-                    in_plan_provider_game_ids.add((prov, str(g.provider_game_id)))
+                    in_plan_provider_game_ids.add((_id_prov, str(g.provider_game_id)))
                     for ap, aid in g.alternate_provider_game_ids:
                         in_plan_provider_game_ids.add((str(ap), str(aid)))
                     logger.info(
@@ -731,11 +708,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                         lk, g.canonical_home_team, g.canonical_away_team, prov,
                     )
             merged = replace(initial_result.promoted[0][3], games=tuple(all_games))
-            _cold_start(merged, promoted=initial_result.promoted)
             for sub_prov, sub_gid in initial_result.new_subscriptions:
                 if sub_gid not in _cumulative_provider_subs.get(sub_prov, []):
                     _cumulative_provider_subs.setdefault(sub_prov, []).append(sub_gid)
-            hotpath.set_subscriptions(_cumulative_provider_subs)
+            _cold_start(merged)
         else:
             logger.info("[startup] waiting for first game to become ready...")
 
@@ -862,7 +838,10 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             all_cold_games.extend(gp.games)
                         merged = replace(result.promoted[0][3], games=tuple(all_cold_games))
                         try:
-                            _cold_start(merged, promoted=result.promoted)
+                            for sub_prov, sub_gid in result.new_subscriptions:
+                                if sub_gid not in _cumulative_provider_subs.get(sub_prov, []):
+                                    _cumulative_provider_subs.setdefault(sub_prov, []).append(sub_gid)
+                            _cold_start(merged)
                         except Exception as exc:
                             logger.error("[ready] cold-start failed: %s: %s", type(exc).__name__, exc)
                             result = ReadinessResult(promoted=[], counts=result.counts)
@@ -872,7 +851,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                         try:
                             if rust_started and (prov, slug) not in in_plan_keys:
                                 n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
-                                _hot_patch_game(game_plan, provider=prov)
+                                _hot_patch_game(game_plan)
                                 for g in game_plan.games:
                                     reason = "fixture_id resolved" if prov == "kalstrop_v2" else (
                                         "stream_exists=true" if prov in ("kalstrop_v1", "kalstrop") else "ready"
@@ -882,8 +861,9 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                         lk, g.canonical_home_team, g.canonical_away_team, prov, reason, n_tgt,
                                     )
                             in_plan_keys.add((prov, slug))
+                            _id_prov = _primary_provider_for_league(mapping.leagues.get(lk, {}))
                             for g in game_plan.games:
-                                in_plan_provider_game_ids.add((prov, str(g.provider_game_id)))
+                                in_plan_provider_game_ids.add((_id_prov, str(g.provider_game_id)))
                                 for ap, aid in g.alternate_provider_game_ids:
                                     in_plan_provider_game_ids.add((str(ap), str(aid)))
                             n_promoted += 1
