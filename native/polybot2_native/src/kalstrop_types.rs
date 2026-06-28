@@ -22,10 +22,14 @@ pub(crate) struct KalstropData<'a> {
     pub update: Option<KalstropUpdate<'a>>,
 }
 
+fn default_stream_exists() -> bool { true }
+
 #[derive(Deserialize)]
 pub(crate) struct KalstropUpdate<'a> {
     #[serde(rename = "fixtureId", default)]
     pub fixture_id: &'a str,
+    #[serde(rename = "streamExists", default = "default_stream_exists")]
+    pub stream_exists: bool,
     #[serde(borrow, rename = "matchSummary")]
     pub match_summary: Option<KalstropMatchSummary<'a>>,
 }

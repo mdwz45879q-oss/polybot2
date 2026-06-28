@@ -82,8 +82,12 @@ import importlib.util
 import logging
 import os
 import re
+import socket
 import sys
 import time
+
+# Add kalshi dir to path for KALSHI_PLAYER_MAP import
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import unicodedata
 import uuid
 from collections import deque, OrderedDict
@@ -881,33 +885,20 @@ class TennisFixture:
     recent_stream_false: int = 0
 
 
+_BO5_COMPETITIONS = {
+    "french open men singles",
+    "wimbledon men singles",
+}
+
+
 def best_of(competition: str) -> int:
-    if not competition:
-        return 3
-    c = competition.lower()
-    is_slam_main = any(s in c for s in (
-        "roland garros", "french open", "wimbledon",
-        "us open", "u.s. open", "australian open",
-    ))
-    is_qualifying = any(s in c for s in ("qualification", "qualifying", "qual"))
-    is_men = ("men" in c) and ("women" not in c)
-    return 5 if (is_slam_main and is_men and not is_qualifying) else 3
+    return 5 if (competition or "").strip().lower() in _BO5_COMPETITIONS else 3
 
 
 def _is_doubles_fixture(fx: TennisFixture) -> bool:
     if " / " in (fx.home_name or "") or " / " in (fx.away_name or ""):
         return True
     return "doubles" in (fx.competition or "").lower()
-
-
-def _abbrevs_look_plausible(fx: TennisFixture) -> bool:
-    for full, abbr in ((fx.home_name, fx.home_abbrev), (fx.away_name, fx.away_abbrev)):
-        if not full or not abbr or len(abbr) < 2:
-            return False
-        norm = _normalize_name(full)
-        if abbr.lower()[:2] not in norm:
-            return False
-    return True
 
 
 def parse_ticker(ticker: str) -> Tuple[str, List[str], str]:
@@ -1034,36 +1025,18 @@ def _normalize_name(name: str) -> str:
     return s
 
 
-def _extract_surname(name: str) -> str:
-    n = _normalize_name(name)
-    if not n:
-        return ""
-    if "," in name:
-        return _normalize_name(name.split(",")[0])
-    tokens = n.split()
-    return tokens[-1] if tokens else ""
+def build_kalshi_name_index() -> Dict[str, str]:
+    """Build normalized_name -> canonical_key index from KALSHI_PLAYER_MAP."""
+    from tennis_mappings import KALSHI_PLAYER_MAP
+    index: Dict[str, str] = {}
+    for key, meta in KALSHI_PLAYER_MAP.items():
+        index[_normalize_name(meta["kalshi_name"])] = key
+        for alias in meta.get("v1_aliases", []):
+            index[_normalize_name(alias)] = key
+    return index
 
 
-def _names_match_loosely(kalstrop_name: str, kalshi_subtitle: str) -> bool:
-    a = _normalize_name(kalstrop_name)
-    b = _normalize_name(kalshi_subtitle)
-    if not a or not b:
-        return False
-    # Strict surname check — refuse to match on 1-char surnames (closes the
-    # "F"/"M" doubles bug class from the AUGNAK mishap)
-    sn = _extract_surname(kalstrop_name)
-    if sn and len(sn) >= 3 and sn in b:
-        return True
-    if a in b or b in a:
-        return True
-    a_tokens = set(a.split())
-    b_tokens = set(b.split())
-    if len(a_tokens & b_tokens) >= 2:
-        # require at least one of the shared tokens to be 4+ chars (filters out
-        # "maria" / "alex" / "j" coincidences)
-        if any(len(t) >= 4 for t in (a_tokens & b_tokens)):
-            return True
-    return False
+KALSHI_NAME_INDEX: Dict[str, str] = {}
 
 
 # =============================================================================
@@ -1249,71 +1222,41 @@ def build_kalshi_registry() -> List[KalshiEventEntry]:
     return main_events
 
 
-def _name_tokens(name: str) -> Set[str]:
-    return set(_normalize_name(name).split())
-
-
-def _strong_overlap(a_tokens: Set[str], b_tokens: Set[str], min_len: int = 4) -> bool:
-    return any(len(t) >= min_len for t in (a_tokens & b_tokens))
-
-
 def find_kalshi_event(fixture: TennisFixture,
                        registry: List[KalshiEventEntry]) -> Optional[KalshiEventEntry]:
-    """Strict matcher — both sides must share a ≥4-char surname token. Returns
-    None if zero matches OR ambiguous (and we can't tie-break)."""
-    home_tokens = _name_tokens(fixture.home_name)
-    away_tokens = _name_tokens(fixture.away_name)
-    candidates: List[KalshiEventEntry] = []
-    for entry in registry:
-        a_tokens = _name_tokens(entry.name_a)
-        b_tokens = _name_tokens(entry.name_b)
-        match_ab = (_strong_overlap(home_tokens, a_tokens)
-                     and _strong_overlap(away_tokens, b_tokens))
-        match_ba = (_strong_overlap(home_tokens, b_tokens)
-                     and _strong_overlap(away_tokens, a_tokens))
-        if match_ab or match_ba:
-            candidates.append(entry)
-    if len(candidates) == 1:
-        return candidates[0]
-    if len(candidates) > 1:
-        # Tie-break by total shared character count
-        def score(entry):
-            at = _name_tokens(entry.name_a)
-            bt = _name_tokens(entry.name_b)
-            return (sum(len(t) for t in home_tokens & at)
-                    + sum(len(t) for t in away_tokens & bt)
-                    + sum(len(t) for t in home_tokens & bt)
-                    + sum(len(t) for t in away_tokens & at))
-        candidates.sort(key=score, reverse=True)
-        if score(candidates[0]) > score(candidates[1]):
-            return candidates[0]
-        logger.warning(f"⛔ AMBIGUOUS match for {fixture.home_name} vs "
-                        f"{fixture.away_name}: tied between:")
-        for c in candidates[:3]:
-            logger.warning(f"     {c.event_ticker} ({c.name_a} vs {c.name_b})")
+    """Deterministic matcher via PLAYER_MAP_TENNIS canonical keys.
+    Both sides must resolve to known players. No fuzzy matching."""
+    home_key = KALSHI_NAME_INDEX.get(_normalize_name(fixture.home_name))
+    away_key = KALSHI_NAME_INDEX.get(_normalize_name(fixture.away_name))
+    if not home_key or not away_key:
         return None
+    for entry in registry:
+        a_key = KALSHI_NAME_INDEX.get(_normalize_name(entry.name_a))
+        b_key = KALSHI_NAME_INDEX.get(_normalize_name(entry.name_b))
+        if not a_key or not b_key:
+            continue
+        if {home_key, away_key} == {a_key, b_key}:
+            return entry
     return None
 
 
 def map_fixture_to_kalshi(fixture: TennisFixture) -> bool:
-    """Strict registry-based matcher. Returns True if mapped to a unique
-    Kalshi event whose date matches BETTING_DATE."""
+    """Deterministic registry-based matcher. Returns True if mapped."""
     if not KALSHI_REGISTRY:
         return False
     entry = find_kalshi_event(fixture, KALSHI_REGISTRY)
     if entry is None:
         return False
-    # Figure out which side of the entry corresponds to which Kalstrop player
-    home_tokens = _name_tokens(fixture.home_name)
-    a_tokens = _name_tokens(entry.name_a)
-    if _strong_overlap(home_tokens, a_tokens):
+    # Determine home/away by canonical key match
+    home_key = KALSHI_NAME_INDEX.get(_normalize_name(fixture.home_name))
+    a_key = KALSHI_NAME_INDEX.get(_normalize_name(entry.name_a))
+    if home_key == a_key:
         fixture.home_abbrev = entry.abbr_a
         fixture.away_abbrev = entry.abbr_b
     else:
         fixture.home_abbrev = entry.abbr_b
         fixture.away_abbrev = entry.abbr_a
     fixture.kalshi_event = entry.event_ticker
-    # Use the pre-collected tickers from the registry — no per-fixture HTTP
     fixture.kalshi_tickers = list(entry.all_tickers)
     return True
 
@@ -1631,7 +1574,11 @@ async def kalstrop_ws_listener(
         try:
             async with websockets.connect(kalstrop_ws_url(), max_size=None,
                                             ping_interval=None) as ws:
-                logger.info(f"[kalstrop] WS connected ({len(fixtures_by_id)} fixtures)")
+                # Disable Nagle on the WS socket
+                _ws_sock = ws.transport.get_extra_info("socket")
+                if _ws_sock is not None:
+                    _ws_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                logger.info(f"[kalstrop] WS connected, TCP_NODELAY ({len(fixtures_by_id)} fixtures)")
                 backoff = 2
                 await subscribe_to_fixtures(ws, list(fixtures_by_id.keys()))
 
@@ -1922,6 +1869,10 @@ async def main(args):
     logger.info("=" * 80)
 
     loop = asyncio.get_running_loop()
+    logger.info("Building player name index from PLAYER_MAP_TENNIS...")
+    global KALSHI_NAME_INDEX
+    KALSHI_NAME_INDEX = build_kalshi_name_index()
+    logger.info(f"Name index: {len(KALSHI_NAME_INDEX)} entries")
     logger.info(f"📅 BETTING_DATE = {BETTING_DATE!r}  (set to '0' in config to disable filter)")
     logger.info("Building Kalshi registry (date-filtered)...")
     global KALSHI_REGISTRY
@@ -1941,12 +1892,26 @@ async def main(args):
     logger.info(f"🧠 Engine ready: {len(ENGINE.games)} games loaded")
 
     stop = asyncio.Event()
+
+    def _tcp_nodelay_factory(params):
+        sock = socket.socket(*params[:3])
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        return sock
+
     connector = aiohttp.TCPConnector(
         limit=0, ttl_dns_cache=300, enable_cleanup_closed=True,
         keepalive_timeout=300, force_close=False,
+        socket_factory=_tcp_nodelay_factory,
     )
     async with aiohttp.ClientSession(connector=connector, timeout=_CACHED_BET_TIMEOUT) as session:
-        logger.info(f"✅ Kalshi session created (shared across {len(ACCOUNTS)} accounts)")
+        logger.info(f"✅ Kalshi session created (TCP_NODELAY, shared across {len(ACCOUNTS)} accounts)")
+        # Warm Kalshi connection (pre-establish TCP + TLS)
+        try:
+            async with session.get(f"{KALSHI_BASE}/exchange/status",
+                                   timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                logger.info(f"🔌 Kalshi connection warm: HTTP {resp.status}")
+        except Exception as e:
+            logger.warning(f"Kalshi warmup failed (non-fatal): {e}")
         header_task = asyncio.create_task(keep_headers_fresh())
         await asyncio.sleep(HEADER_WARMUP_SEC)
         logger.info(f"🔑 Pre-signed headers warm for {len(PRE_SIGNED_HEADERS)} accounts")

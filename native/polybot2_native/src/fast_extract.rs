@@ -9,6 +9,7 @@ pub(crate) struct V1Extract<'a> {
     pub free_text: &'a str,
     pub corners_home: Option<i64>,
     pub corners_away: Option<i64>,
+    pub stream_exists: bool,
 }
 
 #[inline(always)]
@@ -70,6 +71,8 @@ static FINDER_PHASES: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"phases\""));
 static FINDER_PHASE: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"\"phase\""));
+static FINDER_STREAM_EXISTS: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"\"streamExists\""));
 
 fn find_with(finder: &Finder, haystack: &[u8], from: usize) -> Option<usize> {
     if from >= haystack.len() {
@@ -162,6 +165,27 @@ fn extract_string_value(bytes: &[u8], start: usize) -> Option<(&[u8], usize)> {
     None
 }
 
+fn find_key_bool(finder: &Finder, key_len: usize, bytes: &[u8], from: usize) -> Option<bool> {
+    let mut pos = from;
+    while pos + key_len < bytes.len() {
+        if let Some(idx) = find_with(finder, bytes, pos) {
+            let mut p = idx + key_len;
+            while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+            if p < bytes.len() && bytes[p] == b':' {
+                p += 1;
+                while p < bytes.len() && matches!(bytes[p], b' ' | b'\t' | b'\n' | b'\r') { p += 1; }
+                if p < bytes.len() {
+                    return Some(bytes[p] == b't');
+                }
+            }
+            pos = idx + 1;
+        } else {
+            break;
+        }
+    }
+    None
+}
+
 pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     let bytes = json.as_bytes();
 
@@ -186,6 +210,8 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
     if !is_next {
         return None;
     }
+
+    let stream_exists = find_key_bool(&FINDER_STREAM_EXISTS, 14, bytes, 0).unwrap_or(true);
 
     // Scan for the 4 needed fields. They appear in this order in V1 frames:
     // fixtureId (~byte 130), freeText (~byte 247), homeScore (~byte 276), awayScore (~byte 294)
@@ -243,6 +269,7 @@ pub(crate) fn fast_extract_v1(json: &str) -> Option<V1Extract<'_>> {
         free_text: free_text.unwrap_or(""),
         corners_home,
         corners_away,
+        stream_exists,
     })
 }
 
@@ -256,6 +283,7 @@ pub(crate) struct TennisV1Extract<'a> {
     pub current_phase: Option<i64>, // currentPhase.phase (None if null)
     pub total_games: i64,          // sum of all games from phases array
     pub first_set_games: i64,      // games in phases[0] only
+    pub stream_exists: bool,
 }
 
 /// Scan the `"phases"` array starting at `start` (the position of `[`).
@@ -461,6 +489,8 @@ pub(crate) fn fast_extract_tennis_v1(json: &str) -> Option<TennisV1Extract<'_>> 
         return None;
     }
 
+    let stream_exists = find_key_bool(&FINDER_STREAM_EXISTS, 14, bytes, 0).unwrap_or(true);
+
     // fixture_id
     let mut fixture_id: Option<&str> = None;
     let mut pos = 0usize;
@@ -556,6 +586,7 @@ pub(crate) fn fast_extract_tennis_v1(json: &str) -> Option<TennisV1Extract<'_>> 
         current_phase,
         total_games,
         first_set_games,
+        stream_exists,
     })
 }
 
@@ -574,6 +605,7 @@ pub(crate) struct Cs2V1Extract<'a> {
     /// Byte offset past the "phases" key for deferred scanning.
     /// None = no phases key found. Use `scan_phases_cs2(bytes, offset)` to extract.
     pub phases_offset: Option<usize>,
+    pub stream_exists: bool,
 }
 
 /// Dedicated CS2 V1 frame extractor. Same frame structure as tennis
@@ -600,6 +632,8 @@ pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
     if !is_next {
         return None;
     }
+
+    let stream_exists = find_key_bool(&FINDER_STREAM_EXISTS, 14, bytes, 0).unwrap_or(true);
 
     let mut fixture_id: Option<&str> = None;
     let mut pos = 0usize;
@@ -682,6 +716,7 @@ pub(crate) fn fast_extract_cs2_v1(json: &str) -> Option<Cs2V1Extract<'_>> {
         free_text,
         current_phase,
         phases_offset,
+        stream_exists,
     })
 }
 

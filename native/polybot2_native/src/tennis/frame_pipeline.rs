@@ -43,6 +43,7 @@ pub(crate) fn process_decoded_frame_sync(
         Some(e) => e,
         None => return,
     };
+    if !extract.stream_exists { return; }
 
     let gidx = match engine.check_duplicate(
         extract.fixture_id,

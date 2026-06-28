@@ -24,6 +24,7 @@ pub(crate) fn process_decoded_frame_sync(
     let Some(extract) = fast_extract::fast_extract_v1(frame_text) else {
         return;
     };
+    if !extract.stream_exists { return; }
     let pending = process_extracted_fields(
         engine,
         &extract,

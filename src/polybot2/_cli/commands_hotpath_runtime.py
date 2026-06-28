@@ -108,8 +108,8 @@ def run_hotpath_observe(args: Any, *, logger: logging.Logger) -> int:
 from polybot2._cli.common import _load_dotenv
 
 _READINESS_DISPLAY_ORDER = (
-    "in_plan", "promoted", "pending_stream", "pending_v2",
-    "catalog_missing", "compile_excluded", "excluded",
+    "in_plan", "promoted", "pending_v2",
+    "compile_excluded", "excluded",
 )
 
 
@@ -325,13 +325,12 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         # ── Readiness-based orchestrator (see docs/design/orchestrator_v2.md) ──
         #
         # All linked+approved games are evaluated for provider-specific readiness:
-        #   V1 (kalstrop_v1): stream_exists == true
         #   V2 (kalstrop_v2): fixture ID resolved
-        #   BoltOdds / other:  immediately ready
+        #   V1 / BoltOdds / other: immediately ready
+        # V1 streamExists filtering is handled per-frame in the Rust hotpath.
         # Ready games start the hotpath (first batch) or get hot-patched (subsequent).
 
         from polybot2.hotpath.compiler import compile_multi_league_plan
-        from polybot2.providers.sync import load_provider_catalog
 
         # V2 credentials (needed for fixture resolution)
         v2_client_id = ""
@@ -354,7 +353,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
         in_plan_provider_game_ids: set[tuple[str, str]] = set()  # (provider, provider_game_id)
         pending_v2_ids: set[str] = set()  # resolved/finished V2 prematch IDs
         _cumulative_provider_subs: dict[str, list[str]] = {}
-        _seen_catalog_missing: set[tuple[str, str]] = set()  # (provider, gid) — log once
         _seen_compile_excluded: set[tuple[str, str]] = set()  # (provider, gid) — log once
         _seen_alt_subscribed: set[tuple[str, str]] = set()  # (provider, gid) — log once
         cycle_interval = float(refresh_interval)
@@ -522,8 +520,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                             continue
 
                         # Covered by another provider's entry via alternate IDs?
-                        # Still run the readiness check so counts reflect true status
-                        # (e.g., V1 game shows pending_stream even if BoltOdds is in plan).
                         _covered_by_alt = (prov, gid) in in_plan_provider_game_ids
 
                         # Provider-specific readiness check
@@ -564,54 +560,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                     logger.info("[ready]   - %s | %s vs %s | %s | compile_excluded", lk, home, away, prov)
                                 continue
                             for g in game_plan.games:
-                                _promoted_this_pass.add((prov, str(g.provider_game_id)))
-                                for ap, aid in g.alternate_provider_game_ids:
-                                    _promoted_this_pass.add((str(ap), str(aid)))
-                            newly_ready.append((prov, lk, slug, game_plan))
-                            new_subscriptions.append((prov, gid))
-
-                        elif prov in ("kalstrop_v1", "kalstrop"):
-                            # V1: check stream_exists
-                            se_row = db.execute(
-                                "SELECT stream_exists FROM provider_games WHERE provider = ? AND provider_game_id = ?",
-                                (prov, gid),
-                            ).fetchone()
-                            if se_row is None:
-                                counts["catalog_missing"] += 1
-                                if (prov, gid) not in _seen_catalog_missing:
-                                    _seen_catalog_missing.add((prov, gid))
-                                    logger.info("[ready]   - %s | %s vs %s | %s | catalog_missing", lk, home, away, prov)
-                                continue
-                            se = se_row["stream_exists"]
-                            if se is None or int(se) != 1:
-                                counts["pending_stream"] += 1
-                                continue
-                            if _covered_by_alt or (prov, gid) in _promoted_this_pass:
-                                new_subscriptions.append((prov, gid))
-                                counts["in_plan"] += 1
-                                if (prov, gid) not in _seen_alt_subscribed:
-                                    _seen_alt_subscribed.add((prov, gid))
-                                    logger.info("[ready]   ~ %s | %s vs %s | %s | subscribed", lk, home, away, prov)
-                                continue
-                            _cache_key = (prov, lk)
-                            if _cache_key not in compiled_cache:
-                                compiled_cache[_cache_key] = compile_hotpath_plan(
-                                    db=db, provider=prov, league=lk, run_id=run_id,
-                                    sport=sport_family, sets_to_win=_stw_by_league.get(lk, 2),
-                                    live_policy=live_policy,
-                                    now_ts_utc=now_ts,
-                                    plan_horizon_hours=int(runtime_policy.get("plan_horizon_hours", 24)),
-                                    include_inactive=True,
-                                )
-                            matching = [g for g in compiled_cache[_cache_key].games if g.provider_game_id == gid]
-                            if not matching:
-                                counts["compile_excluded"] += 1
-                                if (prov, gid) not in _seen_compile_excluded:
-                                    _seen_compile_excluded.add((prov, gid))
-                                    logger.info("[ready]   - %s | %s vs %s | %s | compile_excluded", lk, home, away, prov)
-                                continue
-                            game_plan = replace(compiled_cache[_cache_key], games=tuple(matching))
-                            for g in matching:
                                 _promoted_this_pass.add((prov, str(g.provider_game_id)))
                                 for ap, aid in g.alternate_provider_game_ids:
                                     _promoted_this_pass.add((str(ap), str(aid)))
@@ -677,16 +625,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
 
         logger.info("[startup] run_id=%d leagues=%s providers=%s",
                     run_id, ",".join(league_keys), ",".join(provider_names))
-
-        # Refresh V1 catalog for fresh stream_exists values
-        _has_v1 = any("kalstrop_v1" in _providers_for_league(lk) for lk in league_keys)
-        if _has_v1:
-            try:
-                with open_database(runtime) as db:
-                    v1_rows = load_provider_catalog(provider="kalstrop_v1")
-                    db.linking.upsert_provider_games(v1_rows)
-            except Exception as exc:
-                logger.warning("V1 catalog refresh failed at startup: %s", exc)
 
         with open_database(runtime) as db:
             initial_result = _run_readiness_layer(db)
@@ -817,15 +755,6 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
 
             # Layer 2: Readiness (always)
             try:
-                # Refresh V1 catalog for fresh stream_exists values
-                if _has_v1 and _no_discovery:
-                    try:
-                        with open_database(runtime) as db:
-                            v1_rows = load_provider_catalog(provider="kalstrop_v1")
-                            db.linking.upsert_provider_games(v1_rows)
-                    except Exception as exc:
-                        logger.warning("V1 catalog refresh failed: %s", exc)
-
                 with open_database(runtime) as db:
                     result = _run_readiness_layer(db)
 
@@ -853,9 +782,7 @@ def run_hotpath_live(args: Any, *, logger: logging.Logger) -> int:
                                 n_tgt = sum(len(m.targets) for g in game_plan.games for m in g.markets)
                                 _hot_patch_game(game_plan)
                                 for g in game_plan.games:
-                                    reason = "fixture_id resolved" if prov == "kalstrop_v2" else (
-                                        "stream_exists=true" if prov in ("kalstrop_v1", "kalstrop") else "ready"
-                                    )
+                                    reason = "fixture_id resolved" if prov == "kalstrop_v2" else "ready"
                                     logger.info(
                                         "[ready]   + %s | %s vs %s | %s | %s | %d targets",
                                         lk, g.canonical_home_team, g.canonical_away_team, prov, reason, n_tgt,

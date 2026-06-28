@@ -34,6 +34,7 @@ pub(crate) fn process_decoded_frame_sync(
                     .and_then(|p| p.data.as_ref())
                     .and_then(|d| d.update.as_ref());
                 if let Some(u) = update {
+                    if !u.stream_exists { continue; }
                     let summary = u.match_summary.as_ref();
                     let home_str = summary.and_then(|s| s.home_score).unwrap_or("");
                     let away_str = summary.and_then(|s| s.away_score).unwrap_or("");
@@ -53,6 +54,7 @@ pub(crate) fn process_decoded_frame_sync(
             flush_tick_logs(engine, &pending_logs, log);
         }
     } else if let Some(extract) = fast_extract::fast_extract_cs2_v1(frame_text) {
+        if !extract.stream_exists { return; }
         let mut batch: SubmitBatch = SubmitBatch::new();
         let pending = process_extracted_fields(
             engine,

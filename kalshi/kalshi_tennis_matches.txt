@@ -1,0 +1,1644 @@
+# Kalshi Tennis Matches — ALL open + settled (past 2 weeks)
+# Generated: 2026-06-28T18:38:44.951542+00:00
+# Total: 544 matches, 629 unique players
+
+
+=== KXATPCHALLENGERMATCH ===
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23ANDHUE
+    Connor Huertas Del Pino                  abbr=HUE
+    Lucas Andrade Da Silva                   abbr=AND
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23CIGROD
+    Santiago Rodriguez Taverna               abbr=ROD
+    Thiago Cigarran                          abbr=CIG
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23DLFROD
+    Santiago Rodriguez Taverna               abbr=ROD
+    Santiago De la Fuente                    abbr=DLF
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23GIMYEV
+    Denis Yevseyev                           abbr=YEV
+    Sebastian Gima                           abbr=GIM
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23KICFER
+    Nicolas Kicker                           abbr=KIC
+    Bruno Fernandez                          abbr=FER
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23KOHLA
+    Juan Manuel La Serna                     abbr=LA
+    Enzo Kohlmann de Freitas                 abbr=KOH
+  [26JUN23] [finalized] KXATPCHALLENGERMATCH-26JUN23MIGSEY
+    Thiago Seyboth Wild                      abbr=SEY
+    Luis Felipe Miguel                       abbr=MIG
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24AJDAGA
+    Duje Ajdukovic                           abbr=AJD
+    Franco Agamenone                         abbr=AGA
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24ANGBLA
+    Dali Blanch                              abbr=BLA
+    Lorenzo Angelini                         abbr=ANG
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24BERCOM
+    Tommaso Compagnucci                      abbr=COM
+    Tomasz Berkieta                          abbr=BER
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24ERHMON
+    Inaki Montes-de la Torre                 abbr=MON
+    Mathys Erhard                            abbr=ERH
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24GUEALC
+    Sascha Gueymard Wayenburg                abbr=GUE
+    Max Alcala Gurri                         abbr=ALC
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24GUICRE
+    Alvaro Guillen Meza                      abbr=GUI
+    Cezar Cretu (b. 2001)                    abbr=CRE
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24HASNAG
+    Sumit Nagal                              abbr=NAG
+    Benjamin Hassan                          abbr=HAS
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24KOPVAS
+    Alexander Vasilev                        abbr=VAS
+    Sandro Kopp                              abbr=KOP
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24MARNES
+    Pyotr Nesterov                           abbr=NES
+    Matteo Martineau                         abbr=MAR
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24MCDPAS
+    Francesco Passaro                        abbr=PAS
+    Niels McDonald                           abbr=MCD
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24MICSEL
+    Jelle Sels                               abbr=SEL
+    Daniel Michalski                         abbr=MIC
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24MOLBAL
+    Elmer Moller                             abbr=MOL
+    Felix Balshaw                            abbr=BAL
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24NEDGIM
+    Andrej Nedic                             abbr=NED
+    Sebastian Gima                           abbr=GIM
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24SANDAL
+    Andres Santamarta Roig                   abbr=SAN
+    Enrico Dalla Valle                       abbr=DAL
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24TOPKRU
+    Marko ToPo                               abbr=TOP
+    Martin Krumich                           abbr=KRU
+  [26JUN24] [finalized] KXATPCHALLENGERMATCH-26JUN24VASMIL
+    Eero Vasa                                abbr=VAS
+    Ognjen Milic                             abbr=MIL
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25ABOCAS
+    Hernan Casanova                          abbr=CAS
+    Valerio Aboian                           abbr=ABO
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25BALKRU
+    Martin Krumich                           abbr=KRU
+    Felix Balshaw                            abbr=BAL
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25CREMCD
+    Niels McDonald                           abbr=MCD
+    Cezar Cretu (b. 2001)                    abbr=CRE
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25HARLEI
+    Wilson Leite                             abbr=LEI
+    Nick Hardt                               abbr=HAR
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25KOPBLA
+    Sandro Kopp                              abbr=KOP
+    Dali Blanch                              abbr=BLA
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25MICMON
+    Inaki Montes-de la Torre                 abbr=MON
+    Daniel Michalski                         abbr=MIC
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25NAGAJD
+    Sumit Nagal                              abbr=NAG
+    Duje Ajdukovic                           abbr=AJD
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25NEDALC
+    Andrej Nedic                             abbr=NED
+    Max Alcala Gurri                         abbr=ALC
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25NESCOM
+    Pyotr Nesterov                           abbr=NES
+    Tommaso Compagnucci                      abbr=COM
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25RODLA
+    Santiago Rodriguez Taverna               abbr=ROD
+    Juan Manuel La Serna                     abbr=LA
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25SANMIL
+    Andres Santamarta Roig                   abbr=SAN
+    Ognjen Milic                             abbr=MIL
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25SARPDA
+    Paulo Andre Saraiva Dos Santos           abbr=SAR
+    Matheus Pucinelli de Almeida             abbr=PDA
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25SOTVIL
+    Gonzalo Villanueva                       abbr=VIL
+    Matias Soto                              abbr=SOT
+  [26JUN25] [finalized] KXATPCHALLENGERMATCH-26JUN25TORAGU
+    Juan Bautista Torres                     abbr=TOR
+    Joaquin Aguilar Cardozo                  abbr=AGU
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26AGUPDA
+    Matheus Pucinelli de Almeida             abbr=PDA
+    Joaquin Aguilar Cardozo                  abbr=AGU
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26ANDSEY
+    Thiago Seyboth Wild                      abbr=SEY
+    Lucas Andrade Da Silva                   abbr=AND
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26BALNED
+    Andrej Nedic                             abbr=NED
+    Felix Balshaw                            abbr=BAL
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26HARLA
+    Juan Manuel La Serna                     abbr=LA
+    Nick Hardt                               abbr=HAR
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26KICSEY
+    Thiago Seyboth Wild                      abbr=SEY
+    Nicolas Kicker                           abbr=KIC
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26KICZAN
+    Nicolas Zanellato                        abbr=ZAN
+    Nicolas Kicker                           abbr=KIC
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26KOPNES
+    Pyotr Nesterov                           abbr=NES
+    Sandro Kopp                              abbr=KOP
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26NAGCRE
+    Sumit Nagal                              abbr=NAG
+    Cezar Cretu (b. 2001)                    abbr=CRE
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26SANMON
+    Andres Santamarta Roig                   abbr=SAN
+    Inaki Montes-de la Torre                 abbr=MON
+  [26JUN26] [finalized] KXATPCHALLENGERMATCH-26JUN26VILABO
+    Gonzalo Villanueva                       abbr=VIL
+    Valerio Aboian                           abbr=ABO
+  [26JUN27] [finalized] KXATPCHALLENGERMATCH-26JUN27BALNAG
+    Sumit Nagal                              abbr=NAG
+    Felix Balshaw                            abbr=BAL
+  [26JUN27] [finalized] KXATPCHALLENGERMATCH-26JUN27MONKOP
+    Inaki Montes-de la Torre                 abbr=MON
+    Sandro Kopp                              abbr=KOP
+  [26JUN27] [finalized] KXATPCHALLENGERMATCH-26JUN27PDAVIL
+    Gonzalo Villanueva                       abbr=VIL
+    Matheus Pucinelli de Almeida             abbr=PDA
+  [26JUN27] [finalized] KXATPCHALLENGERMATCH-26JUN27SEYLA
+    Thiago Seyboth Wild                      abbr=SEY
+    Juan Manuel La Serna                     abbr=LA
+  [26JUN27] [finalized] KXATPCHALLENGERMATCH-26JUN27VILSEY
+    Gonzalo Villanueva                       abbr=VIL
+    Thiago Seyboth Wild                      abbr=SEY
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28ALBLAT
+    Stefan Latinovic                         abbr=LAT
+    Radu Albot                               abbr=ALB
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28ANDGIM
+    Sebastian Gima                           abbr=GIM
+    Stefan Adrian Andreescu                  abbr=AND
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28ANDRUI
+    Jorge Ruiz                               abbr=RUI
+    Lucas Andrade Da Silva                   abbr=AND
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28BECGHA
+    Yanis Ghazouani Durand                   abbr=GHA
+    Isaac Becroft                            abbr=BEC
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28BILERH
+    Mathys Erhard                            abbr=ERH
+    Jacopo Bilardo                           abbr=BIL
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28BOUAGU
+    Justin Boulais                           abbr=BOU
+    Enzo Aguiard                             abbr=AGU
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28CAMHAR
+    Jay Friend                               abbr=HAR
+    Charlie Camus                            abbr=CAM
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28CASGHE
+    Gabriel Ghetu                            abbr=GHE
+    Luca Castelnuovo                         abbr=CAS
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28CAZWAL
+    Olle Wallin                              abbr=WAL
+    Dragos Nicolae Cazacu                    abbr=CAZ
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28CHAALU
+    Maxime Chazal                            abbr=CHA
+    Rodrigo Alujas                           abbr=ALU
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28CIAKRA
+    Georgii Kravchenko                       abbr=KRA
+    Niccolo Ciavarella                       abbr=CIA
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28COMCOL
+    Tommaso Compagnucci                      abbr=COM
+    Francesco Giuseppe Colasanto             abbr=COL
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28DALARN
+    Enrico Dalla Valle                       abbr=DAL
+    Federico Arnaboldi                       abbr=ARN
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28DELLEC
+    Fryderyk Lechno-Wasiutynski              abbr=LEC
+    Jesse Delaney                            abbr=DEL
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28DESWEH
+    Kai Wehnelt                              abbr=WEH
+    Kenny De Schepper                        abbr=DES
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28DEVMAK
+    Peter Makk                               abbr=MAK
+    S D Prajwal Dev                          abbr=DEV
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28DONPOT
+    Luca Potenza                             abbr=POT
+    Matthew William Donald                   abbr=DON
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28ECHSAL
+    Amador Salazar                           abbr=SAL
+    Mauricio Echazu                          abbr=ECH
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28FENPOL
+    Karl Poling                              abbr=POL
+    Andrew Fenty                             abbr=FEN
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28FOMJEC
+    Alexandru Jecan                          abbr=JEC
+    Sergey Fomin                             abbr=FOM
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28FORTAB
+    Fausto Tabacco                           abbr=TAB
+    Francesco Forti                          abbr=FOR
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28GELRIB
+    Franco Ribero                            abbr=RIB
+    Benoit Geldof                            abbr=GEL
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28GOMMAZ
+    Manuel Mazza                             abbr=MAZ
+    Norbert Gombos                           abbr=GOM
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28GULDAM
+    Svyatoslav Gulin                         abbr=GUL
+    Augustin Damonte                         abbr=DAM
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28HIDTEN
+    Fermin Tenti                             abbr=TEN
+    Cesar Ariel Hidalgo Aguirre              abbr=HID
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28HUAPAP
+    Theo Papamalamis                         abbr=PAP
+    Tsung-Hao Huang                          abbr=HUA
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28KARTRO
+    James Kent Trotter                       abbr=TRO
+    Ronit Karki                              abbr=KAR
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28KRUSUR
+    Dhakshineswar Suresh                     abbr=SUR
+    Mitchell Krueger                         abbr=KRU
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28KUMLAG
+    Pavel Lagutin                            abbr=LAG
+    Jan Kumstat                              abbr=KUM
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28KUZNVS
+    Vijay Sundar Prashanth                   abbr=NVS
+    Dimitar Kuzmanov                         abbr=KUZ
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28KUZSIN
+    Nitin Kumar Sinha                        abbr=SIN
+    Dimitar Kuzmanov                         abbr=KUZ
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28LANBAN
+    Christian Langmo                         abbr=LAN
+    Samir Banerjee                           abbr=BAN
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28LANES
+    Pyotr Nesterov                           abbr=NES
+    Giuseppe La Vela                         abbr=LA
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28MACHAY
+    Darwin Andres Macias Elizalde            abbr=MAC
+    Alejandro Hayen                          abbr=HAY
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28MARALV
+    Tomas Martinez                           abbr=MAR
+    Patricio Alvarado                        abbr=ALV
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28MAYWIN
+    Edward Winter                            abbr=WIN
+    Ian Mayew                                abbr=MAY
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28MILBAR
+    Daniel Milavsky                          abbr=MIL
+    Ozan Baris                               abbr=BAR
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28PALMAS
+    Oskari Paldanius                         abbr=PAL
+    Daniel Masur                             abbr=MAS
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28POLPAL
+    David Poljak                             abbr=POL
+    Dominik Palan                            abbr=PAL
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28POLSAN
+    Alejo Sanchez Quilez                     abbr=SAN
+    Mili Poljicak                            abbr=POL
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28PRIMAL
+    Salvador Price                           abbr=PRI
+    Martin Maldonado                         abbr=MAL
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28RAMMAK
+    Ramkumar Ramanathan                      abbr=RAM
+    Peter Makk                               abbr=MAK
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28RAPURS
+    Vadym Ursu                               abbr=URS
+    Daniele Rapagnetta                       abbr=RAP
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28ROCSEG
+    Samuele Seghetti                         abbr=SEG
+    Oriol Roca Batalla                       abbr=ROC
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28RUBERL
+    Alan Fernando Rubio Fierros              abbr=RUB
+    Lancelot Erler                           abbr=ERL
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28RYBMOR
+    Alex Rybakov                             abbr=RYB
+    Hiroki Moriya                            abbr=MOR
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28SANBER
+    Akira Santillan                          abbr=SAN
+    Alejandro Mateo Berge Nourescu           abbr=BER
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28SHIMAR
+    Yuta Shimizu                             abbr=SHI
+    Dan Martin                               abbr=MAR
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28SIMTUR
+    Radu David Turcanu                       abbr=TUR
+    Ilia Simakin                             abbr=SIM
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28SINYEV
+    Denis Yevseyev                           abbr=YEV
+    Jan Patrick Sinescu                      abbr=SIN
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28SPEVAL
+    Amit Vales                               abbr=VAL
+    John Sperle                              abbr=SPE
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28STAHER
+    Luca Staeheli                            abbr=STA
+    Abel Hernandez-Aguila                    abbr=HER
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28SVACUI
+    Trevor Svajda                            abbr=SVA
+    Jie Cui                                  abbr=CUI
+  [26JUN28] [active  ] KXATPCHALLENGERMATCH-26JUN28URRZEB
+    Federico Zeballos                        abbr=ZEB
+    Andres Urrea                             abbr=URR
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28VANIMA
+    Quinn Vandecasteele                      abbr=VAN
+    Masamichi Imamura                        abbr=IMA
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28VRBJAN
+    Michael Vrbensky                         abbr=VRB
+    Maxime Janvier                           abbr=JAN
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28WONGOI
+    Tsz Fu Wong                              abbr=WON
+    Segundo Goity Zapico                     abbr=GOI
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28YUNDE
+    Lucas Yunez                              abbr=YUN
+    Felipe de Dios                           abbr=DE
+  [26JUN28] [finalized] KXATPCHALLENGERMATCH-26JUN28ZHUALM
+    Michael Zhu                              abbr=ZHU
+    Izan Almazan Valiente                    abbr=ALM
+
+=== KXATPMATCH ===
+  [26JAN03] [closed  ] KXATPMATCH-26JAN03SACKYP
+    Vitaliy Sachko                           abbr=SAC
+    Patrick Kypson                           abbr=KYP
+  [26JAN04] [closed  ] KXATPMATCH-26JAN04GARMMO
+    Michael Mmoh                             abbr=MMO
+    Cristian Garin                           abbr=GAR
+  [26JAN04] [closed  ] KXATPMATCH-26JAN04KYRKOV
+    Nick Kyrgios                             abbr=KYR
+    Aleksandar Kovacevic                     abbr=KOV
+  [26JAN04] [closed  ] KXATPMATCH-26JAN04STRPIR
+    Jan-Lennard Struff                       abbr=STR
+    Zsombor Piros                            abbr=PIR
+  [26JAN04] [closed  ] KXATPMATCH-26JAN04UGOTIE
+    Camilo Ugo Carabelli                     abbr=UGO
+    Learner Tien                             abbr=TIE
+  [26JUN22] [finalized] KXATPMATCH-26JUN22BLAJIA
+    Filip Cristian Jianu                     abbr=JIA
+    Darwin Blanch                            abbr=BLA
+  [26JUN22] [finalized] KXATPMATCH-26JUN22BRAGEA
+    Arthur Gea                               abbr=GEA
+    Raul Brancaccio                          abbr=BRA
+  [26JUN22] [finalized] KXATPMATCH-26JUN22CHIDOU
+    Aziz Dougaz                              abbr=DOU
+    Clement Chidekh                          abbr=CHI
+  [26JUN22] [finalized] KXATPMATCH-26JUN22CHOPOP
+    Alexei Popyrin                           abbr=POP
+    Jan Choinski                             abbr=CHO
+  [26JUN22] [finalized] KXATPMATCH-26JUN22COMMOR
+    Alejandro Moro Canas                     abbr=MOR
+    Francisco Comesana                       abbr=COM
+  [26JUN22] [finalized] KXATPMATCH-26JUN22FARGRE
+    Hugo Grenier                             abbr=GRE
+    Jaime Faria                              abbr=FAR
+  [26JUN22] [finalized] KXATPMATCH-26JUN22GIRDRA
+    Marcos Giron                             abbr=GIR
+    Jack Draper                              abbr=DRA
+  [26JUN22] [finalized] KXATPMATCH-26JUN22KECGHI
+    Miomir Kecmanovic                        abbr=KEC
+    Antoine Ghibaudo                         abbr=GHI
+  [26JUN22] [finalized] KXATPMATCH-26JUN22LAJPAV
+    Luka Pavlovic                            abbr=PAV
+    Mark Lajal                               abbr=LAJ
+  [26JUN22] [finalized] KXATPMATCH-26JUN22MANMAY
+    Harold Mayot                             abbr=MAY
+    Nicolas Moreno de Alboran                abbr=MAN
+  [26JUN22] [finalized] KXATPMATCH-26JUN22MARMOL
+    Alex Molcan                              abbr=MOL
+    Fabian Marozsan                          abbr=MAR
+  [26JUN22] [finalized] KXATPMATCH-26JUN22MOUSHE
+    Abdullah Shelbayh                        abbr=SHE
+    Corentin Moutet                          abbr=MOU
+  [26JUN22] [finalized] KXATPMATCH-26JUN22MOUSVA
+    Zachary Svajda                           abbr=SVA
+    Corentin Moutet                          abbr=MOU
+  [26JUN22] [finalized] KXATPMATCH-26JUN22PINTRU
+    Marco Trungelliti                        abbr=TRU
+    Jack Pinnington Jones                    abbr=PIN
+  [26JUN22] [finalized] KXATPMATCH-26JUN22SAIKWON
+    Nikolas Sanchez Izquierdo                abbr=SAI
+    Soonwoo Kwon                             abbr=KWON
+  [26JUN22] [finalized] KXATPMATCH-26JUN22WALKYR
+    Adam Walton                              abbr=WAL
+    Nick Kyrgios                             abbr=KYR
+  [26JUN23] [finalized] KXATPMATCH-26JUN23ARNHUS
+    Giles Hussey                             abbr=HUS
+    Matteo Arnaldi                           abbr=ARN
+  [26JUN23] [finalized] KXATPMATCH-26JUN23BROVUK
+    Aleksandar Vukic                         abbr=VUK
+    Jenson Brooksby                          abbr=BRO
+  [26JUN23] [finalized] KXATPMATCH-26JUN23DARHAN
+    Yannick Hanfmann                         abbr=HAN
+    Luciano Darderi                          abbr=DAR
+  [26JUN23] [finalized] KXATPMATCH-26JUN23DJEZHE
+    Michael Zheng                            abbr=ZHE
+    Laslo Djere                              abbr=DJE
+  [26JUN23] [finalized] KXATPMATCH-26JUN23DOUSAK
+    Rei Sakamoto                             abbr=SAK
+    Aziz Dougaz                              abbr=DOU
+  [26JUN23] [finalized] KXATPMATCH-26JUN23DZUKOP
+    Vit Kopriva                              abbr=KOP
+    Damir Dzumhur                            abbr=DZU
+  [26JUN23] [finalized] KXATPMATCH-26JUN23EVASCH
+    Tristan Schoolkate                       abbr=SCH
+    Daniel Evans                             abbr=EVA
+  [26JUN23] [finalized] KXATPMATCH-26JUN23FARPAV
+    Luka Pavlovic                            abbr=PAV
+    Jaime Faria                              abbr=FAR
+  [26JUN23] [finalized] KXATPMATCH-26JUN23GASCIN
+    Hugo Gaston                              abbr=GAS
+    Federico Cina                            abbr=CIN
+  [26JUN23] [finalized] KXATPMATCH-26JUN23GOJSMI
+    Colton Smith                             abbr=SMI
+    Borna Gojo                               abbr=GOJ
+  [26JUN23] [finalized] KXATPMATCH-26JUN23GUEJAC
+    Kyrian Jacquet                           abbr=JAC
+    Andrea Guerrieri                         abbr=GUE
+  [26JUN23] [finalized] KXATPMATCH-26JUN23KWONGEA
+    Soonwoo Kwon                             abbr=KWON
+    Arthur Gea                               abbr=GEA
+  [26JUN23] [finalized] KXATPMATCH-26JUN23MARTAB
+    Alejandro Tabilo                         abbr=TAB
+    Fabian Marozsan                          abbr=MAR
+  [26JUN23] [finalized] KXATPMATCH-26JUN23PIRHAR
+    Zsombor Piros                            abbr=PIR
+    Billy Harris                             abbr=HAR
+  [26JUN23] [finalized] KXATPMATCH-26JUN23POLDIM
+    Marc Polmans                             abbr=POL
+    Grigor Dimitrov                          abbr=DIM
+  [26JUN23] [finalized] KXATPMATCH-26JUN23SAFCOP
+    Roman Safiullin                          abbr=SAF
+    Kimmer Coppejans                         abbr=COP
+  [26JUN23] [finalized] KXATPMATCH-26JUN23SONKEC
+    Lorenzo Sonego                           abbr=SON
+    Miomir Kecmanovic                        abbr=KEC
+  [26JUN23] [finalized] KXATPMATCH-26JUN23STRBOR
+    Jan-Lennard Struff                       abbr=STR
+    Nuno Borges                              abbr=BOR
+  [26JUN23] [finalized] KXATPMATCH-26JUN23TIAQUI
+    Frances Tiafoe                           abbr=TIA
+    Ethan Quinn                              abbr=QUI
+  [26JUN23] [finalized] KXATPMATCH-26JUN23TIRSTE
+    Thiago Agustin Tirante                   abbr=TIR
+    Hamish Stewart                           abbr=STE
+  [26JUN23] [finalized] KXATPMATCH-26JUN23WALDAV
+    Adam Walton                              abbr=WAL
+    Alejandro Davidovich Fokina              abbr=DAV
+  [26JUN23] [finalized] KXATPMATCH-26JUN23YUNTAB
+    Yunchaokete Bu                           abbr=YUN
+    Clement Tabur                            abbr=TAB
+  [26JUN24] [finalized] KXATPMATCH-26JUN24ALTBER
+    Zizou Bergs                              abbr=BER
+    Daniel Altmaier                          abbr=ALT
+  [26JUN24] [finalized] KXATPMATCH-26JUN24BASGEN
+    Tom Gentzsch                             abbr=GEN
+    Max Basing                               abbr=BAS
+  [26JUN24] [finalized] KXATPMATCH-26JUN24BERROD
+    Jurij Rodionov                           abbr=ROD
+    Remy Bertola                             abbr=BER
+  [26JUN24] [finalized] KXATPMATCH-26JUN24BOYPEL
+    Andrea Pellegrino                        abbr=PEL
+    Tristan Boyer                            abbr=BOY
+  [26JUN24] [finalized] KXATPMATCH-26JUN24BUDDOD
+    Matej Dodig                              abbr=DOD
+    Nicolai Budkov Kjaer                     abbr=BUD
+  [26JUN24] [finalized] KXATPMATCH-26JUN24CASQUI
+    Ethan Quinn                              abbr=QUI
+    Murphy Cassone                           abbr=CAS
+  [26JUN24] [finalized] KXATPMATCH-26JUN24CORSAK
+    Stefanos Sakellaridis                    abbr=SAK
+    Federico Coria                           abbr=COR
+  [26JUN24] [finalized] KXATPMATCH-26JUN24DIAETC
+    Tomas Martin Etcheverry                  abbr=ETC
+    Gabriel Diallo                           abbr=DIA
+  [26JUN24] [finalized] KXATPMATCH-26JUN24DRAPIN
+    Jack Pinnington Jones                    abbr=PIN
+    Jack Draper                              abbr=DRA
+  [26JUN24] [finalized] KXATPMATCH-26JUN24FERCER
+    Arthur Fery                              abbr=FER
+    Juan Manuel Cerundolo                    abbr=CER
+  [26JUN24] [finalized] KXATPMATCH-26JUN24FRICHO
+    Taylor Fritz                             abbr=FRI
+    Jan Choinski                             abbr=CHO
+  [26JUN24] [finalized] KXATPMATCH-26JUN24GALTAR
+    Oliver Tarvet                            abbr=TAR
+    Alexis Galarneau                         abbr=GAL
+  [26JUN24] [finalized] KXATPMATCH-26JUN24GAUSEA
+    Henry Searle                             abbr=SEA
+    Vilius Gaubas                            abbr=GAU
+  [26JUN24] [finalized] KXATPMATCH-26JUN24GILCHO
+    Felix Gill                               abbr=GIL
+    Jan Choinski                             abbr=CHO
+  [26JUN24] [finalized] KXATPMATCH-26JUN24HUMBRO
+    Ugo Humbert                              abbr=HUM
+    Jenson Brooksby                          abbr=BRO
+  [26JUN24] [finalized] KXATPMATCH-26JUN24HUSFON
+    Giles Hussey                             abbr=HUS
+    Joao Fonseca                             abbr=FON
+  [26JUN24] [finalized] KXATPMATCH-26JUN24HUSHAL
+    Giles Hussey                             abbr=HUS
+    Quentin Halys                            abbr=HAL
+  [26JUN24] [finalized] KXATPMATCH-26JUN24JUBBAR
+    Paul Jubb                                abbr=JUB
+    Marcelo Tomas Barrios Vera               abbr=BAR
+  [26JUN24] [finalized] KXATPMATCH-26JUN24KECMAR
+    Fabian Marozsan                          abbr=MAR
+    Miomir Kecmanovic                        abbr=KEC
+  [26JUN24] [finalized] KXATPMATCH-26JUN24KOPBUS
+    Vit Kopriva                              abbr=KOP
+    Ignacio Buse                             abbr=BUS
+  [26JUN24] [finalized] KXATPMATCH-26JUN24KYMHOL
+    Jerome Kym                               abbr=KYM
+    August Holmgren                          abbr=HOL
+  [26JUN24] [finalized] KXATPMATCH-26JUN24LLAMAR
+    Pol Martin Tiffon                        abbr=MAR
+    Pablo Llamas Ruiz                        abbr=LLA
+  [26JUN24] [finalized] KXATPMATCH-26JUN24MCDCAR
+    Mackenzie McDonald                       abbr=MCD
+    Roberto Carballes Baena                  abbr=CAR
+  [26JUN24] [finalized] KXATPMATCH-26JUN24MEJHEI
+    Nicolas Mejia                            abbr=MEJ
+    Gustavo Heide                            abbr=HEI
+  [26JUN24] [finalized] KXATPMATCH-26JUN24MORMAY
+    Alejandro Moro Canas                     abbr=MOR
+    Harold Mayot                             abbr=MAY
+  [26JUN24] [finalized] KXATPMATCH-26JUN24NARVIR
+    Otto Virtanen                            abbr=VIR
+    Luca Nardi                               abbr=NAR
+  [26JUN24] [finalized] KXATPMATCH-26JUN24ONCMOC
+    Gauthier Onclin                          abbr=ONC
+    Shintaro Mochizuki                       abbr=MOC
+  [26JUN24] [finalized] KXATPMATCH-26JUN24RODLAJ
+    Chris Rodesch                            abbr=ROD
+    Dusan Lajovic                            abbr=LAJ
+  [26JUN24] [finalized] KXATPMATCH-26JUN24SAMTIR
+    Thiago Agustin Tirante                   abbr=TIR
+    Toby Samuel                              abbr=SAM
+  [26JUN24] [finalized] KXATPMATCH-26JUN24SHEDIM
+    Abdullah Shelbayh                        abbr=SHE
+    Grigor Dimitrov                          abbr=DIM
+  [26JUN24] [finalized] KXATPMATCH-26JUN24SMIECH
+    Keegan Smith                             abbr=SMI
+    Moez Echargui                            abbr=ECH
+  [26JUN24] [finalized] KXATPMATCH-26JUN24SWEBLA
+    Dane Sweeny                              abbr=SWE
+    Darwin Blanch                            abbr=BLA
+  [26JUN24] [finalized] KXATPMATCH-26JUN24TOMOCO
+    Bernard Tomic                            abbr=TOM
+    Christopher O'Connell                    abbr=OCO
+  [26JUN24] [finalized] KXATPMATCH-26JUN24TRAZHO
+    Yi Zhou                                  abbr=ZHO
+    Stefano Travaglia                        abbr=TRA
+  [26JUN24] [finalized] KXATPMATCH-26JUN24YMESKA
+    Elias Ymer                               abbr=YME
+    Timofey Skatov                           abbr=SKA
+  [26JUN25] [finalized] KXATPMATCH-26JUN25BASBER
+    Remy Bertola                             abbr=BER
+    Max Basing                               abbr=BAS
+  [26JUN25] [finalized] KXATPMATCH-26JUN25BUDVIR
+    Otto Virtanen                            abbr=VIR
+    Nicolai Budkov Kjaer                     abbr=BUD
+  [26JUN25] [finalized] KXATPMATCH-26JUN25CHOBER
+    Jan Choinski                             abbr=CHO
+    Zizou Bergs                              abbr=BER
+  [26JUN25] [finalized] KXATPMATCH-26JUN25DARBOR
+    Luciano Darderi                          abbr=DAR
+    Nuno Borges                              abbr=BOR
+  [26JUN25] [finalized] KXATPMATCH-26JUN25DIMDAV
+    Grigor Dimitrov                          abbr=DIM
+    Alejandro Davidovich Fokina              abbr=DAV
+  [26JUN25] [finalized] KXATPMATCH-26JUN25DRADIA
+    Jack Draper                              abbr=DRA
+    Gabriel Diallo                           abbr=DIA
+  [26JUN25] [finalized] KXATPMATCH-26JUN25FARSAK
+    Rei Sakamoto                             abbr=SAK
+    Jaime Faria                              abbr=FAR
+  [26JUN25] [finalized] KXATPMATCH-26JUN25GASECH
+    Hugo Gaston                              abbr=GAS
+    Moez Echargui                            abbr=ECH
+  [26JUN25] [finalized] KXATPMATCH-26JUN25GAULAJ
+    Dusan Lajovic                            abbr=LAJ
+    Vilius Gaubas                            abbr=GAU
+  [26JUN25] [finalized] KXATPMATCH-26JUN25HUMHAL
+    Ugo Humbert                              abbr=HUM
+    Quentin Halys                            abbr=HAL
+  [26JUN25] [finalized] KXATPMATCH-26JUN25LLABOY
+    Pablo Llamas Ruiz                        abbr=LLA
+    Tristan Boyer                            abbr=BOY
+  [26JUN25] [finalized] KXATPMATCH-26JUN25MCDOCO
+    Christopher O'Connell                    abbr=OCO
+    Mackenzie McDonald                       abbr=MCD
+  [26JUN25] [finalized] KXATPMATCH-26JUN25MEJSCH
+    Tristan Schoolkate                       abbr=SCH
+    Nicolas Mejia                            abbr=MEJ
+  [26JUN25] [finalized] KXATPMATCH-26JUN25MORKWON
+    Alejandro Moro Canas                     abbr=MOR
+    Soonwoo Kwon                             abbr=KWON
+  [26JUN25] [finalized] KXATPMATCH-26JUN25QUIKOP
+    Ethan Quinn                              abbr=QUI
+    Vit Kopriva                              abbr=KOP
+  [26JUN25] [finalized] KXATPMATCH-26JUN25SAFKYM
+    Roman Safiullin                          abbr=SAF
+    Jerome Kym                               abbr=KYM
+  [26JUN25] [finalized] KXATPMATCH-26JUN25SAMCER
+    Toby Samuel                              abbr=SAM
+    Juan Manuel Cerundolo                    abbr=CER
+  [26JUN25] [finalized] KXATPMATCH-26JUN25SKAJAC
+    Timofey Skatov                           abbr=SKA
+    Kyrian Jacquet                           abbr=JAC
+  [26JUN25] [finalized] KXATPMATCH-26JUN25SMIZHE
+    Michael Zheng                            abbr=ZHE
+    Colton Smith                             abbr=SMI
+  [26JUN25] [finalized] KXATPMATCH-26JUN25SWEBAR
+    Dane Sweeny                              abbr=SWE
+    Marcelo Tomas Barrios Vera               abbr=BAR
+  [26JUN25] [finalized] KXATPMATCH-26JUN25TABMOC
+    Clement Tabur                            abbr=TAB
+    Shintaro Mochizuki                       abbr=MOC
+  [26JUN25] [finalized] KXATPMATCH-26JUN25TARSAK
+    Oliver Tarvet                            abbr=TAR
+    Stefanos Sakellaridis                    abbr=SAK
+  [26JUN25] [finalized] KXATPMATCH-26JUN25ZHOHAR
+    Yi Zhou                                  abbr=ZHO
+    Billy Harris                             abbr=HAR
+  [26JUN26] [finalized] KXATPMATCH-26JUN26BERSAM
+    Toby Samuel                              abbr=SAM
+    Zizou Bergs                              abbr=BER
+  [26JUN26] [finalized] KXATPMATCH-26JUN26BORQUI
+    Ethan Quinn                              abbr=QUI
+    Nuno Borges                              abbr=BOR
+  [26JUN26] [finalized] KXATPMATCH-26JUN26DRAHUM
+    Ugo Humbert                              abbr=HUM
+    Jack Draper                              abbr=DRA
+  [26JUN26] [finalized] KXATPMATCH-26JUN26MARDAV
+    Fabian Marozsan                          abbr=MAR
+    Alejandro Davidovich Fokina              abbr=DAV
+  [26JUN29] [active  ] KXATPMATCH-26JUN29ARNHAL
+    Quentin Halys                            abbr=HAL
+    Matteo Arnaldi                           abbr=ARN
+  [26JUN29] [active  ] KXATPMATCH-26JUN29AUGSHE
+    Aleksandr Shevchenko                     abbr=SHE
+    Felix Auger-Aliassime                    abbr=AUG
+  [26JUN29] [active  ] KXATPMATCH-26JUN29BAUFON
+    Joao Fonseca                             abbr=FON
+    Roberto Bautista Agut                    abbr=BAU
+  [26JUN29] [active  ] KXATPMATCH-26JUN29BELSVA
+    Zachary Svajda                           abbr=SVA
+    Mattia Bellucci                          abbr=BEL
+  [26JUN29] [active  ] KXATPMATCH-26JUN29BLOZVE
+    Alexander Zverev                         abbr=ZVE
+    Alexander Blockx                         abbr=BLO
+  [26JUN29] [active  ] KXATPMATCH-26JUN29BONDIA
+    Gabriel Diallo                           abbr=DIA
+    Benjamin Bonzi                           abbr=BON
+  [26JUN29] [active  ] KXATPMATCH-26JUN29BORBOY
+    Tristan Boyer                            abbr=BOY
+    Nuno Borges                              abbr=BOR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29CILMED
+    Daniil Medvedev                          abbr=MED
+    Marin Cilic                              abbr=CIL
+  [26JUN29] [active  ] KXATPMATCH-26JUN29COLFIL
+    Arthur Fils                              abbr=FIL
+    Raphael Collignon                        abbr=COL
+  [26JUN29] [active  ] KXATPMATCH-26JUN29DAVCER
+    Alejandro Davidovich Fokina              abbr=DAV
+    Juan Manuel Cerundolo                    abbr=CER
+  [26JUN29] [active  ] KXATPMATCH-26JUN29DEBUR
+    Alex de Minaur                           abbr=DE
+    Roman Andres Burruchaga                  abbr=BUR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29DEJHIJ
+    Rinky Hijikata                           abbr=HIJ
+    Jesper De Jong                           abbr=DEJ
+  [26JUN29] [active  ] KXATPMATCH-26JUN29DZUFER
+    Arthur Fery                              abbr=FER
+    Damir Dzumhur                            abbr=DZU
+  [26JUN29] [active  ] KXATPMATCH-26JUN29FRIDRA
+    Taylor Fritz                             abbr=FRI
+    Jack Draper                              abbr=DRA
+  [26JUN29] [active  ] KXATPMATCH-26JUN29GASTSI
+    Stefanos Tsitsipas                       abbr=TSI
+    Hugo Gaston                              abbr=GAS
+  [26JUN29] [active  ] KXATPMATCH-26JUN29GRIDUC
+    Tallon Griekspoor                        abbr=GRI
+    James Duckworth                          abbr=DUC
+  [26JUN29] [active  ] KXATPMATCH-26JUN29HANMPE
+    Giovanni Mpetshi Perricard               abbr=MPE
+    Yannick Hanfmann                         abbr=HAN
+  [26JUN29] [active  ] KXATPMATCH-26JUN29HUMBER
+    Ugo Humbert                              abbr=HUM
+    Zizou Bergs                              abbr=BER
+  [26JUN29] [active  ] KXATPMATCH-26JUN29JACGAU
+    Kyrian Jacquet                           abbr=JAC
+    Vilius Gaubas                            abbr=GAU
+  [26JUN29] [active  ] KXATPMATCH-26JUN29JODGIL
+    Rafael Jodar                             abbr=JOD
+    Felix Gill                               abbr=GIL
+  [26JUN29] [active  ] KXATPMATCH-26JUN29KHAHAR
+    Karen Khachanov                          abbr=KHA
+    Billy Harris                             abbr=HAR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29KOKBUB
+    Thanasi Kokkinakis                       abbr=KOK
+    Alexander Bublik                         abbr=BUB
+  [26JUN29] [active  ] KXATPMATCH-26JUN29KOPCHO
+    Vit Kopriva                              abbr=KOP
+    Jan Choinski                             abbr=CHO
+  [26JUN29] [active  ] KXATPMATCH-26JUN29KOVVAN
+    Botic Van de Zandschulp                  abbr=VAN
+    Aleksandar Kovacevic                     abbr=KOV
+  [26JUN29] [active  ] KXATPMATCH-26JUN29KWONLAN
+    Martin Landaluce                         abbr=LAN
+    Soonwoo Kwon                             abbr=KWON
+  [26JUN29] [active  ] KXATPMATCH-26JUN29KYPMCD
+    Mackenzie McDonald                       abbr=MCD
+    Patrick Kypson                           abbr=KYP
+  [26JUN29] [active  ] KXATPMATCH-26JUN29LEHPOP
+    Alexei Popyrin                           abbr=POP
+    Jiri Lehecka                             abbr=LEH
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MAJTAB
+    Alejandro Tabilo                         abbr=TAB
+    Kamil Majchrzak                          abbr=MAJ
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MANDRO
+    Adrian Mannarino                         abbr=MAN
+    Titouan Droguet                          abbr=DRO
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MEDOFN
+    Sebastian Ofner                          abbr=OFN
+    Hamad Medjedovic                         abbr=MED
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MENSAM
+    Toby Samuel                              abbr=SAM
+    Jakub Mensik                             abbr=MEN
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MICFEA
+    Alex Michelsen                           abbr=MIC
+    Jacob Fearnley                           abbr=FEA
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MOCBAS
+    Shintaro Mochizuki                       abbr=MOC
+    Max Basing                               abbr=BAS
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MOLALT
+    Alex Molcan                              abbr=MOL
+    Daniel Altmaier                          abbr=ALT
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MOUGIR
+    Corentin Moutet                          abbr=MOU
+    Marcos Giron                             abbr=GIR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MULPAU
+    Tommy Paul                               abbr=PAU
+    Alexandre Muller                         abbr=MUL
+  [26JUN29] [active  ] KXATPMATCH-26JUN29MUNCER
+    Jaume Munar                              abbr=MUN
+    Francisco Cerundolo                      abbr=CER
+  [26JUN29] [active  ] KXATPMATCH-26JUN29NAKPIN
+    Jack Pinnington Jones                    abbr=PIN
+    Brandon Nakashima                        abbr=NAK
+  [26JUN29] [active  ] KXATPMATCH-26JUN29NAVBUS
+    Emilio Nava                              abbr=NAV
+    Ignacio Buse                             abbr=BUS
+  [26JUN29] [active  ] KXATPMATCH-26JUN29NAVCOB
+    Mariano Navone                           abbr=NAV
+    Flavio Cobolli                           abbr=COB
+  [26JUN29] [active  ] KXATPMATCH-26JUN29QUIDAR
+    Ethan Quinn                              abbr=QUI
+    Luciano Darderi                          abbr=DAR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29RINTAR
+    Oliver Tarvet                            abbr=TAR
+    Arthur Rinderknech                       abbr=RIN
+  [26JUN29] [active  ] KXATPMATCH-26JUN29ROYWEN
+    Harry Wendelken                          abbr=WEN
+    Valentin Royer                           abbr=ROY
+  [26JUN29] [active  ] KXATPMATCH-26JUN29RUBSAF
+    Roman Safiullin                          abbr=SAF
+    Andrey Rublev                            abbr=RUB
+  [26JUN29] [active  ] KXATPMATCH-26JUN29RUUHUR
+    Casper Ruud                              abbr=RUU
+    Hubert Hurkacz                           abbr=HUR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29SHACAR
+    Denis Shapovalov                         abbr=SHA
+    Pablo Carreno Busta                      abbr=CAR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29SHIFAR
+    Sho Shimabukuro                          abbr=SHI
+    Jaime Faria                              abbr=FAR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29SINKEC
+    Jannik Sinner                            abbr=SIN
+    Miomir Kecmanovic                        abbr=KEC
+  [26JUN29] [active  ] KXATPMATCH-26JUN29SONETC
+    Lorenzo Sonego                           abbr=SON
+    Tomas Martin Etcheverry                  abbr=ETC
+  [26JUN29] [active  ] KXATPMATCH-26JUN29STRBAE
+    Jan-Lennard Struff                       abbr=STR
+    Sebastian Baez                           abbr=BAE
+  [26JUN29] [active  ] KXATPMATCH-26JUN29SVRTIE
+    Learner Tien                             abbr=TIE
+    Dalibor Svrcina                          abbr=SVR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29SWEDIM
+    Dane Sweeny                              abbr=SWE
+    Grigor Dimitrov                          abbr=DIM
+  [26JUN29] [active  ] KXATPMATCH-26JUN29TIAATM
+    Frances Tiafoe                           abbr=TIA
+    Terence Atmane                           abbr=ATM
+  [26JUN29] [active  ] KXATPMATCH-26JUN29TIRMAR
+    Thiago Agustin Tirante                   abbr=TIR
+    Fabian Marozsan                          abbr=MAR
+  [26JUN29] [active  ] KXATPMATCH-26JUN29TRUDAM
+    Marco Trungelliti                        abbr=TRU
+    Martin Damm Jr                           abbr=DAM
+  [26JUN29] [active  ] KXATPMATCH-26JUN29UGOMER
+    Camilo Ugo Carabelli                     abbr=UGO
+    Daniel Merida                            abbr=MER
+  [26JUN29] [active  ] KXATPMATCH-26JUN29VALMEJ
+    Adolfo Daniel Vallejo                    abbr=VAL
+    Nicolas Mejia                            abbr=MEJ
+  [26JUN29] [active  ] KXATPMATCH-26JUN29VANFUC
+    Luca Van Assche                          abbr=VAN
+    Marton Fucsovics                         abbr=FUC
+  [26JUN29] [active  ] KXATPMATCH-26JUN29VIRSHE
+    Otto Virtanen                            abbr=VIR
+    Ben Shelton                              abbr=SHE
+  [26JUN29] [active  ] KXATPMATCH-26JUN29VUKBRO
+    Aleksandar Vukic                         abbr=VUK
+    Jenson Brooksby                          abbr=BRO
+  [26JUN29] [active  ] KXATPMATCH-26JUN29WALPRI
+    Adam Walton                              abbr=WAL
+    Dino Prizmic                             abbr=PRI
+  [26JUN29] [active  ] KXATPMATCH-26JUN29WAWBER
+    Stan Wawrinka                            abbr=WAW
+    Matteo Berrettini                        abbr=BER
+  [26JUN29] [active  ] KXATPMATCH-26JUN29YIBDJO
+    Yibing Wu                                abbr=YIB
+    Novak Djokovic                           abbr=DJO
+  [26JUN29] [active  ] KXATPMATCH-26JUN29ZHENOR
+    Michael Zheng                            abbr=ZHE
+    Cameron Norrie                           abbr=NOR
+
+=== KXWTACHALLENGERMATCH ===
+  [26JUN12] [finalized] KXWTACHALLENGERMATCH-26JUN12JIMROM
+    Leyre Romero Gormaz                      abbr=ROM
+    Victoria Jimenez Kasintseva              abbr=JIM
+  [26JUN12] [finalized] KXWTACHALLENGERMATCH-26JUN12NAETAN
+    Harmony Tan                              abbr=TAN
+    Celine Naef                              abbr=NAE
+  [26JUN12] [finalized] KXWTACHALLENGERMATCH-26JUN12SALKAW
+    Dominika Salkova                         abbr=SAL
+    Katarzyna Kawa                           abbr=KAW
+  [26JUN12] [finalized] KXWTACHALLENGERMATCH-26JUN12STOPRO
+    Mary Stoiana                             abbr=STO
+    Tatiana Prozorova                        abbr=PRO
+  [26JUN12] [finalized] KXWTACHALLENGERMATCH-26JUN12SWAKRU
+    Katie Swan                               abbr=SWA
+    Ashlyn Krueger                           abbr=KRU
+  [26JUN12] [finalized] KXWTACHALLENGERMATCH-26JUN12VIDMAN
+    Darja Vidmanova                          abbr=VID
+    Elizabeth Mandlik                        abbr=MAN
+  [26JUN13] [finalized] KXWTACHALLENGERMATCH-26JUN13BROSAM
+    Laura Samson                             abbr=SAM
+    Lucia Bronzetti                          abbr=BRO
+  [26JUN13] [finalized] KXWTACHALLENGERMATCH-26JUN13JIMKAW
+    Katarzyna Kawa                           abbr=KAW
+    Victoria Jimenez Kasintseva              abbr=JIM
+  [26JUN13] [finalized] KXWTACHALLENGERMATCH-26JUN13KRUVID
+    Darja Vidmanova                          abbr=VID
+    Ashlyn Krueger                           abbr=KRU
+  [26JUN13] [finalized] KXWTACHALLENGERMATCH-26JUN13STONAE
+    Mary Stoiana                             abbr=STO
+    Celine Naef                              abbr=NAE
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14CIRCHI
+    Lucija Ciric-Bagaric                     abbr=CIR
+    Deborah Chiesa                           abbr=CHI
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14ISAKUL
+    Anastasia Kulikova                       abbr=KUL
+    Polina Isakova                           abbr=ISA
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14KAWBRO
+    Katarzyna Kawa                           abbr=KAW
+    Lucia Bronzetti                          abbr=BRO
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14KRUNAE
+    Celine Naef                              abbr=NAE
+    Ashlyn Krueger                           abbr=KRU
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14LEOKUL
+    Manon Leonard                            abbr=LEO
+    Anastasia Kulikova                       abbr=KUL
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14LIUSMI
+    Alana Smith                              abbr=SMI
+    Min Liu                                  abbr=LIU
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14LOPKOB
+    Carmen Lopez Martinez                    abbr=LOP
+    Momoko Kobori                            abbr=KOB
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14LOSVOL
+    Angelina Voloshchuk                      abbr=VOL
+    Valentina Losciale                       abbr=LOS
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14MARFEN
+    Maria Martinez Vaquero                   abbr=MAR
+    Shuo Feng                                abbr=FEN
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14MARMIC
+    Elena Micic                              abbr=MIC
+    Maria Martinez Vaquero                   abbr=MAR
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14OSUTOM
+    Carla Tomai                              abbr=TOM
+    Whitney Osuigwe                          abbr=OSU
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14PAQZHU
+    Amy Zhu                                  abbr=ZHU
+    Chloe Paquet                             abbr=PAQ
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14PIECHE
+    Tatiana Pieri                            abbr=PIE
+    Diletta Cherubini                        abbr=CHE
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14RISMEL
+    Mia Ristic                               abbr=RIS
+    Verena Meliss                            abbr=MEL
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14RUGKOT
+    Jennifer Ruggeri                         abbr=RUG
+    Yelyzaveta Kotliar                       abbr=KOT
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14RYSGAR
+    Valentina Ryser                          abbr=RYS
+    Sana Garakani                            abbr=GAR
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14SALTOT
+    Amarissa Kiara Toth                      abbr=TOT
+    Lara Salden                              abbr=SAL
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14SEBZAM
+    Allura Zamarripa                         abbr=ZAM
+    Katherine Sebov                          abbr=SEB
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14STRKAZ
+    Julie Struplova                          abbr=STR
+    Ekaterina Kazionova                      abbr=KAZ
+  [26JUN14] [finalized] KXWTACHALLENGERMATCH-26JUN14ZELBAS
+    Radka Zelnickova                         abbr=ZEL
+    Noemi Basiletti                          abbr=BAS
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15AKSSAN
+    Ana Sofia Sanchez                        abbr=SAN
+    Ayla Aksu                                abbr=AKS
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15ANSPAL
+    Barbora Palicova                         abbr=PAL
+    Carolyn Ansari                           abbr=ANS
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15BANZVO
+    Vera Zvonareva                           abbr=ZVO
+    Susan Bandecchi                          abbr=BAN
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15GORBRA
+    Ekaterine Gorgodze                       abbr=GOR
+    Nuria Brancaccio                         abbr=BRA
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15KAZCHI
+    Ekaterina Kazionova                      abbr=KAZ
+    Deborah Chiesa                           abbr=CHI
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15KINHRU
+    Hayu Kinoshita                           abbr=KIN
+    Viktoria Hruncakova                      abbr=HRU
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15KULKOB
+    Anastasia Kulikova                       abbr=KUL
+    Momoko Kobori                            abbr=KOB
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15LEOCHA
+    Manon Leonard                            abbr=LEO
+    Alina Charaeva                           abbr=CHA
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15MAZGIO
+    Alessandra Mazzola                       abbr=MAZ
+    Luisina Giovannini                       abbr=GIO
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15OSUVOL
+    Angelina Voloshchuk                      abbr=VOL
+    Whitney Osuigwe                          abbr=OSU
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15PAQTOT
+    Amarissa Kiara Toth                      abbr=TOT
+    Chloe Paquet                             abbr=PAQ
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15RAKLIZ
+    Tiantsoa Sarah Rakotomanga Rajaonah      abbr=RAK
+    Yuliana Lizarazo                         abbr=LIZ
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15RISBAS
+    Mia Ristic                               abbr=RIS
+    Noemi Basiletti                          abbr=BAS
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15RUGPIE
+    Jennifer Ruggeri                         abbr=RUG
+    Tatiana Pieri                            abbr=PIE
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15RYSSMI
+    Alana Smith                              abbr=SMI
+    Valentina Ryser                          abbr=RYS
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15SERSHE
+    Maiar Sherif Ahmed Abdelaziz             abbr=SHE
+    Raluca Georgiana Serban                  abbr=SER
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15VICHAD
+    Sachia Vickery                           abbr=VIC
+    Beatriz Haddad Maia                      abbr=HAD
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15VONSOB
+    Kathinka Von Deichmann                   abbr=VON
+    Anastasiia Sobolieva                     abbr=SOB
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15YANPED
+    Elizara Yaneva                           abbr=YAN
+    Giorgia Pedone                           abbr=PED
+  [26JUN15] [finalized] KXWTACHALLENGERMATCH-26JUN15ZAMMAR
+    Allura Zamarripa                         abbr=ZAM
+    Maria Martinez Vaquero                   abbr=MAR
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16ASTBAS
+    Noemi Basiletti                          abbr=BAS
+    Darya Astakhova                          abbr=AST
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16FERRIN
+    Kajsa Rinaldo Persson                    abbr=RIN
+    Fiona Ferro                              abbr=FER
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16GRAPAQ
+    Chloe Paquet                             abbr=PAQ
+    Julia Grabher                            abbr=GRA
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16JORTEI
+    Jil Teichmann                            abbr=TEI
+    Matilde Jorge                            abbr=JOR
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16KORTIA
+    Fangran Tian                             abbr=TIA
+    Alina Korneeva                           abbr=KOR
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16KOVBUL
+    Danka Kovinic                            abbr=KOV
+    Miriam Bianca Bulgaru                    abbr=BUL
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16KUBFAL
+    Martyna Kubka                            abbr=KUB
+    Aliona Falei                             abbr=FAL
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16KULHON
+    Anastasia Kulikova                       abbr=KUL
+    Mai Hontama                              abbr=HON
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16KUZMOR
+    Viktoria Morvayova                       abbr=MOR
+    Katarina Kuzmova                         abbr=KUZ
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16MICJOR
+    Elena Micic                              abbr=MIC
+    Francisca Jorge                          abbr=JOR
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16MINYOU
+    Xiaodi You                               abbr=YOU
+    Ane Mintegi Del Olmo                     abbr=MIN
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16MLARYS
+    Valentina Ryser                          abbr=RYS
+    Kristina Mladenovic                      abbr=MLA
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16MONTRE
+    Martina Trevisan                         abbr=TRE
+    Carole Monnet                            abbr=MON
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16ORTPAC
+    Francesca Pace                           abbr=PAC
+    Jazmin Ortenzi                           abbr=ORT
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16RISCHI
+    Mia Ristic                               abbr=RIS
+    Deborah Chiesa                           abbr=CHI
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16RUGBER
+    Jennifer Ruggeri                         abbr=RUG
+    Elena Ruxandra Bertea                    abbr=BER
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16VANZAM
+    Allura Zamarripa                         abbr=ZAM
+    Jeline Vandromme                         abbr=VAN
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16VIDVOL
+    Angelina Voloshchuk                      abbr=VOL
+    Darja Vidmanova                          abbr=VID
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16WANGAO
+    Xiyu Wang                                abbr=WAN
+    Xinyu Gao                                abbr=GAO
+  [26JUN16] [finalized] KXWTACHALLENGERMATCH-26JUN16YEOSTE
+    Yeon Woo Ku                              abbr=YEO
+    Lucrezia Stefanini                       abbr=STE
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17AKSVIC
+    Sachia Vickery                           abbr=VIC
+    Ayla Aksu                                abbr=AKS
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17ASTGIO
+    Luisina Giovannini                       abbr=GIO
+    Darya Astakhova                          abbr=AST
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17BANKUZ
+    Katarina Kuzmova                         abbr=KUZ
+    Susan Bandecchi                          abbr=BAN
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17FERGOR
+    Ekaterine Gorgodze                       abbr=GOR
+    Fiona Ferro                              abbr=FER
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17GRASOB
+    Anastasiia Sobolieva                     abbr=SOB
+    Julia Grabher                            abbr=GRA
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17HRUYEO
+    Yeon Woo Ku                              abbr=YEO
+    Viktoria Hruncakova                      abbr=HRU
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17KULCHA
+    Anastasia Kulikova                       abbr=KUL
+    Alina Charaeva                           abbr=CHA
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17PALTEI
+    Jil Teichmann                            abbr=TEI
+    Barbora Palicova                         abbr=PAL
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17RAKRIS
+    Mia Ristic                               abbr=RIS
+    Tiantsoa Sarah Rakotomanga Rajaonah      abbr=RAK
+  [26JUN17] [finalized] KXWTACHALLENGERMATCH-26JUN17VIDMIC
+    Darja Vidmanova                          abbr=VID
+    Elena Micic                              abbr=MIC
+  [26JUN18] [finalized] KXWTACHALLENGERMATCH-26JUN18BULMIN
+    Ane Mintegi Del Olmo                     abbr=MIN
+    Miriam Bianca Bulgaru                    abbr=BUL
+  [26JUN18] [finalized] KXWTACHALLENGERMATCH-26JUN18KORKUB
+    Martyna Kubka                            abbr=KUB
+    Alina Korneeva                           abbr=KOR
+  [26JUN18] [finalized] KXWTACHALLENGERMATCH-26JUN18ORTYAN
+    Elizara Yaneva                           abbr=YAN
+    Jazmin Ortenzi                           abbr=ORT
+  [26JUN18] [finalized] KXWTACHALLENGERMATCH-26JUN18RUGSHE
+    Maiar Sherif Ahmed Abdelaziz             abbr=SHE
+    Jennifer Ruggeri                         abbr=RUG
+  [26JUN18] [finalized] KXWTACHALLENGERMATCH-26JUN18VANRYS
+    Jeline Vandromme                         abbr=VAN
+    Valentina Ryser                          abbr=RYS
+  [26JUN18] [finalized] KXWTACHALLENGERMATCH-26JUN18WANMON
+    Xiyu Wang                                abbr=WAN
+    Carole Monnet                            abbr=MON
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19BANCHA
+    Alina Charaeva                           abbr=CHA
+    Susan Bandecchi                          abbr=BAN
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19KUBYEO
+    Yeon Woo Ku                              abbr=YEO
+    Martyna Kubka                            abbr=KUB
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19RAKSHE
+    Maiar Sherif Ahmed Abdelaziz             abbr=SHE
+    Tiantsoa Sarah Rakotomanga Rajaonah      abbr=RAK
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19SOBMIN
+    Anastasiia Sobolieva                     abbr=SOB
+    Ane Mintegi Del Olmo                     abbr=MIN
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19VANAKS
+    Jeline Vandromme                         abbr=VAN
+    Ayla Aksu                                abbr=AKS
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19VIDTEI
+    Darja Vidmanova                          abbr=VID
+    Jil Teichmann                            abbr=TEI
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19WANGIO
+    Xiyu Wang                                abbr=WAN
+    Luisina Giovannini                       abbr=GIO
+  [26JUN19] [finalized] KXWTACHALLENGERMATCH-26JUN19YANGOR
+    Elizara Yaneva                           abbr=YAN
+    Ekaterine Gorgodze                       abbr=GOR
+  [26JUN20] [finalized] KXWTACHALLENGERMATCH-26JUN20CHAAKS
+    Alina Charaeva                           abbr=CHA
+    Ayla Aksu                                abbr=AKS
+  [26JUN20] [finalized] KXWTACHALLENGERMATCH-26JUN20SHEYAN
+    Elizara Yaneva                           abbr=YAN
+    Maiar Sherif Ahmed Abdelaziz             abbr=SHE
+  [26JUN20] [finalized] KXWTACHALLENGERMATCH-26JUN20WANSOB
+    Xiyu Wang                                abbr=WAN
+    Anastasiia Sobolieva                     abbr=SOB
+  [26JUN20] [finalized] KXWTACHALLENGERMATCH-26JUN20YEOVID
+    Yeon Woo Ku                              abbr=YEO
+    Darja Vidmanova                          abbr=VID
+  [26JUN21] [finalized] KXWTACHALLENGERMATCH-26JUN21VIDAKS
+    Darja Vidmanova                          abbr=VID
+    Ayla Aksu                                abbr=AKS
+  [26JUN21] [finalized] KXWTACHALLENGERMATCH-26JUN21WANSHE
+    Xiyu Wang                                abbr=WAN
+    Maiar Sherif Ahmed Abdelaziz             abbr=SHE
+
+=== KXWTAMATCH ===
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23BAIZID
+    Tamara Zidansek                          abbr=ZID
+    Zhuoxuan Bai                             abbr=BAI
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23BRALAZ
+    Andrea Lazaro Garcia                     abbr=LAZ
+    Nuria Brancaccio                         abbr=BRA
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23CRASAK
+    Himeno Sakatsume                         abbr=SAK
+    Fiona Crawley                            abbr=CRA
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23DOLMON
+    Robin Montgomery                         abbr=MON
+    Caroline Dolehide                        abbr=DOL
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23FRUJON
+    Emerson Jones                            abbr=JON
+    Linda Fruhvirtova                        abbr=FRU
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23GORVAL
+    Vendula Valdmannova                      abbr=VAL
+    Ekaterine Gorgodze                       abbr=GOR
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23HONHIB
+    Priscilla Hon                            abbr=HON
+    Nao Hibino                               abbr=HIB
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23HONURH
+    Akasha Urhobo                            abbr=URH
+    Mai Hontama                              abbr=HON
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23IATROM
+    Leyre Romero Gormaz                      abbr=ROM
+    Polina Iatcenko                          abbr=IAT
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23KORSHU
+    Alexandra Shubladze                      abbr=SHU
+    Alina Korneeva                           abbr=KOR
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23KRUKNU
+    Ashlyn Krueger                           abbr=KRU
+    Gabriela Knutson                         abbr=KNU
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23LEPGAS
+    Varvara Lepchenko                        abbr=LEP
+    Anastasia Gasanova                       abbr=GAS
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23MCDKAL
+    Ella McDonald                            abbr=MCD
+    Elvina Kalieva                           abbr=KAL
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23MIYYAN
+    Elizara Yaneva                           abbr=YAN
+    Yuriko Lily Miyazaki                     abbr=MIY
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23MONPRO
+    Tatiana Prozorova                        abbr=PRO
+    Carole Monnet                            abbr=MON
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23OSAMER
+    Naomi Osaka                              abbr=OSA
+    Elise Mertens                            abbr=MER
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23QUEISH
+    Kaitlin Quevedo                          abbr=QUE
+    Sayaka Ishii                             abbr=ISH
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23RADBAS
+    Lola Radivojevic                         abbr=RAD
+    Marina Bassols Ribera                    abbr=BAS
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23RIEBRI
+    Julia Riera                              abbr=RIE
+    Daniella Britton                         abbr=BRI
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23RUSPOD
+    Arantxa Rus                              abbr=RUS
+    Veronika Podrez                          abbr=POD
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23SEBORT
+    Katherine Sebov                          abbr=SEB
+    Jazmin Ortenzi                           abbr=ORT
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23SEMSIS
+    Anna Siskova                             abbr=SIS
+    Darja Semenistaja                        abbr=SEM
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23TIMOSU
+    Maria Timofeeva                          abbr=TIM
+    Whitney Osuigwe                          abbr=OSU
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23VOLSAM
+    Katie Volynets                           abbr=VOL
+    Laura Samson                             abbr=SAM
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23WANGUO
+    Xiyu Wang                                abbr=WAN
+    Hanyu Guo                                abbr=GUO
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23WATSHE
+    Heather Watson                           abbr=WAT
+    Maiar Sherif Ahmed Abdelaziz             abbr=SHE
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23YOUJEA
+    Xiaodi You                               abbr=YOU
+    Leolia Jeanjean                          abbr=JEA
+  [26JUN23] [finalized] KXWTAMATCH-26JUN23ZHETAU
+    Qinwen Zheng                             abbr=ZHE
+    Clara Tauson                             abbr=TAU
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24ADETAN
+    Harmony Tan                              abbr=TAN
+    Esther Adeshina                          abbr=ADE
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24ALEAND
+    Mirra Andreeva                           abbr=AND
+    Ekaterina Alexandrova                    abbr=ALE
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24ANDDAY
+    Kayla Day                                abbr=DAY
+    Erika Andreeva                           abbr=AND
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24ANDTEI
+    Jil Teichmann                            abbr=TEI
+    Bianca Andreescu                         abbr=AND
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24BOLKIN
+    Hayu Kinoshita                           abbr=KIN
+    Mariam Bolkvadze                         abbr=BOL
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24BOUKEY
+    Madison Keys                             abbr=KEY
+    Jessica Bouzas Maneiro                   abbr=BOU
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24CARVAN
+    Jeline Vandromme                         abbr=VAN
+    Maria Carle                              abbr=CAR
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24GARGRA
+    Tyra Caterina Grant                      abbr=GRA
+    Joanna Garland                           abbr=GAR
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24GASJON
+    Emerson Jones                            abbr=JON
+    Anastasia Gasanova                       abbr=GAS
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24GORJEA
+    Leolia Jeanjean                          abbr=JEA
+    Ekaterine Gorgodze                       abbr=GOR
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24IATBAI
+    Polina Iatcenko                          abbr=IAT
+    Zhuoxuan Bai                             abbr=BAI
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24JORGJO
+    Francisca Jorge                          abbr=JOR
+    Lina Gjorcheska                          abbr=GJO
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24KALRUS
+    Elena-Gabriela Ruse                      abbr=RUS
+    Anna Kalinskaya                          abbr=KAL
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24KAWSTE
+    Lucrezia Stefanini                       abbr=STE
+    Katarzyna Kawa                           abbr=KAW
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24KESKAL
+    McCartney Kessler                        abbr=KES
+    Anhelina Kalinina                        abbr=KAL
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24KORLAZ
+    Andrea Lazaro Garcia                     abbr=LAZ
+    Alina Korneeva                           abbr=KOR
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24KRUHON
+    Ashlyn Krueger                           abbr=KRU
+    Mai Hontama                              abbr=HON
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24KUDNGO
+    Clervie Ngounoue                         abbr=NGO
+    Polina Kudermetova                       abbr=KUD
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24MARBIR
+    Petra Marcinko                           abbr=MAR
+    Kimberly Birrell                         abbr=BIR
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24MARZAK
+    Anastasia Zakharova                      abbr=ZAK
+    Tatjana Maria                            abbr=MAR
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24MCCARA
+    Caty McNally                             abbr=MCC
+    Emiliana Arango                          abbr=ARA
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24MIKBRO
+    Justina Mikulskyte                       abbr=MIK
+    Lucia Bronzetti                          abbr=BRO
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24MONKAL
+    Robin Montgomery                         abbr=MON
+    Elvina Kalieva                           abbr=KAL
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24MUCBEG
+    Karolina Muchova                         abbr=MUC
+    Irina-Camelia Begu                       abbr=BEG
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24OSTUDV
+    Panna Udvardy                            abbr=UDV
+    Jelena Ostapenko                         abbr=OST
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24PRILAM
+    Elena Pridankina                         abbr=PRI
+    Suzan Lamens                             abbr=LAM
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24PROWAT
+    Heather Watson                           abbr=WAT
+    Tatiana Prozorova                        abbr=PRO
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24QUELIU
+    Kaitlin Quevedo                          abbr=QUE
+    Claire Liu                               abbr=LIU
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24RAKZHU
+    Lin Zhu                                  abbr=ZHU
+    Tiantsoa Sarah Rakotomanga Rajaonah      abbr=RAK
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24RIECRA
+    Julia Riera                              abbr=RIE
+    Fiona Crawley                            abbr=CRA
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SASHUN
+    Aliaksandra Sasnovich                    abbr=SAS
+    Storm Hunter                             abbr=HUN
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SAWSTO
+    Mary Stoiana                             abbr=STO
+    Mananchaya Sawangkaew                    abbr=SAW
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SEBNOH
+    Katherine Sebov                          abbr=SEB
+    Noma Noha Akugue                         abbr=NOH
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SEMHIB
+    Darja Semenistaja                        abbr=SEM
+    Nao Hibino                               abbr=HIB
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SHYMIN
+    Iryna Shymanovich                        abbr=SHY
+    Greet Minnen                             abbr=MIN
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SONBEJ
+    Zeynep Sonmez                            abbr=SON
+    Sara Bejlek                              abbr=BEJ
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SRAKOS
+    Rebecca Sramkova                         abbr=SRA
+    Teodora Kostovic                         abbr=KOS
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SUNDOD
+    Lulu Sun                                 abbr=SUN
+    Oceane Dodin                             abbr=DOD
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24SWINAV
+    Iga Swiatek                              abbr=SWI
+    Emma Navarro                             abbr=NAV
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24TIMPOD
+    Maria Timofeeva                          abbr=TIM
+    Veronika Podrez                          abbr=POD
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24VALTOM
+    Tereza Valentova                         abbr=VAL
+    Ajla Tomljanovic                         abbr=TOM
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24VOLYAN
+    Elizara Yaneva                           abbr=YAN
+    Katie Volynets                           abbr=VOL
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24WANBAS
+    Xiyu Wang                                abbr=WAN
+    Marina Bassols Ribera                    abbr=BAS
+  [26JUN24] [finalized] KXWTAMATCH-26JUN24WERCHA
+    Caroline Werner                          abbr=WER
+    Alina Charaeva                           abbr=CHA
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25BASMON
+    Robin Montgomery                         abbr=MON
+    Marina Bassols Ribera                    abbr=BAS
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25BOLVAN
+    Jeline Vandromme                         abbr=VAN
+    Mariam Bolkvadze                         abbr=BOL
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25DODSAW
+    Mananchaya Sawangkaew                    abbr=SAW
+    Oceane Dodin                             abbr=DOD
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25GJOBRO
+    Lina Gjorcheska                          abbr=GJO
+    Lucia Bronzetti                          abbr=BRO
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25KAWDAY
+    Katarzyna Kawa                           abbr=KAW
+    Kayla Day                                abbr=DAY
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25KESKEY
+    Madison Keys                             abbr=KEY
+    McCartney Kessler                        abbr=KES
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25KORCRA
+    Alina Korneeva                           abbr=KOR
+    Fiona Crawley                            abbr=CRA
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25KOSZHU
+    Lin Zhu                                  abbr=ZHU
+    Teodora Kostovic                         abbr=KOS
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25KRUIAT
+    Ashlyn Krueger                           abbr=KRU
+    Polina Iatcenko                          abbr=IAT
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25KUDCHA
+    Polina Kudermetova                       abbr=KUD
+    Alina Charaeva                           abbr=CHA
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25LIUPRI
+    Elena Pridankina                         abbr=PRI
+    Claire Liu                               abbr=LIU
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25MARVAL
+    Tereza Valentova                         abbr=VAL
+    Tatjana Maria                            abbr=MAR
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25MCCMAR
+    Caty McNally                             abbr=MCC
+    Petra Marcinko                           abbr=MAR
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25MUCTAU
+    Clara Tauson                             abbr=TAU
+    Karolina Muchova                         abbr=MUC
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25NAVRUS
+    Elena-Gabriela Ruse                      abbr=RUS
+    Emma Navarro                             abbr=NAV
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25OSAALE
+    Naomi Osaka                              abbr=OSA
+    Ekaterina Alexandrova                    abbr=ALE
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25OSTSON
+    Zeynep Sonmez                            abbr=SON
+    Jelena Ostapenko                         abbr=OST
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25SASAND
+    Aliaksandra Sasnovich                    abbr=SAS
+    Bianca Andreescu                         abbr=AND
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25SEMGAS
+    Darja Semenistaja                        abbr=SEM
+    Anastasia Gasanova                       abbr=GAS
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25SHYSEB
+    Iryna Shymanovich                        abbr=SHY
+    Katherine Sebov                          abbr=SEB
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25TANGRA
+    Harmony Tan                              abbr=TAN
+    Tyra Caterina Grant                      abbr=GRA
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25TIMWAT
+    Heather Watson                           abbr=WAT
+    Maria Timofeeva                          abbr=TIM
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25VOLJEA
+    Katie Volynets                           abbr=VOL
+    Leolia Jeanjean                          abbr=JEA
+  [26JUN25] [finalized] KXWTAMATCH-26JUN25WANSVI
+    Xinyu Wang                               abbr=WAN
+    Elina Svitolina                          abbr=SVI
+  [26JUN26] [finalized] KXWTAMATCH-26JUN26MARKEY
+    Petra Marcinko                           abbr=MAR
+    Madison Keys                             abbr=KEY
+  [26JUN26] [finalized] KXWTAMATCH-26JUN26MAROST
+    Jelena Ostapenko                         abbr=OST
+    Tatjana Maria                            abbr=MAR
+  [26JUN26] [finalized] KXWTAMATCH-26JUN26RUSMUC
+    Elena-Gabriela Ruse                      abbr=RUS
+    Karolina Muchova                         abbr=MUC
+  [26JUN26] [finalized] KXWTAMATCH-26JUN26WANOSA
+    Xinyu Wang                               abbr=WAN
+    Naomi Osaka                              abbr=OSA
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29ALEUDV
+    Panna Udvardy                            abbr=UDV
+    Ekaterina Alexandrova                    abbr=ALE
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29ANDZHA
+    Shuai Zhang                              abbr=ZHA
+    Bianca Andreescu                         abbr=AND
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29ANIGJO
+    Lina Gjorcheska                          abbr=GJO
+    Amanda Anisimova                         abbr=ANI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29ANNSON
+    Zeynep Sonmez                            abbr=SON
+    Ann Li                                   abbr=ANN
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29BEGSWA
+    Katie Swan                               abbr=SWA
+    Irina-Camelia Begu                       abbr=BEG
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29BENSTO
+    Mika Stojsavljevic                       abbr=STO
+    Belinda Bencic                           abbr=BEN
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29BIRKOR
+    Alina Korneeva                           abbr=KOR
+    Kimberly Birrell                         abbr=BIR
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29BOIRYB
+    Elena Rybakina                           abbr=RYB
+    Lois Boisson                             abbr=BOI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29BOUGRA
+    Tyra Caterina Grant                      abbr=GRA
+    Katie Boulter                            abbr=BOU
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29BOUPOT
+    Anastasia Potapova                       abbr=POT
+    Jessica Bouzas Maneiro                   abbr=BOU
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29CIRBEJ
+    Sorana Cirstea                           abbr=CIR
+    Sara Bejlek                              abbr=BEJ
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29CRIJOV
+    Iva Jovic                                abbr=JOV
+    Jaqueline Cristian                       abbr=CRI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29DAYKEY
+    Madison Keys                             abbr=KEY
+    Kayla Day                                abbr=DAY
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29EALZAR
+    Renata Zarazua                           abbr=ZAR
+    Alexandra Eala                           abbr=EAL
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29FERTJE
+    Janice Tjen                              abbr=TJE
+    Leylah Fernandez                         abbr=FER
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29FREKAL
+    Anna Kalinskaya                          abbr=KAL
+    Magdalena Frech                          abbr=FRE
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29GASARA
+    Anastasia Gasanova                       abbr=GAS
+    Emiliana Arango                          abbr=ARA
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29GIBBOU
+    Talia Gibson                             abbr=GIB
+    Marie Bouzkova                           abbr=BOU
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29HADTIM
+    Maria Timofeeva                          abbr=TIM
+    Beatriz Haddad Maia                      abbr=HAD
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29JACOSA
+    Naomi Osaka                              abbr=OSA
+    Elsa Jacquemot                           abbr=JAC
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29JONPAR
+    Diane Parry                              abbr=PAR
+    Francesca Jones                          abbr=JON
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29KALRAK
+    Kamilla Rakhimova                        abbr=RAK
+    Anhelina Kalinina                        abbr=KAL
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29KORGAU
+    Tamara Korpatsch                         abbr=KOR
+    Coco Gauff                               abbr=GAU
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29KREKLU
+    Barbora Krejcikova                       abbr=KRE
+    Hannah Klugman                           abbr=KLU
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29KUDSAM
+    Liudmila Samsonova                       abbr=SAM
+    Polina Kudermetova                       abbr=KUD
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29LINAND
+    Magda Linette                            abbr=LIN
+    Mirra Andreeva                           abbr=AND
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29LIUVAN
+    Hanne Vandewinkel                        abbr=VAN
+    Claire Liu                               abbr=LIU
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29MARKEN
+    Petra Marcinko                           abbr=MAR
+    Sofia Kenin                              abbr=KEN
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29MERSIE
+    Laura Siegemund                          abbr=SIE
+    Elise Mertens                            abbr=MER
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29MINKAS
+    Mingge Xu                                abbr=MIN
+    Daria Kasatkina                          abbr=KAS
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29MUCZAK
+    Anastasia Zakharova                      abbr=ZAK
+    Karolina Muchova                         abbr=MUC
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29NAVBAD
+    Emma Navarro                             abbr=NAV
+    Paula Badosa                             abbr=BAD
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29OLIKES
+    Oleksandra Oliynykova                    abbr=OLI
+    McCartney Kessler                        abbr=KES
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29OSOWAL
+    Simona Waltert                           abbr=WAL
+    Camila Osorio                            abbr=OSO
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29OSTDAR
+    Jelena Ostapenko                         abbr=OST
+    Harriet Dart                             abbr=DAR
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29PAOMON
+    Jasmine Paolini                          abbr=PAO
+    Robin Montgomery                         abbr=MON
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29PARDUD
+    Alycia Parks                             abbr=PAR
+    Alicia Dudeney                           abbr=DUD
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29PEGVID
+    Darja Vidmanova                          abbr=VID
+    Jessica Pegula                           abbr=PEG
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29PODKOS
+    Nadia Podoroska                          abbr=POD
+    Marta Kostyuk                            abbr=KOS
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29PUTMAR
+    Yulia Putintseva                         abbr=PUT
+    Tatjana Maria                            abbr=MAR
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29RUSMCC
+    Elena-Gabriela Ruse                      abbr=RUS
+    Caty McNally                             abbr=MCC
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29RUZRAD
+    Antonia Ruzic                            abbr=RUZ
+    Emma Raducanu                            abbr=RAD
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SABKOS
+    Aryna Sabalenka                          abbr=SAB
+    Teodora Kostovic                         abbr=KOS
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SAKTAU
+    Clara Tauson                             abbr=TAU
+    Maria Sakkari                            abbr=SAK
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SAWCHW
+    Mananchaya Sawangkaew                    abbr=SAW
+    Maja Chwalinska                          abbr=CHW
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SEINOS
+    Ella Seidel                              abbr=SEI
+    Linda Noskova                            abbr=NOS
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SELKRA
+    Oksana Selekhmeteva                      abbr=SEL
+    Sinja Kraus                              abbr=KRA
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SHNLYS
+    Diana Shnaider                           abbr=SHN
+    Eva Lys                                  abbr=LYS
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SHYGOL
+    Iryna Shymanovich                        abbr=SHY
+    Viktorija Golubic                        abbr=GOL
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SIEBON
+    Solana Sierra                            abbr=SIE
+    Anna Bondar                              abbr=BON
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SINZHE
+    Qinwen Zheng                             abbr=ZHE
+    Katerina Siniakova                       abbr=SIN
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29SORJIM
+    Sara Sorribes Tormo                      abbr=SOR
+    Victoria Jimenez Kasintseva              abbr=JIM
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29STABLI
+    Yuliia Starodubtseva                     abbr=STA
+    Anna Blinkova                            abbr=BLI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29STEBAR
+    Peyton Stearns                           abbr=STE
+    Nikola Bartunkova                        abbr=BAR
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29TARTAG
+    Lanlana Tararudee                        abbr=TAR
+    Lilli Tagger                             abbr=TAG
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29TOWSWI
+    Taylor Townsend                          abbr=TOW
+    Iga Swiatek                              abbr=SWI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29VALPLI
+    Tereza Valentova                         abbr=VAL
+    Karolina Pliskova                        abbr=PLI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29WANCOC
+    Xinyu Wang                               abbr=WAN
+    Elisabetta Cocciaretto                   abbr=COC
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29WILJOI
+    Serena Williams                          abbr=WIL
+    Maya Joint                               abbr=JOI
+  [26JUN29] [active  ] KXWTAMATCH-26JUN29YASITO
+    Dayana Yastremska                        abbr=YAS
+    Aoi Ito                                  abbr=ITO
+  [26JUN30] [active  ] KXWTAMATCH-26JUN30ERJJEA
+    Leolia Jeanjean                          abbr=JEA
+    Veronika Erjavec                         abbr=ERJ
+  [26JUN30] [active  ] KXWTAMATCH-26JUN30KRUVEK
+    Donna Vekic                              abbr=VEK
+    Ashlyn Krueger                           abbr=KRU
+  [26JUN30] [active  ] KXWTAMATCH-26JUN30SVISNI
+    Elina Svitolina                          abbr=SVI
+    Daria Snigur                             abbr=SNI
+  [26JUN30] [active  ] KXWTAMATCH-26JUN30TOMBOL
+    Ajla Tomljanovic                         abbr=TOM
+    Mariam Bolkvadze                         abbr=BOL
