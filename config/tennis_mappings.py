@@ -3745,6 +3745,241 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Zanellato, Nicolas"]},
         "pm_aliases": ["Nicolas Zanellato"],
     },
+    "almazan valiente, izan": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Almazan Valiente, Izan"]},
+        "pm_aliases": ["Izan Almazan Valiente"],
+    },
+    "alvarez valdes, luis carlos": {
+        "polymarket_code": "alvare",
+        "provider_aliases": {"kalstrop_v1": ["Alvarez Valdes, Luis Carlos"]},
+        "pm_aliases": ["Luis Carlos Alvarez"],
+    },
+    "andrade, andres": {
+        "polymarket_code": "andrade",
+        "provider_aliases": {"kalstrop_v1": ["Andrade, Andres"]},
+        "pm_aliases": ["Andres Andrade"],
+    },
+    "bicknell, blaise": {
+        "polymarket_code": "bicknel",
+        "provider_aliases": {"kalstrop_v1": ["Bicknell, Blaise"]},
+        "pm_aliases": ["Blaise Bicknell"],
+    },
+    "chazal, maxime": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Chazal, Maxime"]},
+        "pm_aliases": ["Maxime Chazal"],
+    },
+    "cocciaretto, elisabetta": {
+        "polymarket_code": "cocciar",
+        "provider_aliases": {"kalstrop_v1": ["Cocciaretto, Elisabetta"]},
+        "pm_aliases": ["Elisabetta Cocciaretto"],
+    },
+    "donald, matthew william": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Donald, Matthew William"]},
+        "pm_aliases": ["Matthew William Donald"],
+    },
+    "ellis, blake": {
+        "polymarket_code": "ellis",
+        "provider_aliases": {"kalstrop_v1": ["Ellis, Blake"]},
+        "pm_aliases": ["Blake Ellis"],
+    },
+    "fenty, andrew": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Fenty, Andrew"]},
+        "pm_aliases": ["Andrew Fenty"],
+    },
+    "ghazouani durand, yanis": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Ghazouani Durand, Yanis"]},
+        "pm_aliases": ["Yanis Ghazouani Durand"],
+    },
+    "gomez, federico agustin": {
+        "polymarket_code": "gomez",
+        "provider_aliases": {"kalstrop_v1": ["Gomez, Federico Agustin"]},
+        "pm_aliases": ["Federico Agustin Gomez"],
+    },
+    "imamura, masamichi": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Imamura, Masamichi"]},
+        "pm_aliases": ["Masamichi Imamura"],
+    },
+    "kaouk, mickael": {
+        "polymarket_code": "kaouk",
+        "provider_aliases": {"kalstrop_v1": ["Kaouk, Mickael"]},
+        "pm_aliases": ["Mickael Kaouk"],
+    },
+    "kennedy, jack": {
+        "polymarket_code": "kennedy",
+        "provider_aliases": {"kalstrop_v1": ["Kennedy, Jack"]},
+        "pm_aliases": ["Jack Kennedy"],
+    },
+    "kravchenko, georgii": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Kravchenko, Georgii"]},
+        "pm_aliases": ["Georgii Kravchenko"],
+    },
+    "leroux, jules": {
+        "polymarket_code": "leroux",
+        "provider_aliases": {"kalstrop_v1": ["Leroux, Jules"]},
+        "pm_aliases": ["Jules Leroux"],
+    },
+    "lagutin, pavel": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Lagutin, Pavel"]},
+        "pm_aliases": ["Pavel Lagutin"],
+    },
+    "lechno-wasiutynski, fryderyk": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Lechno-Wasiutynski, Fryderyk"]},
+        "pm_aliases": ["Fryderyk Lechno-Wasiutynski"],
+    },
+    "makk, peter": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Makk, Peter"]},
+        "pm_aliases": ["Peter Makk"],
+    },
+    "manning, william": {
+        "polymarket_code": "manning",
+        "provider_aliases": {"kalstrop_v1": ["Manning, William"]},
+        "pm_aliases": ["William Manning"],
+    },
+    "marcondes, igor": {
+        "polymarket_code": "marcond",
+        "provider_aliases": {"kalstrop_v1": ["Marcondes, Igor"]},
+        "pm_aliases": ["Igor Ribeiro Marcondes"],
+    },
+    "martinez, alex": {
+        "polymarket_code": "alexmar",
+        "provider_aliases": {"kalstrop_v1": ["Martinez, Alex"]},
+        "pm_aliases": ["Alex Martinez"],
+    },
+    "matsuoka, hayato": {
+        "polymarket_code": "matsuok",
+        "provider_aliases": {"kalstrop_v1": ["Matsuoka, Hayato"]},
+        "pm_aliases": ["Hayato Matsuoka"],
+    },
+    "mayo, aidan": {
+        "polymarket_code": "mayo",
+        "provider_aliases": {"kalstrop_v1": ["Mayo, Aidan"]},
+        "pm_aliases": ["Aidan Mayo"],
+    },
+    "mbithi, mwendwa": {
+        "polymarket_code": "mbithi",
+        "provider_aliases": {"kalstrop_v1": ["Mbithi, Mwendwa"]},
+        "pm_aliases": ["Mwendwa Mbithi"],
+    },
+    "nunez, daniel antonio": {
+        "polymarket_code": "nunez",
+        "provider_aliases": {"kalstrop_v1": ["Nunez, Daniel Antonio"]},
+        "pm_aliases": ["Daniel Nunez"],
+    },
+    "ostapenko, jelena": {
+        "polymarket_code": "ostapen",
+        "provider_aliases": {"kalstrop_v1": ["Ostapenko, Jelena"]},
+        "pm_aliases": ["Jelena Ostapenko"],
+    },
+    "papamalamis, theo": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Papamalamis, Theo"]},
+        "pm_aliases": ["Theo Papamalamis"],
+    },
+    "poljak, david": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Poljak, David"]},
+        "pm_aliases": ["David Poljak"],
+    },
+    "popko, dmitry": {
+        "polymarket_code": "popko",
+        "provider_aliases": {"kalstrop_v1": ["Popko, Dmitry"]},
+        "pm_aliases": ["Dmitry Popko"],
+    },
+    "rapagnetta, daniele": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Rapagnetta, Daniele"]},
+        "pm_aliases": ["Daniele Rapagnetta"],
+    },
+    "rivadeneira, felipe": {
+        "polymarket_code": "rivaden",
+        "provider_aliases": {"kalstrop_v1": ["Rivadeneira, Felipe"]},
+        "pm_aliases": ["Felipe Jose Rivadeneira"],
+    },
+    "sanchez quilez, alejo": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Sanchez Quilez, Alejo"]},
+        "pm_aliases": ["Alejo Sanchez Quilez"],
+    },
+    "sekulic, philip": {
+        "polymarket_code": "sekulic",
+        "provider_aliases": {"kalstrop_v1": ["Sekulic, Philip"]},
+        "pm_aliases": ["Philip Sekulic"],
+    },
+    "sharipov, marat": {
+        "polymarket_code": "sharipo",
+        "provider_aliases": {"kalstrop_v1": ["Sharipov, Marat"]},
+        "pm_aliases": ["Marat Sharipov"],
+    },
+    "staeheli, luca": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Staeheli, Luca"]},
+        "pm_aliases": ["Luca Staeheli"],
+    },
+    "stricker, dominic": {
+        "polymarket_code": "stricke",
+        "provider_aliases": {"kalstrop_v1": ["Stricker, Dominic"]},
+        "pm_aliases": ["Dominic Stephan Stricker"],
+    },
+    "sun, fajing": {
+        "polymarket_code": "su",
+        "provider_aliases": {"kalstrop_v1": ["Sun, Fajing"]},
+        "pm_aliases": ["Fajing Sun"],
+    },
+    "tabacco, fausto": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Tabacco, Fausto"]},
+        "pm_aliases": ["Fausto Tabacco"],
+    },
+    "tenti, fermin": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Tenti, Fermin"]},
+        "pm_aliases": ["Fermin Tenti"],
+    },
+    "vales, amit": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Vales, Amit"]},
+        "pm_aliases": ["Amit Vales"],
+    },
+    "varillas, juan pablo": {
+        "polymarket_code": "varilla",
+        "provider_aliases": {"kalstrop_v1": ["Varillas, Juan Pablo"]},
+        "pm_aliases": ["Juan Pablo Varillas"],
+    },
+    "veliz, angel": {
+        "polymarket_code": "veliz",
+        "provider_aliases": {"kalstrop_v1": ["Veliz, Angel"]},
+        "pm_aliases": ["Angel Veliz"],
+    },
+    "watanuki, yosuke": {
+        "polymarket_code": "watanuk",
+        "provider_aliases": {"kalstrop_v1": ["Watanuki, Yosuke"]},
+        "pm_aliases": ["Yosuke Watanuki"],
+    },
+    "wehnelt, kai": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Wehnelt, Kai"]},
+        "pm_aliases": ["Kai Wehnelt"],
+    },
+    "wu, tung-lin": {
+        "polymarket_code": "tunglin",
+        "provider_aliases": {"kalstrop_v1": ["Wu, Tung-Lin"]},
+        "pm_aliases": ["Tung-Lin Wu"],
+    },
+    "yunez, lucas": {
+        "polymarket_code": "_unknown",
+        "provider_aliases": {"kalstrop_v1": ["Yunez, Lucas"]},
+        "pm_aliases": ["Lucas Yunez"],
+    },
 }
 
 
@@ -3875,11 +4110,11 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp eastbourne"],
         "boltodds_aliases": ["atp eastbourne - tennis"],
     },
-    "wimbledon_qual_m": {
+    "wimbledon_m": {
         "polymarket_league_code": "atp",
         "v1_aliases": ["wimbledon men singles"],
         "sets_to_win": 3,
-        "boltodds_aliases": ["wimbledon quals (m) - tennis"],
+        "boltodds_aliases": ["wimbledon (m) - tennis"],
     },
     "piracicaba": {
         "polymarket_league_code": "atp",
@@ -3896,9 +4131,34 @@ TENNIS_LEAGUES = {
         "v1_aliases": ["atp challenger targu mures"],
         "boltodds_aliases": ["challenger targu mures - tennis"],
     },
-    "wimbledon_qual_w": {
+    "wimbledon_w": {
         "polymarket_league_code": "wta",
         "v1_aliases": ["wimbledon women singles"],
-        "boltodds_aliases": ["wimbledon quals (w) - tennis"],
+        "boltodds_aliases": ["wimbledon (w) - tennis"],
+    },
+    "cary": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp challenger cary"],
+        "boltodds_aliases": ["challenger cary - tennis"],
+    },
+    "brasov": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp challenger brasov"],
+        "boltodds_aliases": ["challenger brasov - tennis"],
+    },
+    "troyes": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp challenger troyes"],
+        "boltodds_aliases": ["challenger troyes - tennis"],
+    },
+    "milan": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp challenger milan"],
+        "boltodds_aliases": ["challenger milan - tennis"],
+    },
+    "quito": {
+        "polymarket_league_code": "atp",
+        "v1_aliases": ["atp challenger quito"],
+        "boltodds_aliases": ["challenger quito - tennis"],
     },
 }
