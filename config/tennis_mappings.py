@@ -815,6 +815,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Ficovich, Juan Pablo"]},
         "pm_aliases": ["Juan Pablo Ficovich"],
     },
+    "fils, arthur": {
+        "polymarket_code": "fils",
+        "provider_aliases": {"kalstrop_v1": ["Fils, Arthur"]},
+        "pm_aliases": ["Arthur Fils"],
+    },
     "fita boluda, angela": {
         "polymarket_code": "boluda",
         "provider_aliases": {"kalstrop_v1": ["Fita Boluda, Angela"]},
@@ -879,6 +884,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "galarne",
         "provider_aliases": {"kalstrop_v1": ["Galarneau, Alexis"]},
         "pm_aliases": ["Alexis Galarneau"],
+    },
+    "galarraga, mario andre": {
+        "polymarket_code": "galarra",
+        "provider_aliases": {"kalstrop_v1": ["Galarraga, Mario Andre"]},
+        "pm_aliases": ["Mario Andre Galarraga"],
     },
     "galfi, dalma": {
         "polymarket_code": "galfi",
@@ -1500,6 +1510,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Maestrelli, Francesco"]},
         "pm_aliases": ["Francesco Maestrelli"],
     },
+    "magadan, alan": {
+        "polymarket_code": "magadan",
+        "provider_aliases": {"kalstrop_v1": ["Magadan, Alan"]},
+        "pm_aliases": ["Alan Magadan"],
+    },
     "majchrzak, kamil": {
         "polymarket_code": "majchrz",
         "provider_aliases": {"kalstrop_v1": ["Majchrzak, Kamil"]},
@@ -1860,6 +1875,16 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Palicova, Barbora"]},
         "pm_aliases": ["Barbora Palicova"],
     },
+    "palosi, stefan": {
+        "polymarket_code": "palosi",
+        "provider_aliases": {"kalstrop_v1": ["Palosi, Stefan"]},
+        "pm_aliases": ["Stefan Palosi"],
+    },
+    "paolini, jasmine": {
+        "polymarket_code": "paolini",
+        "provider_aliases": {"kalstrop_v1": ["Paolini, Jasmine"]},
+        "pm_aliases": ["Jasmine Paolini"],
+    },
     "papamichail, despina": {
         "polymarket_code": "papamic",
         "provider_aliases": {"kalstrop_v1": ["Papamichail, Despina"]},
@@ -1959,6 +1984,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "podrez",
         "provider_aliases": {"kalstrop_v1": ["Podrez, Veronika"]},
         "pm_aliases": ["Veronika Podrez"],
+    },
+    "podoroska, nadia": {
+        "polymarket_code": "podoros",
+        "provider_aliases": {"kalstrop_v1": ["Podoroska, Nadia"]},
+        "pm_aliases": ["Nadia Podoroska"],
     },
     "pohankova, mia": {
         "polymarket_code": "pohanko",
@@ -2235,6 +2265,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Sakamoto, Rei"]},
         "pm_aliases": ["Rei Sakamoto"],
     },
+    "sakamoto, pedro": {
+        "polymarket_code": "sakamo",
+        "provider_aliases": {"kalstrop_v1": ["Sakamoto, Pedro"]},
+        "pm_aliases": ["Pedro Sakamoto"],
+    },
     "sakatsume, himeno": {
         "polymarket_code": "sakatsu",
         "provider_aliases": {"kalstrop_v1": ["Sakatsume, Himeno"]},
@@ -2494,6 +2529,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "sun",
         "provider_aliases": {"kalstrop_v1": ["Sun, Lulu"]},
         "pm_aliases": ["Lulu Sun"],
+    },
+    "suresh, dhakshineswar": {
+        "polymarket_code": "suresh",
+        "provider_aliases": {"kalstrop_v1": ["Suresh, Dhakshineswar"]},
+        "pm_aliases": ["Dhakshineswar Suresh"],
     },
     "svajda, zachary": {
         "polymarket_code": "svajda",
@@ -2820,6 +2860,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Wu, Yibing"]},
         "pm_aliases": ["Yibing Wu"],
     },
+    "xilas, ioannis": {
+        "polymarket_code": "xilas",
+        "provider_aliases": {"kalstrop_v1": ["Xilas, Ioannis"]},
+        "pm_aliases": ["Ioannis Xilas"],
+    },
     "xu, mingge": {
         "polymarket_code": "xu",
         "provider_aliases": {"kalstrop_v1": ["Xu, Mingge", "Xu, Mimi"]},
@@ -3130,6 +3175,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Meligeni Alves, Felipe"]},
         "pm_aliases": ["Felipe Meligeni Alves"],
     },
+    "mena, facundo": {
+        "polymarket_code": "mena",
+        "provider_aliases": {"kalstrop_v1": ["Mena, Facundo"]},
+        "pm_aliases": ["Facundo Mena"],
+    },
     "molleker, rudolf": {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Molleker, Rudolf"]},
@@ -3259,6 +3309,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "biryuko",
         "provider_aliases": {"kalstrop_v1": ["Bar Biryukov, Petr"]},
         "pm_aliases": ["Petr Bar Biryukov"],
+    },
+    "baris, ozan": {
+        "polymarket_code": "baris",
+        "provider_aliases": {"kalstrop_v1": ["Baris, Ozan"]},
+        "pm_aliases": ["Ozan Baris"],
     },
     "berkieta, tomasz": {
         "polymarket_code": "berkiet",
@@ -3530,6 +3585,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Pace, Francesca"]},
         "pm_aliases": ["Francesca Pace"],
     },
+    "pacheco mendez, rodrigo": {
+        "polymarket_code": "pacheco",
+        "provider_aliases": {"kalstrop_v1": ["Pacheco Mendez, Rodrigo"]},
+        "pm_aliases": ["Rodrigo Pacheco"],
+    },
     "passaro, francesco": {
         "polymarket_code": "passaro",
         "provider_aliases": {"kalstrop_v1": ["Passaro, Francesco"]},
@@ -3670,10 +3730,20 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Wiedenmann, Luca"]},
         "pm_aliases": ["Luca Wiedenmann"],
     },
+    "williams, serena": {
+        "polymarket_code": "willia",
+        "provider_aliases": {"kalstrop_v1": ["Williams, Serena"]},
+        "pm_aliases": ["Serena Williams"],
+    },
     "willwerth, benjamin": {
         "polymarket_code": "willwer",
         "provider_aliases": {"kalstrop_v1": ["Willwerth, Benjamin"]},
         "pm_aliases": ["Benjamin Willwerth"],
+    },
+    "winter, edward": {
+        "polymarket_code": "winter",
+        "provider_aliases": {"kalstrop_v1": ["Winter, Edward"]},
+        "pm_aliases": ["Edward Winter"],
     },
     "zamarripa, allura": {
         "polymarket_code": "zamarri",
@@ -3979,6 +4049,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "_unknown",
         "provider_aliases": {"kalstrop_v1": ["Yunez, Lucas"]},
         "pm_aliases": ["Lucas Yunez"],
+    },
+    "zahraj, patrick": {
+        "polymarket_code": "zahraj",
+        "provider_aliases": {"kalstrop_v1": ["Zahraj, Patrick"]},
+        "pm_aliases": ["Patrick Zahraj"],
     },
 }
 
