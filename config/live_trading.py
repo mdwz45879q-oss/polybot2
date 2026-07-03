@@ -19,14 +19,15 @@ LIVE_BETTING_LEAGUES = {
     "fifa_friendly",
 }
 LIVE_BETTING_MARKET_TYPES = {
-    "mlb": ["nrfi",
-            "totals",
+    "mlb": [
+            # "nrfi",
+            # "totals",
             "moneyline",
-            "spreads",
-            "baseball_team_first_five_winner",
-            "baseball_team_first_five_total",
-            "baseball_team_first_five_spread",
-            "baseball_game_extra_innings",
+            # "spreads",
+            # "baseball_team_first_five_winner",
+            # "baseball_team_first_five_total",
+            # "baseball_team_first_five_spread",
+            # "baseball_game_extra_innings",
             ],
     "epl":["moneyline",
            "totals",

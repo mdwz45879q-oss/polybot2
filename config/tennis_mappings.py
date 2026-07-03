@@ -855,6 +855,11 @@ PLAYER_MAP_TENNIS = {
         "provider_aliases": {"kalstrop_v1": ["Friedsam, Anna-Lena"]},
         "pm_aliases": ["Anna-Lena Friedsam"],
     },
+    "friend, jay": {
+        "polymarket_code": "friend",
+        "provider_aliases": {"kalstrop_v1": ["Friend, Jay"]},
+        "pm_aliases": ["Jay Dylan Friend"],
+    },
     "fritz, taylor": {
         "polymarket_code": "fritz",
         "provider_aliases": {"kalstrop_v1": ["Fritz, Taylor"]},
@@ -1869,6 +1874,11 @@ PLAYER_MAP_TENNIS = {
         "polymarket_code": "osorio",
         "provider_aliases": {"kalstrop_v1": ["Osorio, Camila"]},
         "pm_aliases": ["Camila Osorio"],
+    },
+    "osorio, juan sebastian": {
+        "polymarket_code": "osorio",
+        "provider_aliases": {"kalstrop_v1": ["Osorio, Juan Sebastian"]},
+        "pm_aliases": ["Juan Sebastian Osorio"],
     },
     "palicova, barbora": {
         "polymarket_code": "palicov",
